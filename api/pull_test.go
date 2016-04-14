@@ -1,7 +1,7 @@
 package api_test
 
 import (
-	. "github.com/mesosphere/3dt/api"
+	. "github.com/dcos/3dt/api"
 
 	"fmt"
 	"time"

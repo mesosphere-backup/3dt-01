@@ -1,7 +1,7 @@
 package api_test
 
 import (
-	. "github.com/mesosphere/3dt/api"
+	. "github.com/dcos/3dt/api"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
@@ -11,9 +11,8 @@ import (
 // FakeSystemdType success
 type FakeSystemdType struct {
 	newCalled bool
-	params 	map[string]bool
-	units []string
-	Aaa string
+	params    map[string]bool
+	units     []string
 }
 
 func (st *FakeSystemdType) GetHostname() string {
@@ -100,12 +99,11 @@ var _ = Describe("Test systemd", func() {
 					},
 				},
 				DcosVersion: "",
-				Hostname: "MyHostName",
-				IpAddress: "127.0.0.1",
-				Role: "master",
-				MesosId: "node-id-123",
-				TdtVersion: "0.0.7",
-
+				Hostname:    "MyHostName",
+				IpAddress:   "127.0.0.1",
+				Role:        "master",
+				MesosId:     "node-id-123",
+				TdtVersion:  "0.0.7",
 			}))
 			Expect(cfg.SystemdUnits).Should(Equal([]string{
 				"dcos-setup.service",

@@ -1,16 +1,15 @@
 package main
 
 import (
-
 	"fmt"
 	"os"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/mesosphere/3dt/api"
+	"github.com/dcos/3dt/api"
 	"net/http"
 )
 
-const	Version string = "0.0.9"
+const Version string = "0.0.9"
 
 func GetVersion() string {
 	return (fmt.Sprintf("Version: %s", Version))

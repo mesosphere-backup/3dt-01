@@ -15,7 +15,7 @@ type MonitoringResponse struct {
 // Unit for systemd unit
 type Unit struct {
 	UnitName  	string
-	Nodes     	[]*Node
+	Nodes     	[]Node
 	Health    	int
 	Title     	string
 	Timestamp 	time.Time

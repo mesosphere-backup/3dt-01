@@ -9,7 +9,7 @@ import (
 	"net/http"
 )
 
-const Version string = "0.0.9"
+const Version string = "0.0.11"
 
 func GetVersion() string {
 	return (fmt.Sprintf("Version: %s", Version))

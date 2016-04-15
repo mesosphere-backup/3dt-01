@@ -445,18 +445,21 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *HttpResponse, port int, 
 		host.MesosId = jsonBody.MesosId
 
 		host.Output = make(map[string]string)
+
+		// if at least one unit is not healthy, the host should be set unhealthy
 		for _, propertiesMap := range jsonBody.Array {
-			// update node health, if any unit fails, node is unhealthy
 			if propertiesMap.UnitHealth > host.Health {
 				host.Health = propertiesMap.UnitHealth
+				break
 			}
+		}
 
+		for _, propertiesMap := range jsonBody.Array {
 			// update error message per host per unit
 			host.Output[propertiesMap.UnitId] = propertiesMap.UnitOutput
-
 			response.Units = append(response.Units, Unit{
 				propertiesMap.UnitId,
-				[]*Node{&host},
+				[]Node{host},
 				propertiesMap.UnitHealth,
 				propertiesMap.UnitTitle,
 				pi.GetTimestamp(),

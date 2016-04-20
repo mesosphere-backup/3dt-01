@@ -49,5 +49,5 @@ type SystemdInterface interface {
 	GetJournalOutput(string) (string, error)
 
 	// Get mesos node id, first argument is a role, second argument is a json field name
-	GetMesosNodeId(string, string) (string)
+	GetMesosNodeId(string, string) string
 }

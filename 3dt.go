@@ -9,13 +9,12 @@ import (
 	"net/http"
 )
 
-const Version string = "0.0.11"
 
-func GetVersion() string {
-	return (fmt.Sprintf("Version: %s", Version))
+func getVersion() string {
+	return (fmt.Sprintf("Version: %s, Revision: %s", api.Version, api.Revision))
 }
 
-func RunDiag(config api.Config) int {
+func runDiag(config api.Config) int {
 	var exitCode int = 0
 	units, err := api.GetUnitsProperties(&config)
 	if err != nil {
@@ -36,20 +35,20 @@ func main() {
 	readyChan := make(chan bool, 1)
 
 	// load config with default values
-	config, err := api.LoadDefaultConfig(os.Args, Version)
+	config, err := api.LoadDefaultConfig(os.Args)
 	if err != nil {
 		log.Error(err)
 		os.Exit(1)
 	}
 	// print version and exit
 	if config.FlagVersion {
-		fmt.Println(GetVersion())
+		fmt.Println(getVersion())
 		os.Exit(0)
 	}
 
 	// run local diagnostics, verify all systemd units are healthy.
 	if config.FlagDiag {
-		os.Exit(RunDiag(config))
+		os.Exit(runDiag(config))
 	}
 
 	// set verbose (debug) output.
@@ -65,7 +64,7 @@ func main() {
 
 	// start diagnostic server and expose endpoints.
 	log.Info("Start 3DT")
-	go api.StartUpdateHealthReport(config, readyChan)
+	go api.StartUpdateHealthReport(config, readyChan, false)
 	router := api.NewRouter(&config)
 	log.Infof("Exposing 3DT API on 0.0.0.0:%d", config.FlagPort)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.FlagPort), router))

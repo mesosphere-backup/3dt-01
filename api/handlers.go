@@ -21,20 +21,20 @@ var HealthReport UnitsHealth
 
 type UnitsHealth struct {
 	sync.Mutex
-	HealthReport	UnitsHealthResponseJsonStruct
+	HealthReport UnitsHealthResponseJsonStruct
 }
 
-func (uh *UnitsHealth) GetHealthReport () UnitsHealthResponseJsonStruct {
+func (uh *UnitsHealth) GetHealthReport() UnitsHealthResponseJsonStruct {
 	return (*uh).HealthReport
 }
 
-func (uh *UnitsHealth) UpdateHealthReport (healthReport UnitsHealthResponseJsonStruct) {
+func (uh *UnitsHealth) UpdateHealthReport(healthReport UnitsHealthResponseJsonStruct) {
 	uh.Lock()
 	defer uh.Unlock()
 	(*uh).HealthReport = healthReport
 }
 
-func StartUpdateHealthReport(config Config, readyChan chan bool) {
+func StartUpdateHealthReport(config Config, readyChan chan bool, runOnce bool) {
 	var ready bool
 	for {
 		healthReport, err := GetUnitsProperties(&config)
@@ -48,27 +48,31 @@ func StartUpdateHealthReport(config Config, readyChan chan bool) {
 			log.Error("Could not update systemd units health report")
 			log.Error(err)
 		}
+		if runOnce {
+			log.Debug("Run startUpdateHealthReport only once")
+			return
+		}
 		time.Sleep(time.Second * 60)
 	}
 }
 
 // Route handlers
 // /api/v1/system/health, get a units status, used by 3dt puller
-func UnitsHealthStatus(w http.ResponseWriter, r *http.Request, config *Config) {
+func unitsHealthStatus(w http.ResponseWriter, r *http.Request, config *Config) {
 	if err := json.NewEncoder(w).Encode(HealthReport.GetHealthReport()); err != nil {
 		log.Error("Failed to encode responses to json")
 	}
 }
 
 // /api/v1/system/health/units, get an array of all units collected from all hosts in a cluster
-func GetAllUnitsHandler(w http.ResponseWriter, r *http.Request) {
+func getAllUnitsHandler(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(GlobalMonitoringResponse.GetAllUnits()); err != nil {
 		log.Error("Failed to encode responses to json")
 	}
 }
 
 // /api/v1/system/health/units/:unit_id:
-func GetUnitByIdHandler(w http.ResponseWriter, r *http.Request) {
+func getUnitByIdHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	unitResponse, err := GlobalMonitoringResponse.GetUnit(vars["unitid"])
 	if err != nil {
@@ -82,7 +86,7 @@ func GetUnitByIdHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // /api/v1/system/health/units/:unit_id:/nodes
-func GetNodesByUnitIdHandler(w http.ResponseWriter, r *http.Request) {
+func getNodesByUnitIdHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	nodesForUnitResponse, err := GlobalMonitoringResponse.GetNodesForUnit(vars["unitid"])
 	if err != nil {
@@ -96,7 +100,7 @@ func GetNodesByUnitIdHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // /api/v1/system/health/units/:unit_id:/nodes/:node_id:
-func GetNodeByUnitIdNodeIdHandler(w http.ResponseWriter, r *http.Request) {
+func getNodeByUnitIdNodeIdHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	nodePerUnit, err := GlobalMonitoringResponse.GetSpecificNodeForUnit(vars["unitid"], vars["nodeid"])
 
@@ -111,21 +115,21 @@ func GetNodeByUnitIdNodeIdHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // list the entire tree
-func ReportHandler(w http.ResponseWriter, r *http.Request) {
+func reportHandler(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(GlobalMonitoringResponse); err != nil {
 		log.Error("Failed to encode responses to json")
 	}
 }
 
 // /api/v1/system/health/nodes
-func GetNodesHandler(w http.ResponseWriter, r *http.Request) {
+func getNodesHandler(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(GlobalMonitoringResponse.GetNodes()); err != nil {
 		log.Error("Failed to encode responses to json")
 	}
 }
 
 // /api/v1/system/health/nodes/:node_id:
-func GetNodeByIdHandler(w http.ResponseWriter, r *http.Request) {
+func getNodeByIdHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	nodes, err := GlobalMonitoringResponse.GetNodeById(vars["nodeid"])
 	if err != nil {
@@ -140,7 +144,7 @@ func GetNodeByIdHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // /api/v1/system/health/nodes/:node_id:/units
-func GetNodeUnitsByNodeIdHandler(w http.ResponseWriter, r *http.Request) {
+func getNodeUnitsByNodeIdHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	units, err := GlobalMonitoringResponse.GetNodeUnitsId(vars["nodeid"])
 	if err != nil {
@@ -154,7 +158,7 @@ func GetNodeUnitsByNodeIdHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func GetNodeUnitByNodeIdUnitIdHandler(w http.ResponseWriter, r *http.Request) {
+func getNodeUnitByNodeIdUnitIdHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	unit, err := GlobalMonitoringResponse.GetNodeUnitByNodeIdUnitId(vars["nodeid"], vars["unitid"])
 	if err != nil {
@@ -170,11 +174,11 @@ func GetNodeUnitByNodeIdUnitIdHandler(w http.ResponseWriter, r *http.Request) {
 // SystemdInterface implementation
 type SystemdType struct {
 	sync.Mutex
-	dcon		*dbus.Conn
-	hostname	string
-	role		string
-	ip		string
-	mesos_id	string
+	dcon     *dbus.Conn
+	hostname string
+	role     string
+	ip       string
+	mesos_id string
 }
 
 func (st *SystemdType) GetHostname() string {
@@ -370,11 +374,11 @@ func NormalizeProperty(unitName string, p map[string]interface{}, si SystemdInte
 	}
 
 	return UnitHealthResponseFieldsStruct{
-		UnitId: unitName,
+		UnitId:     unitName,
 		UnitHealth: unitHealth,
 		UnitOutput: unitOutput,
-		UnitTitle: description,
-		Help: "",
+		UnitTitle:  description,
+		Help:       "",
 		PrettyName: prettyName,
 	}
 }
@@ -415,12 +419,12 @@ func GetUnitsProperties(config *Config) (UnitsHealthResponseJsonStruct, error) {
 		return UnitsHealthResponseJsonStruct{}, err
 	}
 	return UnitsHealthResponseJsonStruct{
-		Array:    allUnitsProperties,
-		Hostname: config.Systemd.GetHostname(),
-		IpAddress: config.Systemd.DetectIp(),
+		Array:       allUnitsProperties,
+		Hostname:    config.Systemd.GetHostname(),
+		IpAddress:   config.Systemd.DetectIp(),
 		DcosVersion: config.DcosVersion,
-		Role: config.Systemd.GetNodeRole(),
-		MesosId: config.Systemd.GetMesosNodeId(config.Systemd.GetNodeRole(), "id"),
-		TdtVersion: config.Version,
+		Role:        config.Systemd.GetNodeRole(),
+		MesosId:     config.Systemd.GetMesosNodeId(config.Systemd.GetNodeRole(), "id"),
+		TdtVersion:  config.Version,
 	}, nil
 }

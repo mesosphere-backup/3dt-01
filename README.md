@@ -7,8 +7,8 @@
 ```
 go get github.com/dcos/3dt
 cd $GOPATH/github.com/dcos/3dt
-go install
-3dt -version
+make install
+./3dt -version
 ```
 
 ## Run
@@ -41,7 +41,7 @@ Star the 3DT health API endpoint:
 <pre>
 -verbose        | Verbose Logging.
 -diag           | Diagnostics mode. This will execute health checks once, return the output and exit.
--version        | Print version and exit.
+-version        | Print version, revision and exit.
 -pull           | Run the aggregation service and expose the /system/health/v1/* api.
 -port           | Web server TCP port. (default 1050)
 -pull-interval  | Set pull interval, default 60 sec.
@@ -49,18 +49,12 @@ Star the 3DT health API endpoint:
 
 ## Test
 ```
-ginkgo -r -trace -race -randomizeAllSpecs -randomizeSuites -cover
+make test
 ```
 
 Or from any submodule:
 
 ```
 go test
-```
-
-or
-
-```
-ginkgo
 ```
 

@@ -7,7 +7,7 @@ all: test install
 test:
 	@echo "+$@"
 	go get github.com/stretchr/testify
-	go test -race -cover -test.v . ./api/.
+	go test -race -cover -test.v $(shell go list ./... | grep -v /vendor/)
 
 build:
 	@echo "+$@"

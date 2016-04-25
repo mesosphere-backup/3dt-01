@@ -15,7 +15,7 @@ import (
 var GlobalMonitoringResponse MonitoringResponse
 
 //Puller Interface implementation
-type PullType struct {}
+type PullType struct{}
 
 func (pt *PullType) GetTimestamp() time.Time {
 	return time.Now()
@@ -272,11 +272,11 @@ func (mr *MonitoringResponse) GetNodeUnitByNodeIdUnitId(nodeIp string, unitId st
 		if unit.UnitName == unitId {
 			help_field := fmt.Sprintf("Node available at `dcos node ssh -mesos-id %s`. Try, `journalctl -xv` to diagnose further.", mr.Nodes[nodeIp].MesosId)
 			return UnitHealthResponseFieldsStruct{
-				UnitId: unit.UnitName,
+				UnitId:     unit.UnitName,
 				UnitHealth: unit.Health,
 				UnitOutput: mr.Nodes[nodeIp].Output[unit.UnitName],
-				UnitTitle: unit.Title,
-				Help: help_field,
+				UnitTitle:  unit.Title,
+				Help:       help_field,
 				PrettyName: unit.PrettyName,
 			}, nil
 		}
@@ -291,19 +291,19 @@ func StartPullWithInterval(config Config, pi Puller, ready chan bool) {
 		if r == true {
 			log.Info(fmt.Sprintf("Start pulling with interval %d", config.FlagPullInterval))
 			for {
-				RunPull(config.FlagPullInterval, config.FlagPort, pi)
+				runPull(config.FlagPullInterval, config.FlagPort, pi)
 			}
 
 		}
 	case <-time.After(time.Second * 10):
 		log.Error("Not ready to pull from localhost after 10 seconds")
 		for {
-			RunPull(config.FlagPullInterval, config.FlagPort, pi)
+			runPull(config.FlagPullInterval, config.FlagPort, pi)
 		}
 	}
 }
 
-func RunPull(sec int, port int, pi Puller) {
+func runPull(sec int, port int, pi Puller) {
 	var ClusterHosts []Node
 	masterNodes, err := pi.LookupMaster()
 	if err != nil {
@@ -337,14 +337,14 @@ func RunPull(sec int, port int, pi Puller) {
 	ClusterHttpResponses := collectResponses(respChan, len(ClusterHosts))
 
 	// update collected units/nodes health statuses
-	UpdateHealthStatus(ClusterHttpResponses, pi)
+	updateHealthStatus(ClusterHttpResponses, pi)
 
 	log.Debug(fmt.Sprintf("Waiting %d seconds before next pull", sec))
 	pi.WaitBetweenPulls(sec)
 }
 
 // function builds a map of all unique units with status
-func UpdateHealthStatus(responses []*HttpResponse, pi Puller) {
+func updateHealthStatus(responses []*HttpResponse, pi Puller) {
 	units := make(map[string]*Unit)
 	nodes := make(map[string]*Node)
 

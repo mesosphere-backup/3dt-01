@@ -1,18 +1,22 @@
-package api_test
+package api
 
 import (
-	. "github.com/dcos/3dt/api"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
-
+	// intentionally rename package to do some magic
+	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/gorilla/mux"
+	assertPackage "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
 )
 
-// FakeSystemdType success
+// Testing SystemdType
 type FakeSystemdType struct {
-	newCalled bool
-	params    map[string]bool
-	units     []string
+	units []string
 }
 
 func (st *FakeSystemdType) GetHostname() string {
@@ -48,7 +52,7 @@ func (st *FakeSystemdType) CloseDbusConnection() error {
 }
 
 func (st *FakeSystemdType) GetUnitNames() (units []string, err error) {
-	units = []string{"unit_a", "unit_b", "unit_c", "unit_to_fail"}
+	units = []string{"dcos-setup.service", "dcos-link-env.service", "dcos-download.service", "unit_a", "unit_b", "unit_c", "unit_to_fail"}
 	return units, err
 }
 
@@ -60,114 +64,443 @@ func (st *FakeSystemdType) GetMesosNodeId(role string, field string) string {
 	return "node-id-123"
 }
 
-var _ = Describe("Test systemd", func() {
-	var cfg Config
+type HandlersTestSuit struct {
+	suite.Suite
+	assert                              *assertPackage.Assertions
+	router                              *mux.Router
+	cfg                                 Config
+	mockedUnitsHealthResponseJsonStruct UnitsHealthResponseJsonStruct
+	mockedMonitoringResponse            MonitoringResponse
+}
 
-	BeforeEach(func() {
-		args := []string{"3dt", "test"}
-		cfg, _ = LoadDefaultConfig(args, "0.0.7")
-		cfg.Systemd = &FakeSystemdType{}
-	})
+// SetUp/Teardown
+func (suit *HandlersTestSuit) SetupTest() {
+	// setup variables
+	args := []string{"3dt", "test"}
+	suit.cfg, _ = LoadDefaultConfig(args)
+	suit.cfg.Systemd = &FakeSystemdType{}
+	suit.router = NewRouter(&suit.cfg)
+	suit.assert = assertPackage.New(suit.T())
 
-	Context("Succseful return", func() {
-		It("should execute GetUnitsProperties() with 6 service and get UnitsHealthResponseJsonStruct with 3 services", func() {
-			Expect(GetUnitsProperties(&cfg)).Should(Equal(UnitsHealthResponseJsonStruct{
-				Array: []UnitHealthResponseFieldsStruct{
+	// mock the response
+	suit.mockedUnitsHealthResponseJsonStruct = UnitsHealthResponseJsonStruct{
+		Array: []UnitHealthResponseFieldsStruct{
+			{
+				UnitId:     "dcos-master.service",
+				UnitHealth: 0,
+				UnitTitle:  "Master service",
+				PrettyName: "DC/OS Master service unit",
+			},
+			{
+				UnitId:     "dcos-ddt.service",
+				UnitHealth: 0,
+				UnitTitle:  "Diag service",
+				PrettyName: "3dt",
+			},
+		},
+		Hostname:    "localhost",
+		IpAddress:   "127.0.0.1",
+		DcosVersion: "1.7-dev",
+		Role:        "master",
+		MesosId:     "12345",
+		TdtVersion:  "1.2.3",
+	}
+	suit.mockedMonitoringResponse = MonitoringResponse{
+		Units: map[string]*Unit{
+			"dcos-adminrouter-reload.service": &Unit{
+				UnitName: "dcos-adminrouter-reload.service",
+				Nodes: []Node{
 					{
-						"unit_a",
-						0,
-						"",
-						"My fake description",
-						"",
-						"PrettyName",
+						Role:   "master",
+						Ip:     "10.0.7.190",
+						Host:   "",
+						Health: 0,
+						Output: map[string]string{
+							"dcos-adminrouter-reload.service": "",
+							"dcos-adminrouter-reload.timer":   "",
+						},
+						MesosId: "ab098f2a-799c-4d85-82b2-eb5159d0ceb0",
 					},
 					{
-						"unit_b",
-						0,
-						"",
-						"My fake description",
-						"",
-						"PrettyName",
-					},
-					{
-						"unit_c",
-						0,
-						"",
-						"My fake description",
-						"",
-						"PrettyName",
+						Role:   "agent",
+						Ip:     "10.0.7.191",
+						Host:   "",
+						Health: 0,
+						Output: map[string]string{
+							"dcos-adminrouter-reload.service": "",
+							"dcos-adminrouter-reload.timer":   "",
+						},
+						MesosId: "ab098f2a-799c-4d85-82b2-eb5159d0ceb0-S1",
 					},
 				},
-				DcosVersion: "",
-				Hostname:    "MyHostName",
-				IpAddress:   "127.0.0.1",
-				Role:        "master",
-				MesosId:     "node-id-123",
-				TdtVersion:  "0.0.7",
-			}))
-			Expect(cfg.SystemdUnits).Should(Equal([]string{
-				"dcos-setup.service",
-				"dcos-link-env.service",
-				"dcos-download.service",
-			}))
-		})
+				Health:     0,
+				Title:      "Reload admin router to get new DNS",
+				Timestamp:  time.Now(),
+				PrettyName: "Admin Router Reload",
+			},
+			"dcos-cosmos.service": &Unit{
+				UnitName: "dcos-cosmos.service",
+				Nodes: []Node{
+					{
+						Role:   "agent",
+						Ip:     "10.0.7.192",
+						Host:   "",
+						Health: 1,
+						Output: map[string]string{
+							"dcos-adminrouter-reload.service": "",
+							"dcos-cosmos.service":             "Some nasty error occured",
+						},
+						MesosId: "ab098f2a-799c-4d85-82b2-eb5159d0ceb0-S2",
+					},
+					{
+						Role:   "agent",
+						Ip:     "10.0.7.193",
+						Host:   "",
+						Health: 0,
+						Output: map[string]string{
+							"dcos-adminrouter-reload.service": "",
+							"dcos-adminrouter-reload.timer":   "",
+						},
+						MesosId: "ab098f2a-799c-4d85-82b2-eb5159d0ceb0-S3",
+					},
+				},
+				Health:     1,
+				Title:      "DCOS Packaging API",
+				Timestamp:  time.Now(),
+				PrettyName: "Package Service",
+			},
+		},
+		Nodes: map[string]*Node{
+			"10.0.7.190": &Node{
+				Role:   "master",
+				Ip:     "10.0.7.190",
+				Health: 0,
+				Output: map[string]string{
+					"dcos-adminrouter-reload.service": "",
+					"dcos-adminrouter-reload.timer":   "",
+				},
+				Units: []Unit{
+					{
+						UnitName: "dcos-adminrouter-reload.service",
+						Nodes: []Node{
+							{
+								Role:   "master",
+								Ip:     "10.0.7.190",
+								Host:   "",
+								Health: 0,
+								Output: map[string]string{
+									"dcos-adminrouter-reload.service": "",
+									"dcos-adminrouter-reload.timer":   "",
+								},
+								MesosId: "ab098f2a-799c-4d85-82b2-eb5159d0ceb0",
+							},
+							{
+								Role:   "agent",
+								Ip:     "10.0.7.191",
+								Host:   "",
+								Health: 0,
+								Output: map[string]string{
+									"dcos-adminrouter-reload.service": "",
+									"dcos-adminrouter-reload.timer":   "",
+								},
+								MesosId: "ab098f2a-799c-4d85-82b2-eb5159d0ceb0-S1",
+							},
+						},
+						Health:     0,
+						Title:      "Reload admin router to get new DNS",
+						Timestamp:  time.Now(),
+						PrettyName: "Admin Router Reload",
+					},
+				},
+				MesosId: "ab098f2a-799c-4d85-82b2-eb5159d0ceb0",
+			},
+		},
+	}
+
+	// Update global monitoring responses
+	GlobalMonitoringResponse.UpdateMonitoringResponse(suit.mockedMonitoringResponse)
+	HealthReport.UpdateHealthReport(suit.mockedUnitsHealthResponseJsonStruct)
+}
+
+func (suit *HandlersTestSuit) TearDownTest() {
+	// clear global variables that might be set
+	HealthReport = UnitsHealth{}
+	GlobalMonitoringResponse = MonitoringResponse{}
+}
+
+// Helper functions
+func MakeHttpRequest(t *testing.T, router *mux.Router, url string) (response []byte, err error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return response, err
+	}
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != 200 {
+		return response, errors.New(fmt.Sprintf("wrong HTTP response: %d", w.Code))
+	}
+	return w.Body.Bytes(), nil
+}
+
+func (s *HandlersTestSuit) get(url string) []byte {
+	response, err := MakeHttpRequest(s.T(), s.router, url)
+	s.assert.Nil(err, "Error makeing GET request")
+	return response
+}
+
+// Tests
+func (s *HandlersTestSuit) TestUnitsHealthStruct() {
+	// Test structure HealthReport get/set health report
+	HealthReport.UpdateHealthReport(UnitsHealthResponseJsonStruct{})
+	s.assert.Equal(HealthReport.GetHealthReport(), UnitsHealthResponseJsonStruct{}, "GetHealthReport() should be empty")
+	HealthReport.UpdateHealthReport(s.mockedUnitsHealthResponseJsonStruct)
+	s.assert.Equal(HealthReport.GetHealthReport(), s.mockedUnitsHealthResponseJsonStruct, "GetHealthReport() should NOT be empty")
+}
+
+func (s *HandlersTestSuit) TestUnitsHealthStatusFunc() {
+	// Test health endpoint /system/health/v1
+	resp := s.get("/system/health/v1")
+	var response UnitsHealthResponseJsonStruct
+	json.Unmarshal(resp, &response)
+
+	s.assert.NotEqual(response, UnitsHealthResponseJsonStruct{}, "Response cannot be empty")
+	s.assert.Equal(response, s.mockedUnitsHealthResponseJsonStruct)
+}
+
+func (s *HandlersTestSuit) TestgetAllUnitsHandlerFunc() {
+	// Test endpoint /system/health/v1/units
+	resp := s.get("/system/health/v1/units")
+
+	var response UnitsResponseJsonStruct
+	json.Unmarshal(resp, &response)
+
+	s.assert.NotEqual(response, UnitsResponseJsonStruct{}, "Response cannot be empty")
+	s.assert.Len(response.Array, 2, "Expected 2 units in response")
+	s.assert.Contains(response.Array, UnitResponseFieldsStruct{
+		UnitId:     "dcos-adminrouter-reload.service",
+		PrettyName: "Admin Router Reload",
+		UnitHealth: 0,
+		UnitTitle:  "Reload admin router to get new DNS",
+	})
+	s.assert.Contains(response.Array, UnitResponseFieldsStruct{
+		UnitId:     "dcos-cosmos.service",
+		PrettyName: "Package Service",
+		UnitHealth: 1,
+		UnitTitle:  "DCOS Packaging API",
+	})
+}
+
+func (s *HandlersTestSuit) TestgetUnitByIdHandlerFunc() {
+	// Test endpoint /system/health/v1/units/<unit>
+	resp := s.get("/system/health/v1/units/dcos-cosmos.service")
+
+	var response UnitResponseFieldsStruct
+	json.Unmarshal(resp, &response)
+
+	expectedResponse := UnitResponseFieldsStruct{
+		UnitId:     "dcos-cosmos.service",
+		PrettyName: "Package Service",
+		UnitHealth: 1,
+		UnitTitle:  "DCOS Packaging API",
+	}
+	s.assert.NotEqual(response, UnitsResponseJsonStruct{}, "Response cannot be empty")
+	s.assert.Equal(response, expectedResponse, "Response is in incorrect format")
+
+	// Unit should not be found
+	resp = s.get("/system/health/v1/units/dcos-notfound.service")
+	s.assert.Equal(string(resp), "{}\n")
+}
+
+func (s *HandlersTestSuit) TestgetNodesByUnitIdHandlerFunc() {
+	// Test endpoint /system/health/v1/units/<unit>/nodes
+	resp := s.get("/system/health/v1/units/dcos-cosmos.service/nodes")
+	var response NodesResponseJsonStruct
+	json.Unmarshal(resp, &response)
+
+	s.assert.NotEqual(response, NodesResponseJsonStruct{}, "Response cannot be empty")
+	s.assert.Len(response.Array, 2, "Number of hosts must be 2")
+
+	s.assert.Contains(response.Array, &NodeResponseFieldsStruct{
+		HostIp:     "10.0.7.192",
+		NodeHealth: 1,
+		NodeRole:   "agent",
+	})
+	s.assert.Contains(response.Array, &NodeResponseFieldsStruct{
+		HostIp:     "10.0.7.193",
+		NodeHealth: 0,
+		NodeRole:   "agent",
 	})
 
-	Context("Test help functions", func() {
-		It("IsInList should return true", func() {
-			Expect(IsInList("match", []string{"test", "match", "none"})).Should(Equal(true))
-		})
+	// Unit should not be found and no nodes should be returned
+	resp = s.get("/system/health/v1/units/dcos-notfound.service/nodes")
+	s.assert.Equal(string(resp), "{}\n")
+}
 
-		It("IsInList should return false", func() {
-			Expect(IsInList("nomatch", []string{"test", "match", "none"})).Should(Equal(false))
-		})
+func (s *HandlersTestSuit) TestgetNodeByUnitIdNodeIdHandlerFunc() {
+	// Test endpoint /system/health/v1/units/<unitid>/nodes/<nodeid>
+	resp := s.get("/system/health/v1/units/dcos-cosmos.service/nodes/10.0.7.192")
 
-		It("should return healthy unit", func() {
-			p := make(map[string]interface{})
-			p["LoadState"] = "loaded"
-			p["ActiveState"] = "active"
-			p["Description"] = "PrettyName: Description"
+	var response NodeResponseFieldsWithErrorStruct
+	json.Unmarshal(resp, &response)
+	s.assert.NotEqual(response, NodeResponseFieldsWithErrorStruct{}, "Response should not be empty")
 
-			Expect(NormalizeProperty("unit_name", p, cfg.Systemd)).Should(Equal(UnitHealthResponseFieldsStruct{
-				"unit_name",
-				0,
-				"",
-				"Description",
-				"",
-				"PrettyName",
-			}))
-		})
+	expectedResponse := NodeResponseFieldsWithErrorStruct{
+		HostIp:     "10.0.7.192",
+		NodeHealth: 1,
+		NodeRole:   "agent",
+		UnitOutput: "Some nasty error occured",
+		Help:       "Node available at `dcos node ssh -mesos-id ab098f2a-799c-4d85-82b2-eb5159d0ceb0-S2`. Try, `journalctl -xv` to diagnose further.",
+	}
+	s.assert.Equal(response, expectedResponse, "Response is in incorrect format")
 
-		It("should return unhealthy unit, LoadState cannot be not `loaded`", func() {
-			p := make(map[string]interface{})
-			p["LoadState"] = "unloaded"
-			p["ActiveState"] = "active"
-			p["Description"] = "PrettyName: Description"
+	// use wrong unit
+	resp = s.get("/system/health/v1/units/dcos-notfound.service/nodes/10.0.7.192")
+	s.assert.Equal(string(resp), "{}\n")
 
-			Expect(NormalizeProperty("unit_name", p, cfg.Systemd)).Should(Equal(UnitHealthResponseFieldsStruct{
-				"unit_name",
-				1,
-				"unit_name is not loaded. Please check `systemctl show all` to check current unit status. \njournal output",
-				"Description",
-				"",
-				"PrettyName",
-			}))
-		})
+	// use wrong node
+	resp = s.get("/system/health/v1/units/dcos-cosmos.service/nodes/127.0.0.1")
+	s.assert.Equal(string(resp), "{}\n")
+}
 
-		It("should return unhealthy unit, ActiveState should be `active` or `inactive`", func() {
-			p := make(map[string]interface{})
-			p["LoadState"] = "loaded"
-			p["ActiveState"] = "notactive"
-			p["Description"] = "PrettyName: Description"
-			Expect(NormalizeProperty("unit_name", p, cfg.Systemd)).Should(Equal(UnitHealthResponseFieldsStruct{
-				"unit_name",
-				1,
-				"unit_name state is not one of the possible states [active inactive activating]. Current state is [ notactive ]. Please check `systemctl show all unit_name` to check current unit state. \njournal output",
-				"Description",
-				"",
-				"PrettyName",
-			}))
-		})
+func (s *HandlersTestSuit) TestgetNodesHandlerFunc() {
+	// Test endpoint /system/health/v1/nodes
+	resp := s.get("/system/health/v1/nodes")
+
+	var response NodesResponseJsonStruct
+	json.Unmarshal(resp, &response)
+
+	s.assert.NotEqual(response, NodesResponseJsonStruct{}, "Response cannot be empty")
+	s.assert.Len(response.Array, 1, "Number of nodes in respons must be 1")
+	fmt.Printf("%s\n", response.Array)
+	s.assert.Contains(response.Array, &NodeResponseFieldsStruct{
+		HostIp:     "10.0.7.190",
+		NodeHealth: 0,
+		NodeRole:   "master",
+	})
+}
+
+func (s *HandlersTestSuit) TestgetNodeByIdHandlerFunc() {
+	// Test endpoint /system/health/v1/nodes/<nodeid>
+	resp := s.get("/system/health/v1/nodes/10.0.7.190")
+
+	var response NodeResponseFieldsStruct
+	json.Unmarshal(resp, &response)
+
+	s.assert.Equal(response, NodeResponseFieldsStruct{
+		HostIp:     "10.0.7.190",
+		NodeHealth: 0,
+		NodeRole:   "master",
 	})
 
-})
+	// use wrong host
+	resp = s.get("/system/health/v1/nodes/127.0.0.1")
+	s.assert.Equal(string(resp), "{}\n")
+}
+
+func (s *HandlersTestSuit) TestgetNodeUnitsByNodeIdHandlerFunc() {
+	// Test endpoint /system/health/v1/nodes/<nodeid>/units
+	resp := s.get("/system/health/v1/nodes/10.0.7.190/units")
+
+	var response UnitsResponseJsonStruct
+	json.Unmarshal(resp, &response)
+	s.assert.NotEqual(response, UnitsResponseJsonStruct{}, "Response cannot be empty")
+	s.assert.Len(response.Array, 1, "Response should have 1 unit")
+	s.assert.Contains(response.Array, UnitResponseFieldsStruct{
+		UnitId:     "dcos-adminrouter-reload.service",
+		PrettyName: "Admin Router Reload",
+		UnitHealth: 0,
+		UnitTitle:  "Reload admin router to get new DNS",
+	})
+
+	// use wrong host
+	resp = s.get("/system/health/v1/nodes/127.0.0.1/units")
+	s.assert.Equal(string(resp), "{}\n")
+}
+
+func (s *HandlersTestSuit) TestgetNodeUnitByNodeIdUnitIdHandlerFunc() {
+	// Test endpoint /system/health/v1/nodes/<nodeid>/units/<unitid>
+	resp := s.get("/system/health/v1/nodes/10.0.7.190/units/dcos-adminrouter-reload.service")
+
+	var response UnitResponseFieldsStruct
+	json.Unmarshal(resp, &response)
+	s.assert.Equal(response, UnitResponseFieldsStruct{
+		UnitId:     "dcos-adminrouter-reload.service",
+		PrettyName: "Admin Router Reload",
+		UnitHealth: 0,
+		UnitTitle:  "Reload admin router to get new DNS",
+	})
+
+	// use wrong host
+	resp = s.get("/system/health/v1/nodes/127.0.0.1/units/dcos-adminrouter-reload.service")
+	s.assert.Equal(string(resp), "{}\n")
+
+	// use wrong service
+	resp = s.get("/system/health/v1/nodes/10.0.7.190/units/dcos-bad.service")
+	s.assert.Equal(string(resp), "{}\n")
+}
+
+func (s *HandlersTestSuit) TestreportHandlerFunc() {
+	// Test endpoint /system/health/v1/report
+	resp := s.get("/system/health/v1/report")
+
+	var response MonitoringResponse
+	json.Unmarshal(resp, &response)
+	s.assert.Len(response.Units, 2)
+	s.assert.Len(response.Nodes, 1)
+}
+
+func (s *HandlersTestSuit) TestIsInListFunc() {
+	array := []string{"DC", "OS", "SYS"}
+	s.assert.Equal(IsInList("DC", array), true, "DC should be in test array")
+	s.assert.Equal(IsInList("CD", array), false, "CD should not be in test array")
+
+}
+
+func (s *HandlersTestSuit) TestStartUpdateHealthReportActualImplementationFunc() {
+	// clear any health report
+	HealthReport.UpdateHealthReport(UnitsHealthResponseJsonStruct{})
+	s.cfg.Systemd = &SystemdType{}
+
+	readyChan := make(chan bool, 1)
+	StartUpdateHealthReport(s.cfg, readyChan, true)
+	hr := HealthReport.GetHealthReport()
+	s.assert.Equal(hr, UnitsHealthResponseJsonStruct{})
+}
+
+func (s *HandlersTestSuit) TestStartUpdateHealthReportFunc() {
+	readyChan := make(chan bool, 1)
+	StartUpdateHealthReport(s.cfg, readyChan, true)
+	hr := HealthReport.GetHealthReport()
+	s.assert.Equal(hr, UnitsHealthResponseJsonStruct{
+		Array: []UnitHealthResponseFieldsStruct{
+			{
+				UnitId:     "unit_a",
+				UnitHealth: 0,
+				UnitTitle:  "My fake description",
+				PrettyName: "PrettyName",
+			},
+			{
+				UnitId:     "unit_b",
+				UnitHealth: 0,
+				UnitTitle:  "My fake description",
+				PrettyName: "PrettyName",
+			},
+			{
+				UnitId:     "unit_c",
+				UnitHealth: 0,
+				UnitTitle:  "My fake description",
+				PrettyName: "PrettyName",
+			},
+		},
+		Hostname:    "MyHostName",
+		IpAddress:   "127.0.0.1",
+		DcosVersion: "",
+		Role:        "master",
+		MesosId:     "node-id-123",
+		TdtVersion:  "0.0.12",
+	})
+}
+
+func TestHandlersTestSuit(t *testing.T) {
+	suite.Run(t, new(HandlersTestSuit))
+}

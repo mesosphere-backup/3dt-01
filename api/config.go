@@ -1,27 +1,32 @@
 package api
 
 import (
-	"os"
 	"flag"
+	"os"
 
-	log "github.com/Sirupsen/logrus"
 	"errors"
+	log "github.com/Sirupsen/logrus"
 )
+
+const Version string = "0.0.12"
+
+var Revision string
 
 // config structure used in main
 type Config struct {
-	Version			string
-	MesosIpDiscoveryCommand	string
-	DcosVersion		string
-	Systemd			SystemdInterface
-	SystemdUnits		[]string
+	Version                 string
+	Revision                string
+	MesosIpDiscoveryCommand string
+	DcosVersion             string
+	Systemd                 SystemdInterface
+	SystemdUnits            []string
 
-	FlagPull		bool
-	FlagDiag		bool
-	FlagVerbose		bool
-	FlagVersion		bool
-	FlagPort		int
-	FlagPullInterval	int
+	FlagPull         bool
+	FlagDiag         bool
+	FlagVerbose      bool
+	FlagVersion      bool
+	FlagPort         int
+	FlagPullInterval int
 }
 
 func (c *Config) SetFlags(fs *flag.FlagSet) {
@@ -33,7 +38,7 @@ func (c *Config) SetFlags(fs *flag.FlagSet) {
 	fs.IntVar(&c.FlagPullInterval, "pull-interval", c.FlagPullInterval, "Set pull interval, default 60 sec.")
 }
 
-func LoadDefaultConfig(args []string, version string) (config Config, err error) {
+func LoadDefaultConfig(args []string) (config Config, err error) {
 	if len(args) == 0 {
 		return config, errors.New("arguments cannot be empty")
 	}
@@ -42,8 +47,9 @@ func LoadDefaultConfig(args []string, version string) (config Config, err error)
 	config.FlagPort = 1050
 
 	// default pulling interval is 60 seconds
-	config.FlagPullInterval= 60
-	config.Version = version
+	config.FlagPullInterval = 60
+	config.Version = Version
+	config.Revision = Revision
 
 	detectIpCmd := os.Getenv("MESOS_IP_DISCOVERY_COMMAND")
 	if detectIpCmd == "" {

@@ -1,4 +1,5 @@
 # 3DT
+# 3DT [![velocity](http://velocity.mesosphere.com/service/velocity/buildStatus/icon?job=public-dcos-3dt-master)](http://velocity.mesosphere.com/service/velocity/job/public-dcos-3dt-master/)
 ## DC/OS Distributed Diagnostics Tool & Aggregation Service
 3DT is a monitoring agent which exposes a HTTP API for querying from the /system/health/v1 DC/OS api. 3DT puller collects the data from 3dt agents and represents individual node health for things like system resources as well as DC/OS-specific services.
 
@@ -6,7 +7,7 @@
 
 ```
 go get github.com/dcos/3dt
-cd $GOPATH/github.com/dcos/3dt
+cd $GOPATH/src/github.com/dcos/3dt
 make install
 ./3dt -version
 ```
@@ -30,7 +31,7 @@ Run the 3DT aggregation service to query all cluster hosts for health state:
 3dt -pull
 ```
 
-Star the 3DT health API endpoint:
+Start the 3DT health API endpoint:
 
 ```
 3dt

@@ -6,7 +6,7 @@
 
 ```
 go get github.com/dcos/3dt
-cd $GOPATH/github.com/dcos/3dt
+cd $GOPATH/src/github.com/dcos/3dt
 go install
 3dt -version
 ```
@@ -30,7 +30,7 @@ Run the 3DT aggregation service to query all cluster hosts for health state:
 3dt -pull
 ```
 
-Star the 3DT health API endpoint:
+Start the 3DT health API endpoint:
 
 ```
 3dt

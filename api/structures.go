@@ -1,8 +1,12 @@
 package api
 
 import (
-	"time"
+	"github.com/shirou/gopsutil/disk"
+	"github.com/shirou/gopsutil/load"
+	"github.com/shirou/gopsutil/mem"
 	"sync"
+	"time"
+	"github.com/coreos/go-systemd/dbus"
 )
 
 // top level global variable to store the entire units/nodes status tree
@@ -14,23 +18,23 @@ type MonitoringResponse struct {
 
 // Unit for systemd unit
 type Unit struct {
-	UnitName  	string
-	Nodes     	[]Node
-	Health    	int
-	Title     	string
-	Timestamp 	time.Time
-	PrettyName	string
+	UnitName   string
+	Nodes      []Node
+	Health     int
+	Title      string
+	Timestamp  time.Time
+	PrettyName string
 }
 
 // Node for DC/OS node
 type Node struct {
 	Leader  bool
-	Role	string
-	Ip	string
-	Host	string
-	Health	int
-	Output	map[string]string
-	Units 	[]Unit
+	Role    string
+	Ip      string
+	Host    string
+	Health  int
+	Output  map[string]string
+	Units   []Unit
 	MesosId string
 }
 
@@ -42,16 +46,24 @@ type HttpResponse struct {
 	Node   Node
 }
 
+type SysMetrics struct {
+	Memory      mem.VirtualMemoryStat `json:"memory"`
+	LoadAvarage load.AvgStat          `json:"load_avarage"`
+	Partitions  []disk.PartitionStat  `json:"partitions"`
+	DiskUsage   []disk.UsageStat      `json:"disk_usage"`
+}
+
 // responses in JSON format
 // units health response used by a local node to send units status
 type UnitsHealthResponseJsonStruct struct {
-	Array    []UnitHealthResponseFieldsStruct `json:"units"`
-	Hostname 	string                    `json:"hostname"`
-	IpAddress 	string			  `json:"ip"`
-	DcosVersion 	string 			  `json:"dcos_version"`
-	Role		string			  `json:"node_role"`
-	MesosId		string			  `json:"mesos_id"`
-	TdtVersion	string			  `json:"3dt_version"`
+	Array       []UnitHealthResponseFieldsStruct `json:"units"`
+	System      SysMetrics                       `json:"system"`
+	Hostname    string                           `json:"hostname"`
+	IpAddress   string                           `json:"ip"`
+	DcosVersion string                           `json:"dcos_version"`
+	Role        string                           `json:"node_role"`
+	MesosId     string                           `json:"mesos_id"`
+	TdtVersion  string                           `json:"3dt_version"`
 }
 
 type UnitHealthResponseFieldsStruct struct {
@@ -69,10 +81,10 @@ type UnitsResponseJsonStruct struct {
 }
 
 type UnitResponseFieldsStruct struct {
-	UnitId     string  `json:"id"`
-	PrettyName string  `json:"name"`
-	UnitHealth int     `json:"health"`
-	UnitTitle  string  `json:"description"`
+	UnitId     string `json:"id"`
+	PrettyName string `json:"name"`
+	UnitHealth int    `json:"health"`
+	UnitTitle  string `json:"description"`
 }
 
 // nodes response
@@ -91,7 +103,7 @@ type NodeResponseFieldsWithErrorStruct struct {
 	NodeHealth int    `json:"health"`
 	NodeRole   string `json:"role"`
 	UnitOutput string `json:"output"`
-	Help	   string `json:"help"`
+	Help       string `json:"help"`
 }
 
 // Agent response json format
@@ -102,8 +114,25 @@ type AgentsResponse struct {
 }
 
 type ExhibitorNodeResponse struct {
-	Code		int
-	Description	string
-	Hostname	string
-	IsLeader	bool
+	Code        int
+	Description string
+	Hostname    string
+	IsLeader    bool
+}
+
+// SystemdInterface implementation
+type DcosHealth struct {
+       sync.Mutex
+       dcon     *dbus.Conn
+       hostname string
+       role     string
+       ip       string
+       mesos_id string
+}
+
+type Dt struct {
+	DtPuller        Puller
+	DtHealth        HealthReporter
+	DtSnapshotJob   *SnapshotJob
+	Cfg             *Config
 }

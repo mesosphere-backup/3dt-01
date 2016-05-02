@@ -11,7 +11,7 @@ type Puller interface {
 	GetAgentsFromMaster() ([]Node, error)
 
 	// functions make a GET request to a remote node, return an array of response, response status and error
-	GetUnitsPropertiesViaHttp(string) ([]byte, int, error)
+	GetHttp(string) ([]byte, int, error)
 
 	// function to wait between pulls
 	WaitBetweenPulls(int)

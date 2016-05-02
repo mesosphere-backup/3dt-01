@@ -22,7 +22,7 @@ func (pt *PullType) GetTimestamp() time.Time {
 	return time.Now()
 }
 
-func (pt *PullType) GetUnitsPropertiesViaHttp(url string) ([]byte, int, error) {
+func (pt *PullType) GetHttp(url string) ([]byte, int, error) {
 	var body []byte
 
 	// a timeout of 1 seconds should be good enough
@@ -373,20 +373,20 @@ func (mr *MonitoringResponse) GetNodeUnitByNodeIdUnitId(nodeIp string, unitId st
 }
 
 // entry point to pull
-func StartPullWithInterval(config Config, pi Puller, ready chan bool) {
+func StartPullWithInterval(dt Dt, ready chan bool) {
 	select {
 	case r := <-ready:
 		if r == true {
-			log.Info(fmt.Sprintf("Start pulling with interval %d", config.FlagPullInterval))
+			log.Info(fmt.Sprintf("Start pulling with interval %d", dt.Cfg.FlagPullInterval))
 			for {
-				runPull(config.FlagPullInterval, config.FlagPort, pi)
+				runPull(dt.Cfg.FlagPullInterval, dt.Cfg.FlagPort, dt.DtPuller)
 			}
 
 		}
 	case <-time.After(time.Second * 10):
 		log.Error("Not ready to pull from localhost after 10 seconds")
 		for {
-			runPull(config.FlagPullInterval, config.FlagPort, pi)
+			runPull(dt.Cfg.FlagPullInterval, dt.Cfg.FlagPort, dt.DtPuller)
 		}
 	}
 }
@@ -504,7 +504,7 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *HttpResponse, port int, 
 
 		// Make a request to get node units status
 		// use fake interface implementation for tests
-		body, statusCode, err := pi.GetUnitsPropertiesViaHttp(url)
+		body, statusCode, err := pi.GetHttp(url)
 		if err != nil {
 			log.Error(err)
 			response.Status = 500

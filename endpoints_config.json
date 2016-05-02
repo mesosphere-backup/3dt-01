@@ -1,0 +1,243 @@
+{
+    "HTTPEndpoints": [
+        {
+            "Port": 5050,
+            "Uri": "/__processes__",
+            "FileName": "master-___processes__.log",
+            "Role": "master"
+        },
+        {
+            "Port": 5050,
+            "Uri": "/master/flags",
+            "FileName": "master-_master_flags.log",
+            "Role": "master"
+        },
+        {
+            "Port": 5050,
+            "Uri": "/master/frameworks",
+            "FileName": "master-_master_frameworks.log",
+            "Role": "master"
+        },
+        {
+            "Port": 5050,
+            "Uri": "/master/maintenance/schedule",
+            "FileName": "master-_master_maintenance_schedule.log",
+            "Role": "master"
+        },
+        {
+            "Port": 5050,
+            "Uri": "/master/maintenance/status",
+            "FileName": "master-_master_maintenance_status.log",
+            "Role": "master"
+        },
+        {
+            "Port": 5050,
+            "Uri": "/master/roles",
+            "FileName": "master-_master_roles.log",
+            "Role": "master"
+        },
+        {
+            "Port": 5050,
+            "Uri": "/master/slaves",
+            "FileName": "master-_master_slaves.log",
+            "Role": "master"
+        },
+        {
+            "Port": 5050,
+            "Uri": "/master/state",
+            "FileName": "master-_master_state.log",
+            "Role": "master"
+        },
+        {
+            "Port": 5050,
+            "Uri": "/master/state-summary",
+            "FileName": "master-_master_state-summary.log",
+            "Role": "master"
+        },
+        {
+            "Port": 5050,
+            "Uri": "/master/tasks",
+            "FileName": "master-_master_tasks.log",
+            "Role": "master"
+        },
+        {
+            "Port": 5050,
+            "Uri": "/metrics/snapshot",
+            "FileName": "master-_metrics_snapshot.log",
+            "Role": "master"
+        },
+        {
+            "Port": 5050,
+            "Uri": "/registrar(1)/registry",
+            "FileName": "master-_registrar(1)_registry.log",
+            "Role": "master"
+        },
+        {
+            "Port": 5050,
+            "Uri": "/system/stats.json",
+            "FileName": "master-_system_stats.json.log",
+            "Role": "master"
+        },
+        {
+            "Port": 5050,
+            "Uri": "/version",
+            "FileName": "master-_version.log",
+            "Role": "master"
+        },
+        {
+            "Port": 8080,
+            "Uri": "/metrics",
+            "FileName": "marathon-_metrics.log",
+            "Role": "master"
+        },
+        {
+            "Port": 8080,
+            "Uri": "/v2/apps",
+            "FileName": "marathon-_v2_apps.log",
+            "Role": "master"
+        },
+        {
+            "Port": 8080,
+            "Uri": "/v2/deployments",
+            "FileName": "marathon-_v2_deployments.log",
+            "Role": "master"
+        },
+        {
+            "Port": 8080,
+            "Uri": "/v2/eventSubscriptions",
+            "FileName": "marathon-_v2_eventSubscriptions.log",
+            "Role": "master"
+        },
+        {
+            "Port": 8080,
+            "Uri": "/v2/groups",
+            "FileName": "marathon-_v2_groups.log",
+            "Role": "master"
+        },
+        {
+            "Port": 8080,
+            "Uri": "/v2/info",
+            "FileName": "marathon-_v2_info.log",
+            "Role": "master"
+        },
+        {
+            "Port": 8080,
+            "Uri": "/v2/leader",
+            "FileName": "marathon-_v2_leader.log",
+            "Role": "master"
+        },
+        {
+            "Port": 8080,
+            "Uri": "/v2/queue",
+            "FileName": "marathon-_v2_queue.log",
+            "Role": "master"
+        },
+        {
+            "Port": 8080,
+            "Uri": "/v2/tasks",
+            "FileName": "marathon-_v2_tasks.log",
+            "Role": "master"
+        },
+        {
+            "Port": 8181,
+            "Uri": "/exhibitor/v1/cluster/list",
+            "FileName": "exhibitor-_exhibitor_v1_cluster_list.log",
+            "Role": "master"
+        },
+        {
+            "Port": 8181,
+            "Uri": "/exhibitor/v1/cluster/log",
+            "FileName": "exhibitor-_exhibitor_v1_cluster_log.log",
+            "Role": "master"
+        },
+        {
+            "Port": 8181,
+            "Uri": "/exhibitor/v1/cluster/state",
+            "FileName": "exhibitor-_exhibitor_v1_cluster_state.log",
+            "Role": "master"
+        },
+        {
+            "Port": 8181,
+            "Uri": "/exhibitor/v1/cluster/status",
+            "FileName": "exhibitor-_exhibitor_v1_cluster_status.log",
+            "Role": "master"
+        },
+        {
+            "Port": 8181,
+            "Uri": "/exhibitor/v1/config/get-state",
+            "FileName": "exhibitor-_exhibitor_v1_config_get-state.log",
+            "Role": "master"
+        },
+        {
+            "Port": 5051,
+            "Uri": "/__processes__",
+            "FileName": "agent-___processes__.log",
+            "Role": "agent"
+        },
+        {
+            "Port": 5051,
+            "Uri": "/metrics/snapshot",
+            "FileName": "agent-_metrics_snapshot.log",
+            "Role": "agent"
+        },
+        {
+            "Port": 5051,
+            "Uri": "/slave/flags",
+            "FileName": "agent-_slave_flags.log",
+            "Role": "agent"
+        },
+        {
+            "Port": 5051,
+            "Uri": "/slave/state",
+            "FileName": "agent-_slave_state.log",
+            "Role": "agent"
+        },
+        {
+            "Port": 5051,
+            "Uri": "/system/stats.json",
+            "FileName": "agent-_system_stats.json.log",
+            "Role": "agent"
+        },
+        {
+            "Port": 8123,
+            "Uri": "/v1/config",
+            "FileName": "mesosdns-_v1_config.log",
+            "Role": "master"
+        },
+        {
+            "Port": 8123,
+            "Uri": "/v1/version",
+            "FileName": "mesosdns-_v1_version.log",
+            "Role": "master"
+        },
+        {
+            "Port": 15055,
+            "Uri": "/history/last",
+            "FileName": "history-_hisotry_last.log",
+            "Role": "master"
+        },
+        {
+            "Port": 15055,
+            "Uri": "/history/minute",
+            "FileName": "history-_hisotry_minute.log",
+            "Role": "master"
+        },
+        {
+            "Port": 15055,
+            "Uri": "/history/hour",
+            "FileName": "history-_hisotry_hour.log",
+            "Role": "master"
+        }
+    ],
+    "LocalFiles": [
+        {
+            "Location": "/opt/mesosphere/active.buildinfo.full.json"
+        }
+    ],
+    "LocalCommands": [
+        {
+            "Command": ["dmesg"]
+        }
+    ]
+}
+

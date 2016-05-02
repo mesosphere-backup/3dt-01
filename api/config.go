@@ -8,7 +8,7 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
-const Version string = "0.0.12"
+const Version string = "0.1.0"
 
 var Revision string
 
@@ -26,6 +26,9 @@ type Config struct {
 	FlagVerbose      bool
 	FlagVersion      bool
 	FlagPort         int
+	FlagPortSsl      int
+	FlagSslCertPath  string
+	FlagSslKeyPath   string
 	FlagPullInterval int
 }
 
@@ -34,7 +37,10 @@ func (c *Config) SetFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.FlagDiag, "diag", c.FlagDiag, "Get diagnostics output once on the CLI. Does not expose API.")
 	fs.BoolVar(&c.FlagVerbose, "verbose", c.FlagVerbose, "Use verbose debug output.")
 	fs.BoolVar(&c.FlagVersion, "version", c.FlagVersion, "Print version.")
-	fs.IntVar(&c.FlagPort, "port", c.FlagPort, "Web server TCP port.")
+	fs.IntVar(&c.FlagPort, "port", c.FlagPort, "HTTP web server port.")
+	fs.IntVar(&c.FlagPortSsl, "port-ssl", c.FlagPortSsl, "HTTPS web server port.")
+	fs.StringVar(&c.FlagSslCertPath, "cert", c.FlagSslCertPath, "SSL certificate path.")
+	fs.StringVar(&c.FlagSslKeyPath, "key", c.FlagSslKeyPath, "SSL key path.")
 	fs.IntVar(&c.FlagPullInterval, "pull-interval", c.FlagPullInterval, "Set pull interval, default 60 sec.")
 }
 
@@ -43,8 +49,16 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 		return config, errors.New("arguments cannot be empty")
 	}
 
-	// default tcp port is 1050
+	// default http port
 	config.FlagPort = 1050
+
+	// default https port
+	config.FlagPortSsl = 1051
+
+	// TODO(mnaboka): FIX ME
+	// default cert / key path
+	config.FlagSslCertPath = "/opt/mesosphere/ssl/cert.pem"
+	config.FlagSslKeyPath = "/opt/mesosphere/ssl/key.pem"
 
 	// default pulling interval is 60 seconds
 	config.FlagPullInterval = 60

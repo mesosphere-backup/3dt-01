@@ -9,7 +9,6 @@ import (
 	"net/http"
 )
 
-
 func getVersion() string {
 	return (fmt.Sprintf("Version: %s, Revision: %s", api.Version, api.Revision))
 }

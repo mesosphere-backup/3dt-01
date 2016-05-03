@@ -5,11 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
+	"net"
+	"strconv"
 )
 
 var GlobalMonitoringResponse MonitoringResponse
@@ -72,48 +73,135 @@ func (pt *PullType) LookupMaster() (nodes_response []Node, err error) {
 	return nodes_response, nil
 }
 
-func (pt *PullType) GetAgentsFromMaster() (nodes []Node, err error) {
-	// a list of all agents is available from a leader
-	leaderIp, err := net.LookupHost("leader.mesos")
-	if err != nil {
-		log.Error("Unable to resolve mesos leader to get a list of agents")
-		return nodes, err
-	}
-	log.Debugf("Resolved mesos leader ip: %s", leaderIp)
-	agentRequest := fmt.Sprintf("http://%s:5050/slaves", leaderIp)
+// agentResponder interface implementation to get a list of agents from a leader master (dns based) or from
+// history service.
+type dnsResponder struct {
+	defaultMasterAddress string
+}
 
-	// Make our request for to /slaves endpoint, return clusterHosts if failed.
+type historyServiceResponder struct {
+	defaultPastTime string
+}
+
+func (hs historyServiceResponder) getAgentSource() (jsonFiles []string, err error) {
+	basePath := "/var/lib/mesosphere/dcos/history-service" + hs.defaultPastTime
+	files, err := ioutil.ReadDir(basePath)
+	if err != nil {
+		return jsonFiles, err
+	}
+	for _, file := range files {
+		jsonFiles = append(jsonFiles, basePath+file.Name())
+	}
+	return jsonFiles, nil
+}
+
+func (hs historyServiceResponder) getMesosAgents(jsonPath []string) (nodes []Node, err error) {
+	nodeCount := make(map[string]int)
+
+	for _, historyFile := range jsonPath {
+		agents, err := ioutil.ReadFile(historyFile)
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+
+		unquoted_agents, err := strconv.Unquote(string(agents))
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+
+		var sr AgentsResponse
+		if err := json.Unmarshal([]byte(unquoted_agents), &sr); err != nil {
+			log.Error(err)
+			continue
+		}
+
+		// get all nodes for the past hour
+		for _, agent := range sr.Agents {
+			if _, ok := nodeCount[agent.Hostname]; ok {
+				nodeCount[agent.Hostname]++
+			} else {
+				nodeCount[agent.Hostname] = 1
+			}
+		}
+
+	}
+	if len(nodeCount) == 0 {
+		return nodes, errors.New("Agent nodes were not found in hisotry service for the past hour")
+	}
+	for ip, _ := range nodeCount {
+		var node Node
+		node.Role = "agent"
+		node.Ip = ip
+		nodes = append(nodes, node)
+	}
+	return nodes, nil
+}
+
+func (dr dnsResponder) getAgentSource() (leaderIps []string, err error) {
+	leaderIps, err = net.LookupHost(dr.defaultMasterAddress)
+	if err != nil {
+		return leaderIps, err
+	}
+	log.Debugf("Resolving leader.mesos ip: %s", leaderIps)
+	if len(leaderIps) > 1 {
+		log.Warningf("leader.mesos returned more then 1 IP! %s", leaderIps)
+	}
+	return leaderIps, nil
+}
+
+func (dt dnsResponder) getMesosAgents(leaderIp []string) (nodes []Node, err error) {
+	agentRequest := fmt.Sprintf("http://%s:5050/slaves", leaderIp)
 	timeout := time.Duration(time.Second)
 	client := http.Client{Timeout: timeout}
 	getAgents, err := client.Get(agentRequest)
 	if err != nil {
-		log.Error(fmt.Sprintf("Unable to reach %s - can not determine cluster slave IPs.", agentRequest))
 		return nodes, err
 	}
 	defer getAgents.Body.Close()
-
-	// Read in the response body from the /slaves endpoint. Return clusterHosts if it fails.
 	agents, err := ioutil.ReadAll(getAgents.Body)
 	if err != nil {
-		log.Errorf("Unabled to read the response from %s", agentRequest)
 		return nodes, err
 	}
 
-	// Create a local instance of our interface{} to unmarshal the JSON response into
-	// TODO(mnaboka): Something is not right here, why do we have AgentsResponse
 	var sr AgentsResponse
 	if err := json.Unmarshal([]byte(agents), &sr); err != nil {
-		log.Error("Could not deserialize agents response")
 		return nodes, err
 	}
-	log.Debug(fmt.Sprintf("Slaves response from: %s", sr))
+
 	for _, agent := range sr.Agents {
-		var host Node
-		host.Role = "agent"
-		host.Ip = agent.Hostname
-		nodes = append(nodes, host)
+		var node Node
+		node.Role = "agent"
+		node.Ip = agent.Hostname
+		nodes = append(nodes, node)
 	}
-	return nodes, nil
+	return nodes, err
+}
+
+func (pt *PullType) GetAgentsFromMaster() (nodes []Node, err error) {
+	retries := []agentResponder{
+		dnsResponder{
+			defaultMasterAddress: "leader.mesos",
+		},
+		historyServiceResponder{
+			defaultPastTime: "/hour/",
+		},
+	}
+	for _, retry := range retries {
+		source, err := retry.getAgentSource()
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+		nodes, err := retry.getMesosAgents(source)
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+		return nodes, nil
+	}
+	return nodes, errors.New("Could not get a list of agent nodes")
 }
 
 func (pt *PullType) WaitBetweenPulls(interval int) {

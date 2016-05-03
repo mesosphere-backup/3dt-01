@@ -51,3 +51,9 @@ type SystemdInterface interface {
 	// Get mesos node id, first argument is a role, second argument is a json field name
 	GetMesosNodeId(string, string) string
 }
+
+// interface defines where to get a list of mesos agent
+type agentResponder interface {
+	getAgentSource() ([]string, error)
+	getMesosAgents([]string) ([]Node, error)
+}

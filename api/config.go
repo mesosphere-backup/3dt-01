@@ -8,7 +8,7 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
-const Version string = "0.0.12"
+const Version string = "0.0.13"
 
 var Revision string
 

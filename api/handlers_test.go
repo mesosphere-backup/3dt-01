@@ -497,7 +497,7 @@ func (s *HandlersTestSuit) TestStartUpdateHealthReportFunc() {
 		DcosVersion: "",
 		Role:        "master",
 		MesosId:     "node-id-123",
-		TdtVersion:  "0.0.12",
+		TdtVersion:  "0.0.13",
 	})
 }
 

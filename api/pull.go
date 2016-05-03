@@ -9,7 +9,10 @@ import (
 	"net/http"
 	"time"
 
+	"crypto/tls"
+	"crypto/x509"
 	log "github.com/Sirupsen/logrus"
+	"strings"
 )
 
 var GlobalMonitoringResponse MonitoringResponse
@@ -21,23 +24,56 @@ func (pt *PullType) GetTimestamp() time.Time {
 	return time.Now()
 }
 
-func (pt *PullType) GetUnitsPropertiesViaHttp(url string) ([]byte, int, error) {
+func (pt *PullType) GetUnitsProperties(urls []string, config Config) ([]byte, int, error) {
 	var body []byte
+	resp, err := func(urls []string) (resp *http.Response, err error) {
+		for urlIndex, url := range urls {
+			var client http.Client
 
-	// a timeout of 1 seconds should be good enough
-	client := http.Client{
-		Timeout: time.Duration(time.Second),
-	}
+			if strings.HasPrefix(url, "https") {
+				pemData, err := ioutil.ReadFile(config.FlagSslCertPath)
+				if err != nil {
+					log.Error(err)
+					continue
+				}
 
-	resp, err := client.Get(url)
+				tlsConfig := &tls.Config{
+					RootCAs: x509.NewCertPool(),
+				}
+				transport := &http.Transport{
+					TLSClientConfig: tlsConfig,
+				}
+
+				ok := tlsConfig.RootCAs.AppendCertsFromPEM(pemData)
+				if !ok {
+					log.Error("Couldn't load PEM data")
+					continue
+				}
+				client = http.Client{
+					Transport: transport,
+					Timeout:   time.Duration(time.Second),
+				}
+			} else {
+				client = http.Client{
+					Timeout: time.Duration(time.Second),
+				}
+			}
+			log.Debugf("Trying GET %s", url)
+			resp, err = client.Get(url)
+			if err != nil && urlIndex < len(urls) {
+				log.Errorf("GET %s failed", url)
+				log.Error(err)
+				continue
+			}
+		}
+		return resp, err
+	}(urls)
 	if err != nil {
 		return body, 500, err
 	}
-
-	// http://devs.cloudimmunity.com/gotchas-and-common-mistakes-in-go-golang/index.html#close_http_resp_body
 	defer resp.Body.Close()
 	body, err = ioutil.ReadAll(resp.Body)
-	return body, resp.StatusCode, nil
+	return body, resp.StatusCode, err
 }
 
 func (pt *PullType) LookupMaster() (nodes_response []Node, err error) {
@@ -290,20 +326,16 @@ func StartPullWithInterval(config Config, pi Puller, ready chan bool) {
 	case r := <-ready:
 		if r == true {
 			log.Info(fmt.Sprintf("Start pulling with interval %d", config.FlagPullInterval))
-			for {
-				runPull(config.FlagPullInterval, config.FlagPort, pi)
-			}
-
 		}
 	case <-time.After(time.Second * 10):
 		log.Error("Not ready to pull from localhost after 10 seconds")
-		for {
-			runPull(config.FlagPullInterval, config.FlagPort, pi)
-		}
+	}
+	for {
+		runPull(config.FlagPullInterval, config, pi)
 	}
 }
 
-func runPull(sec int, port int, pi Puller) {
+func runPull(sec int, config Config, pi Puller) {
 	var ClusterHosts []Node
 	masterNodes, err := pi.LookupMaster()
 	if err != nil {
@@ -330,7 +362,7 @@ func runPull(sec int, port int, pi Puller) {
 
 	// Pull data from each host
 	for i := 0; i <= len(ClusterHosts); i++ {
-		go pullHostStatus(hostsChan, respChan, port, pi)
+		go pullHostStatus(hostsChan, respChan, config, pi)
 	}
 
 	// blocking here got get all responses from hosts
@@ -407,16 +439,15 @@ func collectResponses(respChan <-chan *HttpResponse, totalHosts int) (responses 
 	}
 }
 
-func pullHostStatus(hosts <-chan Node, respChan chan<- *HttpResponse, port int, pi Puller) {
+func pullHostStatus(hosts <-chan Node, respChan chan<- *HttpResponse, config Config, pi Puller) {
 	for host := range hosts {
 		var response HttpResponse
 
-		// UnitsRoute available in router.go
-		url := fmt.Sprintf("http://%s:%d%s", host.Ip, port, BaseRoute)
+		httpUrl := fmt.Sprintf("http://%s:%d%s", host.Ip, config.FlagPort, BaseRoute)
+		httpsUrl := fmt.Sprintf("https://%s:%d%s", host.Ip, config.FlagPortSsl, BaseRoute)
+		urls := []string{httpsUrl, httpUrl}
 
-		// Make a request to get node units status
-		// use fake interface implementation for tests
-		body, statusCode, err := pi.GetUnitsPropertiesViaHttp(url)
+		body, statusCode, err := pi.GetUnitsProperties(urls, config)
 		if err != nil {
 			log.Error(err)
 			response.Status = 500
@@ -429,7 +460,7 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *HttpResponse, port int, 
 		// Response should be strictly mapped to jsonBodyStruct, otherwise skip it
 		var jsonBody UnitsHealthResponseJsonStruct
 		if err := json.Unmarshal(body, &jsonBody); err != nil {
-			log.Errorf("Coult not deserialize json reponse from %s, url: %s", host.Ip, url)
+			log.Errorf("Coult not deserialize json reponse from %s", host.Ip)
 			response.Status = 500
 			host.Health = 3 // 3 stands for unknown
 			respChan <- &response

@@ -87,7 +87,7 @@ type historyServiceResponder struct {
 	defaultPastTime string
 }
 
-func (hs historyServiceResponder) getAgentSource() (jsonFiles []string, err error) {
+func (hs *historyServiceResponder) getAgentSource() (jsonFiles []string, err error) {
 	basePath := "/var/lib/mesosphere/dcos/history-service" + hs.defaultPastTime
 	files, err := ioutil.ReadDir(basePath)
 	if err != nil {
@@ -99,7 +99,7 @@ func (hs historyServiceResponder) getAgentSource() (jsonFiles []string, err erro
 	return jsonFiles, nil
 }
 
-func (hs historyServiceResponder) getMesosAgents(jsonPath []string) (nodes []Node, err error) {
+func (hs *historyServiceResponder) getMesosAgents(jsonPath []string) (nodes []Node, err error) {
 	nodeCount := make(map[string]int)
 
 	for _, historyFile := range jsonPath {
@@ -143,7 +143,7 @@ func (hs historyServiceResponder) getMesosAgents(jsonPath []string) (nodes []Nod
 	return nodes, nil
 }
 
-func (dr dnsResponder) getAgentSource() (leaderIps []string, err error) {
+func (dr *dnsResponder) getAgentSource() (leaderIps []string, err error) {
 	leaderIps, err = net.LookupHost(dr.defaultMasterAddress)
 	if err != nil {
 		return leaderIps, err
@@ -155,7 +155,7 @@ func (dr dnsResponder) getAgentSource() (leaderIps []string, err error) {
 	return leaderIps, nil
 }
 
-func (dr dnsResponder) getMesosAgents(leaderIP []string) (nodes []Node, err error) {
+func (dr *dnsResponder) getMesosAgents(leaderIP []string) (nodes []Node, err error) {
 	agentRequest := fmt.Sprintf("http://%s:5050/slaves", leaderIP)
 	timeout := time.Duration(time.Second)
 	client := http.Client{Timeout: timeout}
@@ -186,10 +186,13 @@ func (dr dnsResponder) getMesosAgents(leaderIP []string) (nodes []Node, err erro
 // GetAgentsFromMaster returns a list of agent nodes.
 func (pt *DcosPuller) GetAgentsFromMaster() (nodes []Node, err error) {
 	retries := []agentResponder{
-		dnsResponder{
+		&dnsResponder{
 			defaultMasterAddress: "leader.mesos",
 		},
-		historyServiceResponder{
+		&historyServiceResponder{
+			defaultPastTime: "/minute/",
+		},
+		&historyServiceResponder{
 			defaultPastTime: "/hour/",
 		},
 	}
@@ -202,6 +205,9 @@ func (pt *DcosPuller) GetAgentsFromMaster() (nodes []Node, err error) {
 		nodes, err := retry.getMesosAgents(source)
 		if err != nil {
 			log.Error(err)
+			continue
+		}
+		if len(nodes) == 0 {
 			continue
 		}
 		return nodes, nil

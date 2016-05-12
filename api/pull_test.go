@@ -5,6 +5,7 @@ import (
 	"fmt"
 	assertPackage "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
+	"sync"
 	"testing"
 	"time"
 )
@@ -124,6 +125,66 @@ func (suit *PullerTestSuit) SetupTest() {
 
 func (suit *PullerTestSuit) TearDownTest() {
 	GlobalMonitoringResponse.UpdateMonitoringResponse(MonitoringResponse{})
+}
+
+// TestMonitoringResponseRace checks that the various exported methods
+// of the MonitoringResponse don't race. It does so by calling the methods
+// concurrently and will fail under the race detector if the methods race.
+func (s *PullerTestSuit) TestMonitoringResponseRace() {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		GlobalMonitoringResponse.UpdateMonitoringResponse(MonitoringResponse{})
+	}()
+	// We call UpdateMonitoringResponse twice to ensure the RWMutex's write lock
+	// is held, not just a read lock.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		GlobalMonitoringResponse.UpdateMonitoringResponse(MonitoringResponse{})
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		GlobalMonitoringResponse.GetAllUnits()
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		GlobalMonitoringResponse.GetUnit("test-unit")
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		GlobalMonitoringResponse.GetNodesForUnit("test-unit")
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		GlobalMonitoringResponse.GetSpecificNodeForUnit("node-ip", "test-unit")
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		GlobalMonitoringResponse.GetNodes()
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		GlobalMonitoringResponse.GetNodeById("test-unit")
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		GlobalMonitoringResponse.GetNodeUnitsId("test-unit")
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		GlobalMonitoringResponse.GetNodeUnitByNodeIdUnitId("test-ip", "test-unit")
+	}()
+	wg.Wait()
 }
 
 func (s *PullerTestSuit) TestPullerFindUnit() {

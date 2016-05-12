@@ -21,17 +21,19 @@ var HealthReport UnitsHealth
 
 type UnitsHealth struct {
 	sync.Mutex
-	HealthReport UnitsHealthResponseJsonStruct
+	healthReport UnitsHealthResponseJsonStruct
 }
 
 func (uh *UnitsHealth) GetHealthReport() UnitsHealthResponseJsonStruct {
-	return uh.HealthReport
+	uh.Lock()
+	defer uh.Unlock()
+	return uh.healthReport
 }
 
 func (uh *UnitsHealth) UpdateHealthReport(healthReport UnitsHealthResponseJsonStruct) {
 	uh.Lock()
 	defer uh.Unlock()
-	uh.HealthReport = healthReport
+	uh.healthReport = healthReport
 }
 
 func StartUpdateHealthReport(config Config, readyChan chan bool, runOnce bool) {

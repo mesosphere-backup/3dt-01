@@ -25,13 +25,13 @@ type UnitsHealth struct {
 }
 
 func (uh *UnitsHealth) GetHealthReport() UnitsHealthResponseJsonStruct {
-	return (*uh).HealthReport
+	return uh.HealthReport
 }
 
 func (uh *UnitsHealth) UpdateHealthReport(healthReport UnitsHealthResponseJsonStruct) {
 	uh.Lock()
 	defer uh.Unlock()
-	(*uh).HealthReport = healthReport
+	uh.HealthReport = healthReport
 }
 
 func StartUpdateHealthReport(config Config, readyChan chan bool, runOnce bool) {

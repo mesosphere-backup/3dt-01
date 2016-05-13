@@ -467,6 +467,24 @@ func (s *HandlersTestSuit) TestStartUpdateHealthReportActualImplementationFunc()
 	s.assert.Equal(hr, UnitsHealthResponseJsonStruct{})
 }
 
+// TestCheckHealthReportRace is meant to be run under the race detector
+// to confirm that UpdateHealthReport and GetHealthReport do not race.
+func (s *HandlersTestSuit) TestCheckHealthReportRace() {
+	// the strategy we follow is to launch a goroutine that
+	// updates the HealthReport while reading it
+	// from the main thread.
+	done := make(chan struct{})
+	go func() {
+		HealthReport.UpdateHealthReport(UnitsHealthResponseJsonStruct{})
+		close(done)
+	}()
+	_ = HealthReport.GetHealthReport()
+	// We wait for the spawned goroutine to exit before the test
+	// returns in order to prevent the spawned goroutine from racing
+	// with TearDownTest.
+	<-done
+}
+
 func (s *HandlersTestSuit) TestStartUpdateHealthReportFunc() {
 	readyChan := make(chan bool, 1)
 	StartUpdateHealthReport(s.cfg, readyChan, true)

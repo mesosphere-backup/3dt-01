@@ -209,16 +209,16 @@ func (pt *PullType) WaitBetweenPulls(interval int) {
 }
 
 func (mr *MonitoringResponse) UpdateMonitoringResponse(r MonitoringResponse) {
-	mr.RLock()
-	defer mr.RUnlock()
+	mr.Lock()
+	defer mr.Unlock()
 	mr.Nodes = r.Nodes
 	mr.Units = r.Units
 }
 
 // Get all units available in GlobalMonitoringResponse
 func (mr *MonitoringResponse) GetAllUnits() UnitsResponseJsonStruct {
-	mr.Lock()
-	defer mr.Unlock()
+	mr.RLock()
+	defer mr.RUnlock()
 	return UnitsResponseJsonStruct{
 		Array: func() []UnitResponseFieldsStruct {
 			var r []UnitResponseFieldsStruct
@@ -237,8 +237,8 @@ func (mr *MonitoringResponse) GetAllUnits() UnitsResponseJsonStruct {
 
 // Get a specific unit available in GlobalMonitoringResponse
 func (mr *MonitoringResponse) GetUnit(unitName string) (UnitResponseFieldsStruct, error) {
-	mr.Lock()
-	defer mr.Unlock()
+	mr.RLock()
+	defer mr.RUnlock()
 	if _, ok := mr.Units[unitName]; !ok {
 		return UnitResponseFieldsStruct{}, errors.New(fmt.Sprintf("Unit %s not found", unitName))
 	}
@@ -254,8 +254,8 @@ func (mr *MonitoringResponse) GetUnit(unitName string) (UnitResponseFieldsStruct
 
 // Get all hosts for a specific unit available in GlobalMonitoringResponse
 func (mr *MonitoringResponse) GetNodesForUnit(unitName string) (NodesResponseJsonStruct, error) {
-	mr.Lock()
-	defer mr.Unlock()
+	mr.RLock()
+	defer mr.RUnlock()
 	if _, ok := mr.Units[unitName]; !ok {
 		return NodesResponseJsonStruct{}, errors.New(fmt.Sprintf("Unit %s not found", unitName))
 	}
@@ -275,8 +275,8 @@ func (mr *MonitoringResponse) GetNodesForUnit(unitName string) (NodesResponseJso
 }
 
 func (mr *MonitoringResponse) GetSpecificNodeForUnit(unitName string, nodeIp string) (NodeResponseFieldsWithErrorStruct, error) {
-	mr.Lock()
-	defer mr.Unlock()
+	mr.RLock()
+	defer mr.RUnlock()
 	if _, ok := mr.Units[unitName]; !ok {
 		return NodeResponseFieldsWithErrorStruct{}, errors.New(fmt.Sprintf("Unit %s not found", unitName))
 	}
@@ -298,8 +298,8 @@ func (mr *MonitoringResponse) GetSpecificNodeForUnit(unitName string, nodeIp str
 }
 
 func (mr *MonitoringResponse) GetNodes() NodesResponseJsonStruct {
-	mr.Lock()
-	defer mr.Unlock()
+	mr.RLock()
+	defer mr.RUnlock()
 	return NodesResponseJsonStruct{
 		Array: func() []*NodeResponseFieldsStruct {
 			var nodes []*NodeResponseFieldsStruct
@@ -316,8 +316,8 @@ func (mr *MonitoringResponse) GetNodes() NodesResponseJsonStruct {
 }
 
 func (mr *MonitoringResponse) GetNodeById(nodeIp string) (NodeResponseFieldsStruct, error) {
-	mr.Lock()
-	defer mr.Unlock()
+	mr.RLock()
+	defer mr.RUnlock()
 	if _, ok := mr.Nodes[nodeIp]; !ok {
 		return NodeResponseFieldsStruct{}, errors.New(fmt.Sprintf("Node %s not found", nodeIp))
 	}
@@ -329,8 +329,8 @@ func (mr *MonitoringResponse) GetNodeById(nodeIp string) (NodeResponseFieldsStru
 }
 
 func (mr *MonitoringResponse) GetNodeUnitsId(nodeIp string) (UnitsResponseJsonStruct, error) {
-	mr.Lock()
-	defer mr.Unlock()
+	mr.RLock()
+	defer mr.RUnlock()
 	if _, ok := mr.Nodes[nodeIp]; !ok {
 		return UnitsResponseJsonStruct{}, errors.New(fmt.Sprintf("Node %s not found", nodeIp))
 	}
@@ -351,8 +351,8 @@ func (mr *MonitoringResponse) GetNodeUnitsId(nodeIp string) (UnitsResponseJsonSt
 }
 
 func (mr *MonitoringResponse) GetNodeUnitByNodeIdUnitId(nodeIp string, unitId string) (UnitHealthResponseFieldsStruct, error) {
-	mr.Lock()
-	defer mr.Unlock()
+	mr.RLock()
+	defer mr.RUnlock()
 	if _, ok := mr.Nodes[nodeIp]; !ok {
 		return UnitHealthResponseFieldsStruct{}, errors.New(fmt.Sprintf("Node %s not found", nodeIp))
 	}

@@ -26,6 +26,24 @@
 			"path": "github.com/gorilla/mux",
 			"revision": "49c024275504f0341e5a9971eb7ba7fa3dc7af40",
 			"revisionTime": "2015-09-08T09:58:39-07:00"
+		},
+		{
+			"checksumSHA1": "Ha9v+KHv5WAVnfUd2HwipTYqebE=",
+			"path": "github.com/shirou/gopsutil/disk",
+			"revision": "7b991b8135166c7fc81b65665a2f35c7a1966cfc",
+			"revisionTime": "2016-05-04T15:08:50Z"
+		},
+		{
+			"checksumSHA1": "tZSl3Q5N2doO8oRcp7Sc6JYBGVI=",
+			"path": "github.com/shirou/gopsutil/load",
+			"revision": "7b991b8135166c7fc81b65665a2f35c7a1966cfc",
+			"revisionTime": "2016-05-04T15:08:50Z"
+		},
+		{
+			"checksumSHA1": "bHTDi2QAN4SmdZpHOtyQ6fQeCnQ=",
+			"path": "github.com/shirou/gopsutil/mem",
+			"revision": "7b991b8135166c7fc81b65665a2f35c7a1966cfc",
+			"revisionTime": "2016-05-04T15:08:50Z"
 		}
 	],
 	"rootPath": "github.com/dcos/3dt"

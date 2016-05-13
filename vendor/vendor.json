@@ -28,8 +28,20 @@
 			"revisionTime": "2015-09-08T09:58:39-07:00"
 		},
 		{
+			"checksumSHA1": "NUjzTOYa6eG4N4gBgwSdPkeBJ1E=",
+			"path": "github.com/shirou/gopsutil",
+			"revision": "7b991b8135166c7fc81b65665a2f35c7a1966cfc",
+			"revisionTime": "2016-05-04T15:08:50Z"
+		},
+		{
 			"checksumSHA1": "Ha9v+KHv5WAVnfUd2HwipTYqebE=",
 			"path": "github.com/shirou/gopsutil/disk",
+			"revision": "7b991b8135166c7fc81b65665a2f35c7a1966cfc",
+			"revisionTime": "2016-05-04T15:08:50Z"
+		},
+		{
+			"checksumSHA1": "xrMuUxCr8UckY5oI2lwCerYwIhk=",
+			"path": "github.com/shirou/gopsutil/internal/common",
 			"revision": "7b991b8135166c7fc81b65665a2f35c7a1966cfc",
 			"revisionTime": "2016-05-04T15:08:50Z"
 		},

@@ -78,7 +78,7 @@ func (suit *HandlersTestSuit) SetupTest() {
 	// setup variables
 	args := []string{"3dt", "test"}
 	suit.cfg, _ = LoadDefaultConfig(args)
-	suit.cfg.Systemd = &FakeSystemdType{}
+	suit.cfg.HealthReport = &FakeSystemdType{}
 	suit.router = NewRouter(&suit.cfg)
 	suit.assert = assertPackage.New(suit.T())
 
@@ -219,12 +219,12 @@ func (suit *HandlersTestSuit) SetupTest() {
 
 	// Update global monitoring responses
 	GlobalMonitoringResponse.UpdateMonitoringResponse(suit.mockedMonitoringResponse)
-	HealthReport.UpdateHealthReport(suit.mockedUnitsHealthResponseJsonStruct)
+	GlobalHealthReport.UpdateHealthReport(suit.mockedUnitsHealthResponseJsonStruct)
 }
 
 func (suit *HandlersTestSuit) TearDownTest() {
 	// clear global variables that might be set
-	HealthReport = UnitsHealth{}
+	GlobalHealthReport = UnitsHealth{}
 	GlobalMonitoringResponse = MonitoringResponse{}
 }
 
@@ -251,10 +251,10 @@ func (s *HandlersTestSuit) get(url string) []byte {
 // Tests
 func (s *HandlersTestSuit) TestUnitsHealthStruct() {
 	// Test structure HealthReport get/set health report
-	HealthReport.UpdateHealthReport(UnitsHealthResponseJsonStruct{})
-	s.assert.Equal(HealthReport.GetHealthReport(), UnitsHealthResponseJsonStruct{}, "GetHealthReport() should be empty")
-	HealthReport.UpdateHealthReport(s.mockedUnitsHealthResponseJsonStruct)
-	s.assert.Equal(HealthReport.GetHealthReport(), s.mockedUnitsHealthResponseJsonStruct, "GetHealthReport() should NOT be empty")
+	GlobalHealthReport.UpdateHealthReport(UnitsHealthResponseJsonStruct{})
+	s.assert.Equal(GlobalHealthReport.GetHealthReport(), UnitsHealthResponseJsonStruct{}, "GetHealthReport() should be empty")
+	GlobalHealthReport.UpdateHealthReport(s.mockedUnitsHealthResponseJsonStruct)
+	s.assert.Equal(GlobalHealthReport.GetHealthReport(), s.mockedUnitsHealthResponseJsonStruct, "GetHealthReport() should NOT be empty")
 }
 
 func (s *HandlersTestSuit) TestUnitsHealthStatusFunc() {
@@ -458,12 +458,12 @@ func (s *HandlersTestSuit) TestIsInListFunc() {
 
 func (s *HandlersTestSuit) TestStartUpdateHealthReportActualImplementationFunc() {
 	// clear any health report
-	HealthReport.UpdateHealthReport(UnitsHealthResponseJsonStruct{})
-	s.cfg.Systemd = &SystemdType{}
+	GlobalHealthReport.UpdateHealthReport(UnitsHealthResponseJsonStruct{})
+	s.cfg.HealthReport = &DcosHealth{}
 
 	readyChan := make(chan bool, 1)
 	StartUpdateHealthReport(s.cfg, readyChan, true)
-	hr := HealthReport.GetHealthReport()
+	hr := GlobalHealthReport.GetHealthReport()
 	s.assert.Equal(hr, UnitsHealthResponseJsonStruct{})
 }
 
@@ -475,10 +475,10 @@ func (s *HandlersTestSuit) TestCheckHealthReportRace() {
 	// from the main thread.
 	done := make(chan struct{})
 	go func() {
-		HealthReport.UpdateHealthReport(UnitsHealthResponseJsonStruct{})
+		GlobalHealthReport.UpdateHealthReport(UnitsHealthResponseJsonStruct{})
 		close(done)
 	}()
-	_ = HealthReport.GetHealthReport()
+	_ = GlobalHealthReport.GetHealthReport()
 	// We wait for the spawned goroutine to exit before the test
 	// returns in order to prevent the spawned goroutine from racing
 	// with TearDownTest.
@@ -488,7 +488,7 @@ func (s *HandlersTestSuit) TestCheckHealthReportRace() {
 func (s *HandlersTestSuit) TestStartUpdateHealthReportFunc() {
 	readyChan := make(chan bool, 1)
 	StartUpdateHealthReport(s.cfg, readyChan, true)
-	hr := HealthReport.GetHealthReport()
+	hr := GlobalHealthReport.GetHealthReport()
 	s.assert.Equal(hr, UnitsHealthResponseJsonStruct{
 		Array: []UnitHealthResponseFieldsStruct{
 			{

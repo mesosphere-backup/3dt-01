@@ -21,7 +21,7 @@ type Puller interface {
 }
 
 // Systemd unit interface
-type SystemdInterface interface {
+type HealthReporter interface {
 	// open dbus connection
 	InitializeDbusConnection() error
 

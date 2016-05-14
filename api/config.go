@@ -18,7 +18,7 @@ type Config struct {
 	Revision                string
 	MesosIpDiscoveryCommand string
 	DcosVersion             string
-	Systemd                 SystemdInterface
+	HealthReport            HealthReporter
 	SystemdUnits            []string
 
 	FlagPull         bool
@@ -62,7 +62,7 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 		log.Warning("Environment variable DCOS_VERSION is not set")
 	}
 	config.DcosVersion = os.Getenv("DCOS_VERSION")
-	config.Systemd = &SystemdType{}
+	config.HealthReport = &DcosHealth{}
 	config.SystemdUnits = []string{"dcos-setup.service", "dcos-link-env.service", "dcos-download.service"}
 
 	flagSet := flag.NewFlagSet("3dt", flag.ContinueOnError)

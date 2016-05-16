@@ -52,8 +52,7 @@ type DCOSHelper interface {
 	GetMesosNodeID(string, string) string
 }
 
-// interface defines where to get a list of mesos agent
-type agentResponder interface {
-	getAgentSource() ([]string, error)
-	getMesosAgents([]string) ([]Node, error)
+// with the nodeFinder interface we can chain finding methods
+type nodeFinder interface {
+	find() ([]Node, error)
 }

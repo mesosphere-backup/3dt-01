@@ -206,49 +206,6 @@ func (s *PullerTestSuit) TestPullerNotFindUnit() {
 	s.assert.Equal(unit, unitResponseFieldsStruct{})
 }
 
-func (s *PullerTestSuit) TestdnsRespondergetAgentSource() {
-	dns := dnsResponder{
-		defaultMasterAddress: "leader-non-existed.mesos",
-	}
-	ips, err := dns.getAgentSource()
-	s.assert.Empty(ips)
-	s.assert.NotEmpty(err)
-
-	dns2 := dnsResponder{
-		defaultMasterAddress: "dcos.io",
-	}
-	ips2, err := dns2.getAgentSource()
-	s.assert.NotEmpty(ips2)
-	s.assert.Empty(err)
-}
-
-func (s *PullerTestSuit) TestdnsRespondergetMesosAgents() {
-	dns := dnsResponder{
-		defaultMasterAddress: "leader-non-existed.mesos",
-	}
-	nodes, err := dns.getMesosAgents([]string{"127.0.0.1"})
-	s.assert.Empty(nodes)
-	s.assert.NotEmpty(err)
-}
-
-func (s *PullerTestSuit) TesthistoryServiceRespondergetAgentSource() {
-	h := historyServiceResponder{
-		defaultPastTime: "/hour/",
-	}
-	files, err := h.getAgentSource()
-	s.assert.Empty(files)
-	s.assert.NotEmpty(err)
-}
-
-func (s *PullerTestSuit) TesthistoryServiceRespondergetMesosAgents() {
-	h := historyServiceResponder{
-		defaultPastTime: "/hour/",
-	}
-	nodes, err := h.getMesosAgents([]string{"/tmp/test.json"})
-	s.assert.Empty(nodes)
-	s.assert.NotEmpty(err)
-}
-
 func TestPullerTestSuit(t *testing.T) {
 	suite.Run(t, new(PullerTestSuit))
 }

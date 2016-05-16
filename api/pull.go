@@ -10,8 +10,16 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 	"net"
-	"strconv"
 	"path/filepath"
+	"strconv"
+)
+
+const (
+	// MasterRole DC/OS role for a master.
+	MasterRole = "master"
+
+	// AgentRole DC/OS role for an agent.
+	AgentRole = "agent"
 )
 
 // globalMonitoringResponse a global variable updated by a puller every 60 seconds.
@@ -51,12 +59,11 @@ func (pt *DcosPuller) LookupMaster() (nodesResponse []Node, err error) {
 		url: "http://127.0.0.1:8181/exhibitor/v1/cluster/status",
 		next: &findNodesInDNS{
 			dnsRecord: "master.mesos",
-			role: "master",
-			next: nil,
+			role:      MasterRole,
+			next:      nil,
 		},
 	}
-	nodes, err := finder.find()
-	return nodes, err
+	return finder.find()
 }
 
 // find masters via dns. Used to find master nodes from agents.
@@ -87,7 +94,7 @@ func (f *findMastersInExhibitor) findMesosMasters() (nodes []Node, err error) {
 
 	for _, exhibitorNodeResponse := range exhibitorNodesResponse {
 		nodes = append(nodes, Node{
-			Role:   "master",
+			Role:   MasterRole,
 			IP:     exhibitorNodeResponse.Hostname,
 			Leader: exhibitorNodeResponse.IsLeader,
 		})
@@ -152,11 +159,12 @@ func (f *findAgentsInHistoryService) getMesosAgents() (nodes []Node, err error) 
 	if len(nodeCount) == 0 {
 		return nodes, errors.New("Agent nodes were not found in hisotry service for the past hour")
 	}
+
 	for ip := range nodeCount {
-		var node Node
-		node.Role = "agent"
-		node.IP = ip
-		nodes = append(nodes, node)
+		nodes = append(nodes, Node{
+			Role: AgentRole,
+			IP:   ip,
+		})
 	}
 	return nodes, nil
 }
@@ -186,18 +194,19 @@ func (f *findNodesInDNS) resolveDomain() (ips []string, err error) {
 }
 
 func (f *findNodesInDNS) getMesosMasters() (nodes []Node, err error) {
-	masterIps, err := f.resolveDomain()
+	ips, err := f.resolveDomain()
 	if err != nil {
 		return nodes, err
 	}
-	if len(masterIps) == 0 {
-		return nodes, errors.New("Could not resolve "+f.dnsRecord)
+	if len(ips) == 0 {
+		return nodes, errors.New("Could not resolve " + f.dnsRecord)
 	}
-	for _, ip := range masterIps {
-		var node Node
-		node.Role = f.role
-		node.IP = ip
-		nodes = append(nodes, node)
+
+	for _, ip := range ips {
+		nodes = append(nodes, Node{
+			Role: MasterRole,
+			IP:   ip,
+		})
 	}
 	return nodes, nil
 }
@@ -208,7 +217,7 @@ func (f *findNodesInDNS) getMesosAgents() (nodes []Node, err error) {
 		return nodes, err
 	}
 	if len(leaderIps) == 0 {
-		return nodes, errors.New("Could not resolve "+f.dnsRecord)
+		return nodes, errors.New("Could not resolve " + f.dnsRecord)
 	}
 
 	agentRequest := fmt.Sprintf("http://%s:5050/slaves", leaderIps[0])
@@ -230,20 +239,28 @@ func (f *findNodesInDNS) getMesosAgents() (nodes []Node, err error) {
 	}
 
 	for _, agent := range sr.Agents {
-		var node Node
-		node.Role = f.role
-		node.IP = agent.Hostname
-		nodes = append(nodes, node)
+		nodes = append(nodes, Node{
+			Role: AgentRole,
+			IP:   agent.Hostname,
+		})
+	}
+	return nodes, nil
+}
+
+func (f *findNodesInDNS) dispatchGetNodesByRole() (nodes []Node, err error) {
+	if f.role == MasterRole {
+		nodes, err = f.getMesosMasters()
+	} else {
+		if f.role != AgentRole {
+			return nodes, errors.New("Unknown role " + f.role)
+		}
+		nodes, err = f.getMesosAgents()
 	}
 	return nodes, nil
 }
 
 func (f *findNodesInDNS) find() (nodes []Node, err error) {
-	if f.role == "master" {
-		nodes, err = f.getMesosMasters()
-	} else {
-		nodes, err = f.getMesosAgents()
-	}
+	nodes, err = f.dispatchGetNodesByRole()
 	if err == nil {
 		return nodes, err
 	}
@@ -258,12 +275,12 @@ func (f *findNodesInDNS) find() (nodes []Node, err error) {
 func (pt *DcosPuller) GetAgentsFromMaster() (nodes []Node, err error) {
 	finder := &findNodesInDNS{
 		dnsRecord: "leader.mesos",
-		role: "agent",
+		role:      AgentRole,
 		next: &findAgentsInHistoryService{
 			pastTime: "/minute/",
 			next: &findAgentsInHistoryService{
 				pastTime: "/hour/",
-				next: nil,
+				next:     nil,
 			},
 		},
 	}

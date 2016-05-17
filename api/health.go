@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"bytes"
+	"io"
 )
 
 // Global health report variable
@@ -162,11 +164,19 @@ func (st *DcosHealth) GetUnitNames() (units []string, err error) {
 }
 
 func (st *DcosHealth) GetJournalOutput(unit string) (string, error) {
-	out, err := exec.Command("journalctl", "--no-pager", "-n", "50", "-u", unit).Output()
+	if strings.ContainsAny(unit, " ;&|") {
+		return "", errors.New("Unit name canot contain special charachters or space. Got "+unit)
+	}
+	command := []string{"journalctl", "--no-pager", "-n", "50", "-u", unit}
+	doneChan := make(chan bool)
+	r, err := runCmd(command, doneChan)
 	if err != nil {
 		return "", err
 	}
-	return string(out), nil
+	buffer := new(bytes.Buffer)
+	io.Copy(buffer, r)
+	doneChan <- true
+	return buffer.String(), nil
 }
 
 func (st *DcosHealth) GetMesosNodeId(role string, field string) string {

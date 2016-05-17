@@ -20,88 +20,6 @@ import (
 	"io/ioutil"
 )
 
-func getHttpAddToZip(node Node, endpoints map[string]string, folder string, zipWriter *zip.Writer, summaryReport *bytes.Buffer) error {
-	for fileName, httpEndpoint := range endpoints {
-		full_url := "http://"+node.Ip+httpEndpoint
-		log.Debugf("GET %s", full_url)
-		client := new(http.Client)
-		request, err := http.NewRequest("GET", full_url, nil)
-		if err != nil {
-			log.Error(err)
-			updateSummaryReport(fmt.Sprintf("could not create request for url: %s", full_url), node, err.Error(), summaryReport)
-			continue
-		}
-		request.Header.Add("Accept-Encoding", "gzip")
-		resp, err := client.Do(request)
-		if err != nil {
-			log.Errorf("Could not fetch url: %s", full_url)
-			log.Error(err)
-			updateSummaryReport(fmt.Sprintf("could not fetch url: %s", full_url), node, err.Error(), summaryReport)
-			continue
-		}
-		if resp.Header.Get("Content-Encoding") == "gzip" {
-			fileName += ".gz"
-		}
-
-		// put all logs in a `ip_role` folder
-		zipFile, err := zipWriter.Create(filepath.Join(node.Ip+"_"+node.Role, fileName))
-		if err != nil {
-			log.Errorf("Could not add %s to a zip archive", fileName)
-			log.Error(err)
-			updateSummaryReport(fmt.Sprintf("could not add a file %s to a zip", fileName), node, err.Error(), summaryReport)
-			continue
-		}
-		io.Copy(zipFile, resp.Body)
-		resp.Body.Close()
-	}
-	return nil
-}
-
-func getFileAddToZip(node Node, files []FileProvider, folder string, zipWriter *zip.Writer, summaryReport *bytes.Buffer) error {
-	for _, f := range files {
-		file, err := os.Open(f.Location)
-		if err != nil {
-			log.Error(err)
-			updateSummaryReport(fmt.Sprintf("could not add a file %s to a zip", f.Location), node, err.Error(), summaryReport)
-			continue
-		}
-		zipFile, err := zipWriter.Create(f.Location)
-		if err != nil {
-			log.Error(err)
-			updateSummaryReport(fmt.Sprintf("could not add a file %s to a zip", f.Location), node, err.Error(), summaryReport)
-			continue
-		}
-		io.Copy(zipFile, file)
-	}
-
-	return nil
-}
-
-func getCmdAddToZip(node Node, commands []CommandProvider, folder string, zipWriter *zip.Writer, summaryReport *bytes.Buffer) error {
-	for _, command := range commands {
-		cmd := exec.Command(command.Command[0])
-		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			log.Error(err)
-			updateSummaryReport(fmt.Sprintf("could not add a command output of %s to a zip", command), node, err.Error(), summaryReport)
-			continue
-		}
-		if err := cmd.Start(); err != nil {
-			log.Error(err)
-			updateSummaryReport(fmt.Sprintf("could not add a command output of %s to a zip", command), node, err.Error(), summaryReport)
-			continue
-		}
-		zipFile, err := zipWriter.Create(strings.Join(command.Command, "_")+".output")
-		if err != nil {
-			log.Error(err)
-			updateSummaryReport(fmt.Sprintf("could not add a command output of %s to a zip", command), node, err.Error(), summaryReport)
-			continue
-		}
-		io.Copy(zipFile, stdout)
-	}
-	return nil
-}
-
 // snapshotJob
 type SnapshotJob struct {
 	sync.Mutex
@@ -138,6 +56,49 @@ type snapshotReportStatus struct {
 
 	// metrics related
 	DiskUsedPercent float64 `json:"snapshot_partition_disk_usage_percent"`
+}
+
+func (j *SnapshotJob) getHttpAddToZip(node Node, endpoints map[string]string, folder string, zipWriter *zip.Writer, summaryReport *bytes.Buffer) error {
+	for fileName, httpEndpoint := range endpoints {
+		full_url := "http://"+node.Ip+httpEndpoint
+		log.Debugf("GET %s", full_url)
+		j.Status = "GET " + full_url
+		client := new(http.Client)
+		// TODO(mnaboka): review timeout
+		client.Timeout = time.Duration(time.Minute*2)
+		request, err := http.NewRequest("GET", full_url, nil)
+		if err != nil {
+			j.Errors = append(j.Errors, err.Error())
+			log.Error(err)
+			updateSummaryReport(fmt.Sprintf("could not create request for url: %s", full_url), node, err.Error(), summaryReport)
+			continue
+		}
+		request.Header.Add("Accept-Encoding", "gzip")
+		resp, err := client.Do(request)
+		if err != nil {
+			j.Errors = append(j.Errors, err.Error())
+			log.Errorf("Could not fetch url: %s", full_url)
+			log.Error(err)
+			updateSummaryReport(fmt.Sprintf("could not fetch url: %s", full_url), node, err.Error(), summaryReport)
+			continue
+		}
+		if resp.Header.Get("Content-Encoding") == "gzip" {
+			fileName += ".gz"
+		}
+
+		// put all logs in a `ip_role` folder
+		zipFile, err := zipWriter.Create(filepath.Join(node.Ip+"_"+node.Role, fileName))
+		if err != nil {
+			j.Errors = append(j.Errors, err.Error())
+			log.Errorf("Could not add %s to a zip archive", fileName)
+			log.Error(err)
+			updateSummaryReport(fmt.Sprintf("could not add a file %s to a zip", fileName), node, err.Error(), summaryReport)
+			continue
+		}
+		io.Copy(zipFile, resp.Body)
+		resp.Body.Close()
+	}
+	return nil
 }
 
 func (j *SnapshotJob) getStatusAll(config *Config, puller Puller) (map[string]snapshotReportStatus, error) {
@@ -386,7 +347,7 @@ func (j *SnapshotJob) runBackgroundReport(nodes []Node, config *Config, puller P
 		}
 
 		// add http endpoints
-		err = getHttpAddToZip(node, endpoints, j.LastSnapshotPath, zipWriter, summaryErrorsReport)
+		err = j.getHttpAddToZip(node, endpoints, j.LastSnapshotPath, zipWriter, summaryErrorsReport)
 		if err != nil {
 			errMsg := "could not add logs for a node, url: " + url
 			j.Errors = append(j.Errors, errMsg)
@@ -437,7 +398,9 @@ func (j *SnapshotJob) cancel(dcosHealth HealthReporter) error {
 	return nil
 }
 
-func dispatchLogs(provider string, entity string, config *Config, healthReport HealthReporter) (r io.ReadCloser, err error) {
+func dispatchLogs(provider string, entity string, config *Config, healthReport HealthReporter) (doneChan chan bool, r io.ReadCloser, err error) {
+	// make a buffered doneChan to communicate back to process.
+	doneChan = make(chan bool, 1)
 	intProviders, err := loadInternalProviders(config, healthReport)
 	if err != nil {
 		log.Error(err)
@@ -447,35 +410,42 @@ func dispatchLogs(provider string, entity string, config *Config, healthReport H
 		log.Error(err)
 	}
 	if provider == "units" {
-		return readJournalOutput(entity, config.FlagSnapshotUnitsLogsSinceHours)
+		log.Debugf("dispatching a unit %s", entity)
+		r, err = readJournalOutput(entity, config.FlagSnapshotUnitsLogsSinceHours, doneChan)
+		return doneChan, r, err
 	}
 	if provider == "files" {
+		log.Debugf("dispatching a file %s", entity)
 		for _, fileProvider := range append(intProviders.LocalFiles, extProviders.LocalFiles...) {
 			if filepath.Base(fileProvider.Location) == entity {
-				return readFile(fileProvider.Location)
+				log.Debugf("Found a file %s", fileProvider.Location)
+				r, err = readFile(fileProvider.Location)
+				return doneChan, r, err
 			}
 		}
-		return r, errors.New("Not found "+entity)
+		return doneChan, r, errors.New("Not found "+entity)
 	}
 	if provider == "cmds" {
+		log.Debugf("dispatching a command %s", entity)
 		for _, cmdProvider := range append(intProviders.LocalCommands, extProviders.LocalCommands...) {
 			if len(cmdProvider.Command) > 0 {
 				if entity == filepath.Base(cmdProvider.Command[0]) {
-					return runCmd(cmdProvider.Command)
+					r, err = runCmd(cmdProvider.Command, doneChan)
+					return doneChan, r, err
 				}
 			}
 		}
-		return r, errors.New("Not found "+entity)
+		return doneChan, r, errors.New("Not found "+entity)
 	}
-	return r, errors.New("Unknown provider "+provider)
+	return doneChan, r, errors.New("Unknown provider "+provider)
 }
 
-func runCmd(command []string) (r io.ReadCloser, err error) {
+func runCmd(command []string, doneChan chan bool) (r io.ReadCloser, err error) {
 	args := []string{}
 	if len(command) > 1 {
 		args = command[1:len(command)]
 	}
-	log.Infof("Run: %s", command)
+	log.Debugf("Run: %s", command)
 	cmd := exec.Command(command[0], args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -484,6 +454,22 @@ func runCmd(command []string) (r io.ReadCloser, err error) {
 	if err := cmd.Start(); err != nil {
 		return r, err
 	}
+	go func(p *os.Process, doneChan chan bool) {
+		for {
+			select {
+			case <- doneChan:
+				log.Debugf("Process finished %d", p.Pid)
+				// always call Wait to avoid zombies
+				p.Wait()
+				return
+			case <-time.After(time.Second * 30):
+				log.Errorf("Timeout exceeded for process, killing %d", p.Pid)
+				p.Kill()
+				p.Wait()
+				return
+			}
+		}
+	}(cmd.Process, doneChan)
 	return stdout, nil
 }
 
@@ -495,15 +481,15 @@ func readFile(fileLocation string) (r io.ReadCloser, err error) {
 	return file, nil
 }
 
-func readJournalOutput(unit string, since string) (r io.ReadCloser, err error) {
+func readJournalOutput(unit string, since string, doneChan chan bool) (r io.ReadCloser, err error) {
 	if !strings.HasPrefix(unit, "dcos-") {
 		return r, errors.New("Unit should start with dcos-, got: "+unit)
 	}
-	if strings.ContainsAny(unit, " ;") {
-		return r, errors.New("Unit cannot contain ; or spaces")
+	if strings.ContainsAny(unit, " ;&|") {
+		return r, errors.New("Unit cannot contain special charachters or spaces")
 	}
 	command := []string{"journalctl", "--no-pager", "-u", unit, "--since", since+" hours ago"}
-	return runCmd(command)
+	return runCmd(command, doneChan)
 }
 
 type LogProviders struct {

@@ -16,33 +16,40 @@ var Revision string
 type Config struct {
 	Version                         string
 	Revision                        string
-	MesosIpDiscoveryCommand         string
-	DcosVersion                     string
-	SystemdUnits                    []string
+	MesosIpDiscoveryCommand                   string
+	DcosVersion                               string
+	SystemdUnits                              []string
 
-	FlagPull                        bool
-	FlagDiag                        bool
-	FlagVerbose                     bool
-	FlagVersion                     bool
-	FlagPort                        int
-	FlagPullInterval                int
-	FlagSnapshotDir                 string
-	FlagSnapshotEndpointsConfigFile string
-	FlagSnapshotUnitsLogsSinceHours string
-	FlagSnapshotTimeoutMinutes      int
+	FlagPull                                  bool
+	FlagDiag                                  bool
+	FlagVerbose                               bool
+	FlagVersion                               bool
+	FlagPort                                  int
+	FlagPullInterval                          int
+	FlagSnapshotDir                           string
+	FlagSnapshotEndpointsConfigFile           string
+	FlagSnapshotUnitsLogsSinceHours           string
+	FlagSnapshotJobTimeoutMinutes             int
+	FlagSnapshotJobGetSingleUrlTimeoutMinutes int
+	FlagCommandExecTimeoutSec                 int
 }
 
 func (c *Config) SetFlags(fs *flag.FlagSet) {
-	fs.BoolVar(&c.FlagPull, "pull", c.FlagPull, "Try to pull checks from DC/OS hosts.")
-	fs.BoolVar(&c.FlagDiag, "diag", c.FlagDiag, "Get diagnostics output once on the CLI. Does not expose API.")
-	fs.BoolVar(&c.FlagVerbose, "verbose", c.FlagVerbose, "Use verbose debug output.")
-	fs.BoolVar(&c.FlagVersion, "version", c.FlagVersion, "Print version.")
-	fs.IntVar(&c.FlagPort, "port", c.FlagPort, "Web server TCP port.")
-	fs.IntVar(&c.FlagPullInterval, "pull-interval", c.FlagPullInterval, "Set pull interval, default 60 sec.")
-	fs.StringVar(&c.FlagSnapshotDir, "snapshot-dir", c.FlagSnapshotDir, "Set a path to store snapshots.")
-	fs.StringVar(&c.FlagSnapshotEndpointsConfigFile, "endpoint-config", c.FlagSnapshotEndpointsConfigFile, "Use endpoints_config.yaml")
+	fs.BoolVar(&c.FlagPull, "pull", c.FlagPull, "Try to pull checks from DC/OS hosts")
+	fs.BoolVar(&c.FlagDiag, "diag", c.FlagDiag, "Get diagnostics output once on the CLI. Does not expose API")
+	fs.BoolVar(&c.FlagVerbose, "verbose", c.FlagVerbose, "Use verbose debug output")
+	fs.BoolVar(&c.FlagVersion, "version", c.FlagVersion, "Print version")
+	fs.IntVar(&c.FlagPort, "port", c.FlagPort, "Web server TCP port")
+	fs.IntVar(&c.FlagPullInterval, "pull-interval", c.FlagPullInterval, "Set pull interval")
+	fs.StringVar(&c.FlagSnapshotDir, "snapshot-dir", c.FlagSnapshotDir, "Set a path to store snapshots")
+	fs.StringVar(&c.FlagSnapshotEndpointsConfigFile, "endpoint-config", c.FlagSnapshotEndpointsConfigFile, "Use endpoints_config.json")
 	fs.StringVar(&c.FlagSnapshotUnitsLogsSinceHours, "snapshot-units-since", c.FlagSnapshotUnitsLogsSinceHours, "Collect systemd units logs since")
-	fs.IntVar(&c.FlagSnapshotTimeoutMinutes, "snapshot-timeout", c.FlagSnapshotTimeoutMinutes, "Set a timeout to collect logs from each node in a cluster, default 10 min.")
+	fs.IntVar(&c.FlagSnapshotJobTimeoutMinutes, "snapshot-job-timeout", c.FlagSnapshotJobTimeoutMinutes,
+		"Set a global snapshot job timeout")
+	fs.IntVar(&c.FlagSnapshotJobGetSingleUrlTimeoutMinutes, "snapshot-url-timeout", c.FlagSnapshotJobGetSingleUrlTimeoutMinutes,
+		"Set a local timeout for every single GET request to a log endpoint")
+	fs.IntVar(&c.FlagCommandExecTimeoutSec, "command-exec-timeout", c.FlagCommandExecTimeoutSec,
+		"Set command executing timeout")
 }
 
 func LoadDefaultConfig(args []string) (config Config, err error) {
@@ -59,7 +66,9 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	config.Revision = Revision
 
 	config.FlagSnapshotDir = "/opt/mesosphere/snapshots"
-	config.FlagSnapshotTimeoutMinutes = 720 //12 hours
+	config.FlagSnapshotJobTimeoutMinutes = 720 //12 hours
+	config.FlagSnapshotJobGetSingleUrlTimeoutMinutes = 5
+	config.FlagCommandExecTimeoutSec = 10
 
 	config.FlagSnapshotEndpointsConfigFile = "/opt/mesosphere/endpoints_config.json"
 	config.FlagSnapshotUnitsLogsSinceHours = "24"

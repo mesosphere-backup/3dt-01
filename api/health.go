@@ -163,13 +163,13 @@ func (st *DcosHealth) GetUnitNames() (units []string, err error) {
 	return units, nil
 }
 
-func (st *DcosHealth) GetJournalOutput(unit string) (string, error) {
+func (st *DcosHealth) GetJournalOutput(unit string, timeout int) (string, error) {
 	if strings.ContainsAny(unit, " ;&|") {
 		return "", errors.New("Unit name canot contain special charachters or space. Got "+unit)
 	}
 	command := []string{"journalctl", "--no-pager", "-n", "50", "-u", unit}
 	doneChan := make(chan bool)
-	r, err := runCmd(command, doneChan)
+	r, err := runCmd(command, doneChan, timeout)
 	if err != nil {
 		return "", err
 	}
@@ -225,7 +225,7 @@ func IsInList(item string, l []string) bool {
 	return false
 }
 
-func NormalizeProperty(unitName string, p map[string]interface{}, si HealthReporter) UnitHealthResponseFieldsStruct {
+func NormalizeProperty(unitName string, p map[string]interface{}, si HealthReporter, config *Config) UnitHealthResponseFieldsStruct {
 	var unitHealth int = 0
 	var unitOutput string
 
@@ -244,7 +244,7 @@ func NormalizeProperty(unitName string, p map[string]interface{}, si HealthRepor
 	}
 
 	if unitHealth > 0 {
-		journalOutput, err := si.GetJournalOutput(unitName)
+		journalOutput, err := si.GetJournalOutput(unitName, config.FlagCommandExecTimeoutSec)
 		if err == nil {
 			unitOutput += "\n"
 			unitOutput += journalOutput
@@ -346,7 +346,7 @@ func GetUnitsProperties(config *Config, dcosHealth HealthReporter) (healthReport
 			log.Errorf("Could not get properties for unit: %s", unit)
 			continue
 		}
-		allUnitsProperties = append(allUnitsProperties, NormalizeProperty(unit, currentProperty, dcosHealth))
+		allUnitsProperties = append(allUnitsProperties, NormalizeProperty(unit, currentProperty, dcosHealth, config))
 	}
 	// after we finished querying systemd units, close dbus connection
 	if err = dcosHealth.CloseDbusConnection(); err != nil {

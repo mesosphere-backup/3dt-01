@@ -55,7 +55,7 @@ func (st *FakeHealthReport) GetUnitNames() (units []string, err error) {
 	return units, err
 }
 
-func (st *FakeHealthReport) GetJournalOutput(unit string) (string, error) {
+func (st *FakeHealthReport) GetJournalOutput(unit string, timeout int) (string, error) {
 	return "journal output", nil
 }
 

@@ -46,7 +46,7 @@ type HealthReporter interface {
 	GetUnitNames() ([]string, error)
 
 	// Get journal output
-	GetJournalOutput(string) (string, error)
+	GetJournalOutput(string, int) (string, error)
 
 	// Get mesos node id, first argument is a role, second argument is a json field name
 	GetMesosNodeId(string, string) string

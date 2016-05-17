@@ -58,14 +58,13 @@ type snapshotReportStatus struct {
 	DiskUsedPercent float64 `json:"snapshot_partition_disk_usage_percent"`
 }
 
-func (j *SnapshotJob) getHttpAddToZip(node Node, endpoints map[string]string, folder string, zipWriter *zip.Writer, summaryReport *bytes.Buffer) error {
+func (j *SnapshotJob) getHttpAddToZip(node Node, endpoints map[string]string, folder string, zipWriter *zip.Writer, summaryReport *bytes.Buffer, config *Config) error {
 	for fileName, httpEndpoint := range endpoints {
 		full_url := "http://"+node.Ip+httpEndpoint
 		log.Debugf("GET %s", full_url)
 		j.Status = "GET " + full_url
 		client := new(http.Client)
-		// TODO(mnaboka): review timeout
-		client.Timeout = time.Duration(time.Minute*2)
+		client.Timeout = time.Duration(time.Minute*time.Duration(config.FlagSnapshotJobGetSingleUrlTimeoutMinutes))
 		request, err := http.NewRequest("GET", full_url, nil)
 		if err != nil {
 			j.Errors = append(j.Errors, err.Error())
@@ -142,7 +141,7 @@ func (j *SnapshotJob) getStatus(config *Config) snapshotReportStatus {
 		JobDuration:      j.JobDuration.String(),
 
 		SnapshotBaseDir:       config.FlagSnapshotDir,
-		SnapshotJobTimeoutMin: config.FlagSnapshotTimeoutMinutes,
+		SnapshotJobTimeoutMin: config.FlagSnapshotJobTimeoutMinutes,
 		DiskUsedPercent:       used,
 	}
 }
@@ -257,7 +256,7 @@ func (j *SnapshotJob) runBackgroundReport(nodes []Node, config *Config, puller P
 		select {
 		case <-jobIsDone:
 			return
-		case <-time.After(time.Minute * time.Duration(config.FlagSnapshotTimeoutMinutes)):
+		case <-time.After(time.Minute * time.Duration(config.FlagSnapshotJobTimeoutMinutes)):
 			j.Status = "Job failed"
 			errMsg := fmt.Sprintf("snapshot job timedout after: %s", time.Since(j.JobStarted))
 			j.Errors = append(j.Errors, errMsg)
@@ -347,7 +346,7 @@ func (j *SnapshotJob) runBackgroundReport(nodes []Node, config *Config, puller P
 		}
 
 		// add http endpoints
-		err = j.getHttpAddToZip(node, endpoints, j.LastSnapshotPath, zipWriter, summaryErrorsReport)
+		err = j.getHttpAddToZip(node, endpoints, j.LastSnapshotPath, zipWriter, summaryErrorsReport, config)
 		if err != nil {
 			errMsg := "could not add logs for a node, url: " + url
 			j.Errors = append(j.Errors, errMsg)
@@ -411,7 +410,7 @@ func dispatchLogs(provider string, entity string, config *Config, healthReport H
 	}
 	if provider == "units" {
 		log.Debugf("dispatching a unit %s", entity)
-		r, err = readJournalOutput(entity, config.FlagSnapshotUnitsLogsSinceHours, doneChan)
+		r, err = readJournalOutput(entity, config, doneChan)
 		return doneChan, r, err
 	}
 	if provider == "files" {
@@ -430,7 +429,7 @@ func dispatchLogs(provider string, entity string, config *Config, healthReport H
 		for _, cmdProvider := range append(intProviders.LocalCommands, extProviders.LocalCommands...) {
 			if len(cmdProvider.Command) > 0 {
 				if entity == filepath.Base(cmdProvider.Command[0]) {
-					r, err = runCmd(cmdProvider.Command, doneChan)
+					r, err = runCmd(cmdProvider.Command, doneChan, config.FlagCommandExecTimeoutSec)
 					return doneChan, r, err
 				}
 			}
@@ -440,7 +439,7 @@ func dispatchLogs(provider string, entity string, config *Config, healthReport H
 	return doneChan, r, errors.New("Unknown provider "+provider)
 }
 
-func runCmd(command []string, doneChan chan bool) (r io.ReadCloser, err error) {
+func runCmd(command []string, doneChan chan bool, timeout int) (r io.ReadCloser, err error) {
 	args := []string{}
 	if len(command) > 1 {
 		args = command[1:len(command)]
@@ -454,7 +453,7 @@ func runCmd(command []string, doneChan chan bool) (r io.ReadCloser, err error) {
 	if err := cmd.Start(); err != nil {
 		return r, err
 	}
-	go func(p *os.Process, doneChan chan bool) {
+	go func(p *os.Process, doneChan chan bool, timeout int) {
 		for {
 			select {
 			case <- doneChan:
@@ -462,14 +461,14 @@ func runCmd(command []string, doneChan chan bool) (r io.ReadCloser, err error) {
 				// always call Wait to avoid zombies
 				p.Wait()
 				return
-			case <-time.After(time.Second * 30):
+			case <-time.After(time.Second*time.Duration(timeout)):
 				log.Errorf("Timeout exceeded for process, killing %d", p.Pid)
 				p.Kill()
 				p.Wait()
 				return
 			}
 		}
-	}(cmd.Process, doneChan)
+	}(cmd.Process, doneChan, timeout)
 	return stdout, nil
 }
 
@@ -481,15 +480,15 @@ func readFile(fileLocation string) (r io.ReadCloser, err error) {
 	return file, nil
 }
 
-func readJournalOutput(unit string, since string, doneChan chan bool) (r io.ReadCloser, err error) {
+func readJournalOutput(unit string, config *Config, doneChan chan bool) (r io.ReadCloser, err error) {
 	if !strings.HasPrefix(unit, "dcos-") {
 		return r, errors.New("Unit should start with dcos-, got: "+unit)
 	}
 	if strings.ContainsAny(unit, " ;&|") {
 		return r, errors.New("Unit cannot contain special charachters or spaces")
 	}
-	command := []string{"journalctl", "--no-pager", "-u", unit, "--since", since+" hours ago"}
-	return runCmd(command, doneChan)
+	command := []string{"journalctl", "--no-pager", "-u", unit, "--since", config.FlagSnapshotUnitsLogsSinceHours+" hours ago"}
+	return runCmd(command, doneChan, config.FlagCommandExecTimeoutSec)
 }
 
 type LogProviders struct {

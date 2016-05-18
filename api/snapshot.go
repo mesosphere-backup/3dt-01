@@ -42,20 +42,23 @@ type snapshotReportResponse struct {
 
 type snapshotReportStatus struct {
 	// job related fields
-	Running          bool     `json:"is_running"`
-	Status           string   `json:"status"`
-	Errors           []string `json:"errors"`
-	LastSnapshotPath string   `json:"last_snapshot_dir"`
-	JobStarted       string   `json:"job_started"`
-	JobEnded         string   `json:"job_ended"`
-	JobDuration      string   `json:"job_duration"`
+	Running                              bool     `json:"is_running"`
+	Status                               string   `json:"status"`
+	Errors                               []string `json:"errors"`
+	LastSnapshotPath                      string   `json:"last_snapshot_dir"`
+	JobStarted                            string   `json:"job_started"`
+	JobEnded                              string   `json:"job_ended"`
+	JobDuration                           string   `json:"job_duration"`
 
 	// config related fields
-	SnapshotBaseDir       string `json:"snapshot_dir"`
-	SnapshotJobTimeoutMin int    `json:"job_timeout_min"`
+	SnapshotBaseDir                       string `json:"snapshot_dir"`
+	SnapshotJobTimeoutMin                 int    `json:"snapshot_job_timeout_min"`
+	SnapshotUnitsLogsSinceHours           string `json:"journald_logs_since_hours"`
+	SnapshotJobGetSingleUrlTimeoutMinutes int `json:"snapshot_job_get_since_url_timeout_min"`
+	CommandExecTimeoutSec                 int `json:"command_exec_timeout_sec"`
 
 	// metrics related
-	DiskUsedPercent float64 `json:"snapshot_partition_disk_usage_percent"`
+	DiskUsedPercent                       float64 `json:"snapshot_partition_disk_usage_percent"`
 }
 
 func (j *SnapshotJob) getHttpAddToZip(node Node, endpoints map[string]string, folder string, zipWriter *zip.Writer, summaryReport *bytes.Buffer, config *Config) error {
@@ -142,6 +145,11 @@ func (j *SnapshotJob) getStatus(config *Config) snapshotReportStatus {
 
 		SnapshotBaseDir:       config.FlagSnapshotDir,
 		SnapshotJobTimeoutMin: config.FlagSnapshotJobTimeoutMinutes,
+		SnapshotJobGetSingleUrlTimeoutMinutes: config.FlagSnapshotJobGetSingleUrlTimeoutMinutes,
+		SnapshotUnitsLogsSinceHours: config.FlagSnapshotUnitsLogsSinceHours,
+		CommandExecTimeoutSec: config.FlagCommandExecTimeoutSec,
+
+
 		DiskUsedPercent:       used,
 	}
 }

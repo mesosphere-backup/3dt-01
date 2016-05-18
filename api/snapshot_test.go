@@ -114,6 +114,9 @@ func (s *SnapshotTestSuit) TestGetAllStatus() {
 		SnapshotBaseDir: "/home/core/1",
 		SnapshotJobTimeoutMin: 720,
 		DiskUsedPercent: 28.0,
+		SnapshotUnitsLogsSinceHours: "24",
+		SnapshotJobGetSingleUrlTimeoutMinutes: 5,
+		CommandExecTimeoutSec: 10,
 	})
 }
 
@@ -121,7 +124,7 @@ func (s *SnapshotTestSuit) TestisSnapshotAvailable() {
 	// should find
 	host, remoteSnapshot, ok, err := s.dt.DtSnapshotJob.isSnapshotAvailable("snapshot-2016-05-13T22:11:36.zip", s.dt.Cfg, s.dt.DtPuller)
 	s.assert.True(ok)
-	s.assert.Equal(host, "127.0.0.1:1050")
+	s.assert.Equal(host, "127.0.0.1")
 	s.assert.Equal(remoteSnapshot, "/system/health/v1/report/snapshot/serve/snapshot-2016-05-13T22:11:36.zip")
 	s.assert.Nil(err)
 

@@ -9,6 +9,7 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/shirou/gopsutil/disk"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
@@ -17,13 +18,24 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"io/ioutil"
 )
+
+func makeRequest(timeout time.Duration, req *http.Request) (resp *http.Response, err error) {
+	client := http.Client{
+		Timeout: timeout,
+	}
+	resp, err = client.Do(req)
+	if err != nil {
+		return resp, err
+	}
+	// the user of this function is responsible to close the response.
+	return resp, nil
+}
 
 // snapshotJob
 type SnapshotJob struct {
 	sync.Mutex
-	cancelChan    chan bool
+	cancelChan chan bool
 
 	Running          bool          `json:"is_running"`
 	Status           string        `json:"status"`
@@ -42,32 +54,47 @@ type snapshotReportResponse struct {
 
 type snapshotReportStatus struct {
 	// job related fields
-	Running                              bool     `json:"is_running"`
-	Status                               string   `json:"status"`
-	Errors                               []string `json:"errors"`
-	LastSnapshotPath                      string   `json:"last_snapshot_dir"`
-	JobStarted                            string   `json:"job_started"`
-	JobEnded                              string   `json:"job_ended"`
-	JobDuration                           string   `json:"job_duration"`
+	Running          bool     `json:"is_running"`
+	Status           string   `json:"status"`
+	Errors           []string `json:"errors"`
+	LastSnapshotPath string   `json:"last_snapshot_dir"`
+	JobStarted       string   `json:"job_started"`
+	JobEnded         string   `json:"job_ended"`
+	JobDuration      string   `json:"job_duration"`
 
 	// config related fields
 	SnapshotBaseDir                       string `json:"snapshot_dir"`
 	SnapshotJobTimeoutMin                 int    `json:"snapshot_job_timeout_min"`
 	SnapshotUnitsLogsSinceHours           string `json:"journald_logs_since_hours"`
-	SnapshotJobGetSingleUrlTimeoutMinutes int `json:"snapshot_job_get_since_url_timeout_min"`
-	CommandExecTimeoutSec                 int `json:"command_exec_timeout_sec"`
+	SnapshotJobGetSingleUrlTimeoutMinutes int    `json:"snapshot_job_get_since_url_timeout_min"`
+	CommandExecTimeoutSec                 int    `json:"command_exec_timeout_sec"`
 
 	// metrics related
-	DiskUsedPercent                       float64 `json:"snapshot_partition_disk_usage_percent"`
+	DiskUsedPercent float64 `json:"snapshot_partition_disk_usage_percent"`
+}
+
+func (j *SnapshotJob) isRunning(config *Config, puller Puller) (bool, string, error) {
+	if j.Running {
+		return true, "", nil
+	}
+	clusterSnapshotStatus, err := j.getStatusAll(config, puller)
+	if err != nil {
+		return false, "", err
+	}
+	for node, status := range clusterSnapshotStatus {
+		if status.Running == true {
+			return true, node, nil
+		}
+	}
+	return false, "", nil
 }
 
 func (j *SnapshotJob) getHttpAddToZip(node Node, endpoints map[string]string, folder string, zipWriter *zip.Writer, summaryReport *bytes.Buffer, config *Config) error {
 	for fileName, httpEndpoint := range endpoints {
-		full_url := "http://"+node.Ip+httpEndpoint
+		full_url := "http://" + node.Ip + httpEndpoint
 		log.Debugf("GET %s", full_url)
 		j.Status = "GET " + full_url
-		client := new(http.Client)
-		client.Timeout = time.Duration(time.Minute*time.Duration(config.FlagSnapshotJobGetSingleUrlTimeoutMinutes))
+		timeout := time.Duration(time.Minute * time.Duration(config.FlagSnapshotJobGetSingleUrlTimeoutMinutes))
 		request, err := http.NewRequest("GET", full_url, nil)
 		if err != nil {
 			j.Errors = append(j.Errors, err.Error())
@@ -76,7 +103,7 @@ func (j *SnapshotJob) getHttpAddToZip(node Node, endpoints map[string]string, fo
 			continue
 		}
 		request.Header.Add("Accept-Encoding", "gzip")
-		resp, err := client.Do(request)
+		resp, err := makeRequest(timeout, request)
 		if err != nil {
 			j.Errors = append(j.Errors, err.Error())
 			log.Errorf("Could not fetch url: %s", full_url)
@@ -91,6 +118,7 @@ func (j *SnapshotJob) getHttpAddToZip(node Node, endpoints map[string]string, fo
 		// put all logs in a `ip_role` folder
 		zipFile, err := zipWriter.Create(filepath.Join(node.Ip+"_"+node.Role, fileName))
 		if err != nil {
+			resp.Body.Close()
 			j.Errors = append(j.Errors, err.Error())
 			log.Errorf("Could not add %s to a zip archive", fileName)
 			log.Error(err)
@@ -143,14 +171,13 @@ func (j *SnapshotJob) getStatus(config *Config) snapshotReportStatus {
 		JobEnded:         j.JobEnded.String(),
 		JobDuration:      j.JobDuration.String(),
 
-		SnapshotBaseDir:       config.FlagSnapshotDir,
-		SnapshotJobTimeoutMin: config.FlagSnapshotJobTimeoutMinutes,
+		SnapshotBaseDir:                       config.FlagSnapshotDir,
+		SnapshotJobTimeoutMin:                 config.FlagSnapshotJobTimeoutMinutes,
 		SnapshotJobGetSingleUrlTimeoutMinutes: config.FlagSnapshotJobGetSingleUrlTimeoutMinutes,
-		SnapshotUnitsLogsSinceHours: config.FlagSnapshotUnitsLogsSinceHours,
-		CommandExecTimeoutSec: config.FlagCommandExecTimeoutSec,
+		SnapshotUnitsLogsSinceHours:           config.FlagSnapshotUnitsLogsSinceHours,
+		CommandExecTimeoutSec:                 config.FlagCommandExecTimeoutSec,
 
-
-		DiskUsedPercent:       used,
+		DiskUsedPercent: used,
 	}
 }
 
@@ -172,7 +199,11 @@ func (j *SnapshotJob) isSnapshotAvailable(snapshotName string, config *Config, p
 		for _, remoteSnapshot := range remoteSnapshots {
 			if snapshotName == path.Base(remoteSnapshot) {
 				log.Infof("Snapshot %s found on a host: %s", snapshotName, host)
-				return host, remoteSnapshot, true, nil
+				host_port := strings.Split(host, ":")
+				if len(host_port) > 0 {
+					return host_port[0], remoteSnapshot, true, nil
+				}
+				return "", "", false, errors.New("Node must be ip:port. Got " + host)
 			}
 		}
 	}
@@ -180,21 +211,48 @@ func (j *SnapshotJob) isSnapshotAvailable(snapshotName string, config *Config, p
 }
 
 //
-func (j *SnapshotJob) DeleteSnapshot(snapshotName string, config *Config) error {
+func (j *SnapshotJob) delete(snapshotName string, config *Config, puller Puller, dcoshealth HealthReporter) (int, error) {
 	if !strings.HasPrefix(snapshotName, "snapshot-") || !strings.HasSuffix(snapshotName, ".zip") {
-		return errors.New("format allowed  snapshot-*.zip")
+		return http.StatusServiceUnavailable, errors.New("format allowed  snapshot-*.zip")
 	}
+
+	j.Lock()
+	defer j.Unlock()
+	// first try to locate a snapshot on a local disk.
 	snapshotPath := path.Join(config.FlagSnapshotDir, snapshotName)
 	log.Debugf("Trying remove snapshot: %s", snapshotPath)
 	_, err := os.Stat(snapshotPath)
+	if err == nil {
+		if err = os.Remove(snapshotPath); err != nil {
+			return http.StatusServiceUnavailable, err
+		}
+		log.Infof("%s deleted", snapshotPath)
+		return http.StatusOK, nil
+	}
+
+	node, _, ok, err := j.isSnapshotAvailable(snapshotName, config, puller)
 	if err != nil {
-		return err
+		return http.StatusServiceUnavailable, err
 	}
-	if err = os.Remove(snapshotPath); err != nil {
-		return err
+	if ok {
+		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/delete/%s", node, config.FlagPort, BaseRoute, snapshotName)
+		j.Status = "Attempting to delete a snapshot on a remote host. POST " + url
+		log.Debug(j.Status)
+		timeout := time.Duration(time.Second * 5)
+		request, err := http.NewRequest("POST", url, nil)
+		if err != nil {
+			return http.StatusServiceUnavailable, err
+		}
+		resp, err := makeRequest(timeout, request)
+		if err != nil {
+			return http.StatusServiceUnavailable, err
+		}
+		defer resp.Body.Close()
+		j.Status = "Successfully remote snapshot " + snapshotName
+		return resp.StatusCode, nil
 	}
-	log.Infof("%s deleted", snapshotPath)
-	return nil
+	j.Status = "Snapshot not found " + snapshotName
+	return http.StatusNotFound, nil
 }
 
 func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, puller Puller, dcosHealth HealthReporter) error {
@@ -202,10 +260,15 @@ func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, puller Pull
 		return errors.New("Running snapshot job on agent node is not implemented.")
 	}
 
-	if j.Running {
+	isRunning, _, err := j.isRunning(config, puller)
+	if err != nil {
+		j.Errors = append(j.Errors, err.Error())
+		log.Warningf("Error: %s, Assuming the snapshot is not running", err.Error())
+	}
+	if isRunning {
 		return errors.New("Job is already running")
 	}
-	_, err := os.Stat(config.FlagSnapshotDir)
+	_, err = os.Stat(config.FlagSnapshotDir)
 	if os.IsNotExist(err) {
 		log.Infof("snapshot dir: %s not found, attempting to create one", config.FlagSnapshotDir)
 		if err := os.Mkdir(config.FlagSnapshotDir, os.ModePerm); err != nil {
@@ -392,16 +455,46 @@ func findRequestedNodes(masterNodes []Node, agentNodes []Node, requestedNodes []
 	return matchedNodes, errors.New(fmt.Sprintf("Requested nodes: %s not found", requestedNodes))
 }
 
-func (j *SnapshotJob) cancel(dcosHealth HealthReporter) error {
+func (j *SnapshotJob) cancel(config *Config, puller Puller, dcosHealth HealthReporter) error {
 	if dcosHealth.GetNodeRole() == "agent" {
 		return errors.New("Canceling snapshot job on agent node is not implemented.")
 	}
 
-	if !j.Running {
+	isRunning, node, err := j.isRunning(config, puller)
+	if err != nil {
+		j.Errors = append(j.Errors, err.Error())
+	}
+	if !isRunning {
 		return errors.New("Job is not running")
 	}
 	log.Debug("Cancelling job")
-	j.cancelChan <- true
+
+	// if node is empty, try to cancel a job on a localhost
+	if node == "" {
+		j.cancelChan <- true
+	} else {
+		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/cancel", node, config.FlagPort, BaseRoute)
+		j.Status = "Attempting to cancel a job on a remote host. POST " + url
+		log.Debug(j.Status)
+		timeout := time.Duration(time.Second * 5)
+		request, err := http.NewRequest("POST", url, nil)
+		if err != nil {
+			return err
+		}
+		resp, err := makeRequest(timeout, request)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				return err
+			}
+			return errors.New(string(body))
+		}
+
+	}
 	return nil
 }
 
@@ -430,7 +523,7 @@ func dispatchLogs(provider string, entity string, config *Config, healthReport H
 				return doneChan, r, err
 			}
 		}
-		return doneChan, r, errors.New("Not found "+entity)
+		return doneChan, r, errors.New("Not found " + entity)
 	}
 	if provider == "cmds" {
 		log.Debugf("dispatching a command %s", entity)
@@ -442,9 +535,9 @@ func dispatchLogs(provider string, entity string, config *Config, healthReport H
 				}
 			}
 		}
-		return doneChan, r, errors.New("Not found "+entity)
+		return doneChan, r, errors.New("Not found " + entity)
 	}
-	return doneChan, r, errors.New("Unknown provider "+provider)
+	return doneChan, r, errors.New("Unknown provider " + provider)
 }
 
 func runCmd(command []string, doneChan chan bool, timeout int) (r io.ReadCloser, err error) {
@@ -464,12 +557,12 @@ func runCmd(command []string, doneChan chan bool, timeout int) (r io.ReadCloser,
 	go func(p *os.Process, doneChan chan bool, timeout int) {
 		for {
 			select {
-			case <- doneChan:
+			case <-doneChan:
 				log.Debugf("Process finished %d", p.Pid)
 				// always call Wait to avoid zombies
 				p.Wait()
 				return
-			case <-time.After(time.Second*time.Duration(timeout)):
+			case <-time.After(time.Second * time.Duration(timeout)):
 				log.Errorf("Timeout exceeded for process, killing %d", p.Pid)
 				p.Kill()
 				p.Wait()
@@ -490,12 +583,12 @@ func readFile(fileLocation string) (r io.ReadCloser, err error) {
 
 func readJournalOutput(unit string, config *Config, doneChan chan bool) (r io.ReadCloser, err error) {
 	if !strings.HasPrefix(unit, "dcos-") {
-		return r, errors.New("Unit should start with dcos-, got: "+unit)
+		return r, errors.New("Unit should start with dcos-, got: " + unit)
 	}
 	if strings.ContainsAny(unit, " ;&|") {
 		return r, errors.New("Unit cannot contain special charachters or spaces")
 	}
-	command := []string{"journalctl", "--no-pager", "-u", unit, "--since", config.FlagSnapshotUnitsLogsSinceHours+" hours ago"}
+	command := []string{"journalctl", "--no-pager", "-u", unit, "--since", config.FlagSnapshotUnitsLogsSinceHours + " hours ago"}
 	return runCmd(command, doneChan, config.FlagCommandExecTimeoutSec)
 }
 
@@ -519,7 +612,7 @@ type FileProvider struct {
 
 type CommandProvider struct {
 	Command []string
-	Role     string
+	Role    string
 }
 
 // get a list of all available endpoints
@@ -593,8 +686,8 @@ func loadInternalProviders(config *Config, dcosHealth HealthReporter) (internalC
 		})
 	}
 	httpEndpoints = append(httpEndpoints, HttpProvider{
-		Port: 1050,
-		Uri: BaseRoute,
+		Port:     1050,
+		Uri:      BaseRoute,
 		FileName: "3dt-health.log",
 	})
 

@@ -51,23 +51,17 @@ func (pt *FakePuller) GetHttp(url string) ([]byte, int, error) {
 			  "job_ended":"0001-01-01 00:00:00 +0000 UTC",
 			  "job_duration":"2s",
 			  "snapshot_dir":"/home/core/1",
-			  "job_timeout_min":720,
-			  "snapshot_partition_disk_usage_percent":28.0
+			  "snapshot_job_timeout_min":720,
+			  "snapshot_partition_disk_usage_percent":28.0,
+			  "journald_logs_since_hours": "24",
+			  "snapshot_job_get_since_url_timeout_min": 5,
+			  "command_exec_timeout_sec": 10
 			}
 		`
 	}
 	if url == fmt.Sprintf("http://127.0.0.1:1050%s/report/snapshot/list", BaseRoute) {
 		response = `["/system/health/v1/report/snapshot/serve/snapshot-2016-05-13T22:11:36.zip"]`
 	}
-	//	response = `
-	//		{
-	//		  "127.0.0.1:1050": [
-	//		    "/system/health/v1/report/snapshot/serve/snapshot-2016-05-13T22:11:36.zip"
-	//		  ],
-	//		  "10.0.7.122:1050":null,
-	//		  "10.0.7.123:1050":null
-	//		}`
-	//}
 	// master
 	if url == fmt.Sprintf("http://127.0.0.1:1050%s", BaseRoute) {
 		response = `

@@ -256,6 +256,8 @@ func (j *SnapshotJob) delete(snapshotName string, config *Config, puller Puller,
 }
 
 func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, puller Puller, dcosHealth HealthReporter) error {
+	// reset job status every time we run a new job.
+	*j = SnapshotJob{}
 	if dcosHealth.GetNodeRole() == "agent" {
 		return errors.New("Running snapshot job on agent node is not implemented.")
 	}
@@ -310,7 +312,6 @@ func updateSummaryReport(preflix string, node Node, error string, r *bytes.Buffe
 
 func (j *SnapshotJob) runBackgroundReport(nodes []Node, config *Config, puller Puller) {
 	log.Info("Started background job")
-
 	// log a start time
 	j.JobStarted = time.Now()
 

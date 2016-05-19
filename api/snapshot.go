@@ -47,6 +47,7 @@ type SnapshotJob struct {
 }
 
 type snapshotReportResponse struct {
+	responseCode int
 	Version int      `json:"version"`
 	Status  string   `json:"status"`
 	Errors  []string `json:"errors"`
@@ -131,6 +132,7 @@ func (j *SnapshotJob) getHttpAddToZip(node Node, endpoints map[string]string, fo
 	return nil
 }
 
+// Collect all status reports from master nodes and return a map[master_ip] snapshotReportStatus
 func (j *SnapshotJob) getStatusAll(config *Config, puller Puller) (map[string]snapshotReportStatus, error) {
 	statuses := make(map[string]snapshotReportStatus)
 
@@ -210,29 +212,46 @@ func (j *SnapshotJob) isSnapshotAvailable(snapshotName string, config *Config, p
 	return "", "", false, nil
 }
 
-//
-func (j *SnapshotJob) delete(snapshotName string, config *Config, puller Puller, dcoshealth HealthReporter) (int, error) {
+func prepareResponseOk(httpStatusCode int, okMsg string) (response snapshotReportResponse, err error) {
+	response, _ = prepareResponseWithErr(httpStatusCode, nil)
+	response.Status = okMsg
+	return response, nil
+}
+
+func prepareResponseWithErr(httpStatusCode int, e error) (response snapshotReportResponse, err error) {
+	response.Version = ApiVer
+	response.responseCode = httpStatusCode
+	if e != nil {
+		response.Status = e.Error()
+	}
+	return response, e
+}
+
+// delete a snapshot
+func (j *SnapshotJob) delete(snapshotName string, config *Config, puller Puller, dcoshealth HealthReporter) (response snapshotReportResponse, err error) {
 	if !strings.HasPrefix(snapshotName, "snapshot-") || !strings.HasSuffix(snapshotName, ".zip") {
-		return http.StatusServiceUnavailable, errors.New("format allowed  snapshot-*.zip")
+		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("format allowed  snapshot-*.zip"))
 	}
 
 	j.Lock()
 	defer j.Unlock()
+
 	// first try to locate a snapshot on a local disk.
 	snapshotPath := path.Join(config.FlagSnapshotDir, snapshotName)
 	log.Debugf("Trying remove snapshot: %s", snapshotPath)
-	_, err := os.Stat(snapshotPath)
+	_, err = os.Stat(snapshotPath)
 	if err == nil {
 		if err = os.Remove(snapshotPath); err != nil {
-			return http.StatusServiceUnavailable, err
+			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
-		log.Infof("%s deleted", snapshotPath)
-		return http.StatusOK, nil
+		msg := "Deleted "+snapshotPath
+		log.Infof(msg)
+		return prepareResponseOk(http.StatusOK, msg)
 	}
 
 	node, _, ok, err := j.isSnapshotAvailable(snapshotName, config, puller)
 	if err != nil {
-		return http.StatusServiceUnavailable, err
+		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 	}
 	if ok {
 		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/delete/%s", node, config.FlagPort, BaseRoute, snapshotName)
@@ -241,45 +260,44 @@ func (j *SnapshotJob) delete(snapshotName string, config *Config, puller Puller,
 		timeout := time.Duration(time.Second * 5)
 		request, err := http.NewRequest("POST", url, nil)
 		if err != nil {
-			return http.StatusServiceUnavailable, err
+			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
 		resp, err := makeRequest(timeout, request)
 		if err != nil {
-			return http.StatusServiceUnavailable, err
+			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
 		defer resp.Body.Close()
-		j.Status = "Successfully remote snapshot " + snapshotName
-		return resp.StatusCode, nil
+		j.Status = "Successfully deleted snapshot " + snapshotName
+		return prepareResponseOk(http.StatusOK, j.Status)
 	}
 	j.Status = "Snapshot not found " + snapshotName
-	return http.StatusNotFound, nil
+	return prepareResponseOk(http.StatusNotFound, j.Status)
 }
 
-func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, puller Puller, dcosHealth HealthReporter) error {
-	// reset job status every time we run a new job.
-	*j = SnapshotJob{}
+func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, puller Puller, dcosHealth HealthReporter) (response snapshotReportResponse, err error) {
 	if dcosHealth.GetNodeRole() == "agent" {
-		return errors.New("Running snapshot job on agent node is not implemented.")
+		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Running snapshot job on agent node is not implemented."))
 	}
 
 	isRunning, _, err := j.isRunning(config, puller)
 	if err != nil {
-		j.Errors = append(j.Errors, err.Error())
 		log.Warningf("Error: %s, Assuming the snapshot is not running", err.Error())
 	}
 	if isRunning {
-		return errors.New("Job is already running")
+		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Job is already running"))
 	}
+
 	_, err = os.Stat(config.FlagSnapshotDir)
 	if os.IsNotExist(err) {
 		log.Infof("snapshot dir: %s not found, attempting to create one", config.FlagSnapshotDir)
 		if err := os.Mkdir(config.FlagSnapshotDir, os.ModePerm); err != nil {
-			errMsg := fmt.Sprintf("Could not create snapshot directory: %s", config.FlagSnapshotDir)
-			j.Errors = append(j.Errors, errMsg)
-			j.Status = "Job failed"
-			return errors.New(errMsg)
+			j.Status = "Could not create snapshot directory: "+config.FlagSnapshotDir
+			return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New(j.Status))
 		}
 	}
+
+	// Null errors on every new run.
+	j.Errors = nil
 
 	t := time.Now()
 	j.LastSnapshotPath = fmt.Sprintf("%s/snapshot-%d-%02d-%02dT%02d:%02d:%02d-%d.zip", config.FlagSnapshotDir, t.Year(),
@@ -289,21 +307,21 @@ func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, puller Pull
 	// first discover all nodes in a cluster, then try to find requested nodes.
 	masterNodes, err := puller.LookupMaster()
 	if err != nil {
-		return err
+		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 	}
 	agentNodes, err := puller.GetAgentsFromMaster()
 	if err != nil {
-		return err
+		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 	}
 	foundNodes, err := findRequestedNodes(masterNodes, agentNodes, req.Nodes)
 	if err != nil {
-		return err
+		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 	}
 	log.Debugf("Found requested nodes: %s", foundNodes)
 
 	j.cancelChan = make(chan bool)
 	go j.runBackgroundReport(foundNodes, config, puller)
-	return nil
+	return prepareResponseOk(http.StatusOK, "Snapshot job started: "+filepath.Base(j.LastSnapshotPath))
 }
 
 func updateSummaryReport(preflix string, node Node, error string, r *bytes.Buffer) {
@@ -456,9 +474,10 @@ func findRequestedNodes(masterNodes []Node, agentNodes []Node, requestedNodes []
 	return matchedNodes, errors.New(fmt.Sprintf("Requested nodes: %s not found", requestedNodes))
 }
 
-func (j *SnapshotJob) cancel(config *Config, puller Puller, dcosHealth HealthReporter) error {
+func (j *SnapshotJob) cancel(config *Config, puller Puller, dcosHealth HealthReporter) (response snapshotReportResponse, err error) {
+
 	if dcosHealth.GetNodeRole() == "agent" {
-		return errors.New("Canceling snapshot job on agent node is not implemented.")
+		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Canceling snapshot job on agent node is not implemented."))
 	}
 
 	isRunning, node, err := j.isRunning(config, puller)
@@ -466,13 +485,12 @@ func (j *SnapshotJob) cancel(config *Config, puller Puller, dcosHealth HealthRep
 		j.Errors = append(j.Errors, err.Error())
 	}
 	if !isRunning {
-		return errors.New("Job is not running")
+		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Job is not running"))
 	}
-	log.Debug("Cancelling job")
-
 	// if node is empty, try to cancel a job on a localhost
 	if node == "" {
 		j.cancelChan <- true
+		log.Debug("Cancelling a local job")
 	} else {
 		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/cancel", node, config.FlagPort, BaseRoute)
 		j.Status = "Attempting to cancel a job on a remote host. POST " + url
@@ -480,23 +498,19 @@ func (j *SnapshotJob) cancel(config *Config, puller Puller, dcosHealth HealthRep
 		timeout := time.Duration(time.Second * 5)
 		request, err := http.NewRequest("POST", url, nil)
 		if err != nil {
-			return err
+			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
 		resp, err := makeRequest(timeout, request)
 		if err != nil {
-			return err
+			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != 200 {
-			body, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				return err
-			}
-			return errors.New(string(body))
+			return prepareResponseWithErr(resp.StatusCode, errors.New("Could not cancel a job on a remote host "+url))
 		}
 
 	}
-	return nil
+	return prepareResponseOk(http.StatusOK, "Attempting to cancel a job, please check job status.")
 }
 
 func dispatchLogs(provider string, entity string, config *Config, healthReport HealthReporter) (doneChan chan bool, r io.ReadCloser, err error) {

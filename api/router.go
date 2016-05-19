@@ -130,7 +130,7 @@ func getRoutes(dt Dt) []routeHandler {
 			// /system/health/v1/report/snapshot
 			url: BaseRoute + "/report/snapshot/create",
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				createSnapshotReportHandler(w, r, dt)
+				createSnapshotHandler(w, r, dt)
 			},
 			methods: []string{"POST"},
 		},
@@ -157,14 +157,14 @@ func getRoutes(dt Dt) []routeHandler {
 			// /system/health/v1/report/snapshot/list
 			url: BaseRoute + "/report/snapshot/list",
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				listSnapshotReportHandler(w, r, dt)
+				listAvailableLocalSnapshotFilesHandler(w, r, dt)
 			},
 		},
 		{
 			// /system/health/v1/report/snapshot/list/all
 			url: BaseRoute + "/report/snapshot/list/all",
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				listAllSnapshotReportHandler(w, r, dt)
+				listAvailableGLobalSnapshotFilesHandler(w, r, dt)
 			},
 		},
 		{

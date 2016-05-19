@@ -12,33 +12,43 @@ import (
 	"path/filepath"
 )
 
-// Route handlers
-func deleteSnapshotHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
-	response := snapshotReportResponse{}
-	vars := mux.Vars(r)
-	responseCode, err := dt.DtSnapshotJob.delete(vars["file"], dt.Cfg, dt.DtPuller, dt.DtHealth)
-	if err != nil {
+// Helper functions
+
+// A helper function to send a response.
+func writeResponse(w http.ResponseWriter, response snapshotReportResponse) {
+	w.WriteHeader(response.responseCode)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Error(err)
-		response.Status = err.Error()
-		writeResponse(w, response, responseCode)
-		return
 	}
-	response.Status = dt.DtSnapshotJob.Status
-	writeResponse(w, response, responseCode)
 }
 
+// Route handlers section
+
+// A handler responsible for removing snapshots. First it will try to find a snapshot locally, if failed
+// it will send a broadcast request to all cluster master members and check if snapshot it available.
+// If snapshot was found on a remote host the local node will send a POST request to remove the snapshot.
+func deleteSnapshotHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
+	vars := mux.Vars(r)
+	response, err := dt.DtSnapshotJob.delete(vars["file"], dt.Cfg, dt.DtPuller, dt.DtHealth)
+	if err != nil {
+		log.Error(err)
+	}
+	writeResponse(w, response)
+}
+
+// A handler function return a snapshot job status of type `snapshotReportStatus`
 func statusSnapshotReporthandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	if err := json.NewEncoder(w).Encode(dt.DtSnapshotJob.getStatus(dt.Cfg)); err != nil {
 		log.Error("Failed to encode responses to json")
 	}
 }
 
+// A handler function returns a map of master node ip address as a key and snapshotReportStatus as a value.
 func statusAllSnapshotReporthandler(w http.ResponseWriter, r *http.Request, dt Dt) {
-	response := snapshotReportResponse{}
 	status, err := dt.DtSnapshotJob.getStatusAll(dt.Cfg, dt.DtPuller)
 	if err != nil {
-		response.Status = err.Error()
-		writeResponse(w, response, http.StatusServiceUnavailable)
+		response, _ := prepareResponseWithErr(http.StatusServiceUnavailable, err)
+		writeResponse(w, response)
 		return
 	}
 	if err := json.NewEncoder(w).Encode(status); err != nil {
@@ -46,24 +56,22 @@ func statusAllSnapshotReporthandler(w http.ResponseWriter, r *http.Request, dt D
 	}
 }
 
+// A handler function cancels a job running on a local node first. If a job is running on a remote node
+// it will try to send a POST request to cancel it.
 func cancelSnapshotReportHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
-	response := snapshotReportResponse{}
-	if err := dt.DtSnapshotJob.cancel(dt.Cfg, dt.DtPuller, dt.DtHealth); err != nil {
+	response, err := dt.DtSnapshotJob.cancel(dt.Cfg, dt.DtPuller, dt.DtHealth)
+	if err != nil {
 		log.Error(err)
-		response.Status = err.Error()
-		writeResponse(w, response, http.StatusServiceUnavailable)
-		return
 	}
-	response.Status = "Attempting to cancel the job, check status for more details"
-	writeResponse(w, response, http.StatusOK)
+	writeResponse(w, response)
 }
 
-func listAllSnapshotReportHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
-	response := snapshotReportResponse{}
+// A handler function returns a map of master ip as a key and a list of snapshots as a value.
+func listAvailableGLobalSnapshotFilesHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	allSnapshots, err := listAllSnapshots(dt.Cfg, dt.DtPuller)
 	if err != nil {
-		response.Status = err.Error()
-		writeResponse(w, response, http.StatusServiceUnavailable)
+		response, _ := prepareResponseWithErr(http.StatusServiceUnavailable, err)
+		writeResponse(w, response)
 		return
 	}
 	if err := json.NewEncoder(w).Encode(allSnapshots); err != nil {
@@ -71,12 +79,12 @@ func listAllSnapshotReportHandler(w http.ResponseWriter, r *http.Request, dt Dt)
 	}
 }
 
-func listSnapshotReportHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
-	response := snapshotReportResponse{}
+// A handler function returns a list of URLs to download snapshots
+func listAvailableLocalSnapshotFilesHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	matches, err := dt.DtSnapshotJob.findLocalSnapshot(dt.Cfg)
 	if err != nil {
-		response.Status = err.Error()
-		writeResponse(w, response, http.StatusServiceUnavailable)
+		response, _ := prepareResponseWithErr(http.StatusServiceUnavailable, err)
+		writeResponse(w, response)
 		return
 	}
 
@@ -90,6 +98,9 @@ func listSnapshotReportHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	}
 }
 
+// A handler function serves a static local file. If a file not available locally and
+// listAvailableGLobalSnapshotFilesHandler returns that a file resides on a different node, it will create a reverse
+// proxy to download the file.
 func downloadSnapshotHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	vars := mux.Vars(r)
 	serveFile := dt.Cfg.FlagSnapshotDir + "/" + vars["file"]
@@ -119,45 +130,34 @@ func downloadSnapshotHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	http.NotFound(w, r)
 }
 
+// Create snapshot request structure, example:   {"nodes": ["all"]}
 type snapshotCreateRequest struct {
 	Version int
 	Nodes   []string
 }
 
-func writeResponse(w http.ResponseWriter, response snapshotReportResponse, httpStatus int) {
-	response.Version = ApiVer
-	w.WriteHeader(httpStatus)
-	log.Info(response.Status)
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		log.Error(err)
-	}
-}
-
-func createSnapshotReportHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
-	response := snapshotReportResponse{Version: ApiVer}
+// A handler function to start a snapshot job.
+func createSnapshotHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	var req snapshotCreateRequest
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&req); err != nil {
-		response.Status = "could not unmarshal json request"
-		writeResponse(w, response, http.StatusBadRequest)
+		response, _ := prepareResponseWithErr(http.StatusBadRequest, err)
+		writeResponse(w, response)
 		return
 	}
-	if err := dt.DtSnapshotJob.run(req, dt.Cfg, dt.DtPuller, dt.DtHealth); err != nil {
-		response.Status = err.Error()
-		writeResponse(w, response, http.StatusServiceUnavailable)
-		return
+	response, err := dt.DtSnapshotJob.run(req, dt.Cfg, dt.DtPuller, dt.DtHealth)
+	if err != nil {
+		log.Error(err)
 	}
-	response.Status = dt.DtSnapshotJob.Status
-	response.Errors = dt.DtSnapshotJob.Errors
-	writeResponse(w, response, http.StatusOK)
+	writeResponse(w, response)
 }
 
+// A handler function to to get a list of available logs on a node.
 func logsListHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	report, err := getLogsEndpointList(dt.Cfg, dt.DtHealth)
 	if err != nil {
-		response := snapshotReportResponse{Version: ApiVer}
-		response.Status = err.Error()
-		writeResponse(w, response, http.StatusNotFound)
+		response, _ := prepareResponseWithErr(http.StatusServiceUnavailable, err)
+		writeResponse(w, response)
 		return
 	}
 	if err := json.NewEncoder(w).Encode(report); err != nil {
@@ -170,9 +170,8 @@ func getUnitLogHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	vars := mux.Vars(r)
 	doneChan, unitLogOut, err := dispatchLogs(vars["provider"], vars["entity"], dt.Cfg, dt.DtHealth)
 	if err != nil {
-		response := snapshotReportResponse{Version: ApiVer}
-		response.Status = err.Error()
-		writeResponse(w, response, http.StatusNotFound)
+		response, _ := prepareResponseWithErr(http.StatusServiceUnavailable, err)
+		writeResponse(w, response)
 		return
 	}
 	io.Copy(w, unitLogOut)

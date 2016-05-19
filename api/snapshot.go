@@ -20,18 +20,6 @@ import (
 	"time"
 )
 
-func makeRequest(timeout time.Duration, req *http.Request) (resp *http.Response, err error) {
-	client := http.Client{
-		Timeout: timeout,
-	}
-	resp, err = client.Do(req)
-	if err != nil {
-		return resp, err
-	}
-	// the user of this function is responsible to close the response.
-	return resp, nil
-}
-
 // snapshotJob
 type SnapshotJob struct {
 	sync.Mutex

@@ -22,20 +22,28 @@ func (pt *PullType) GetTimestamp() time.Time {
 	return time.Now()
 }
 
-func (pt *PullType) GetHttp(url string) ([]byte, int, error) {
-	var body []byte
-
-	// a timeout of 1 seconds should be good enough
+func makeRequest(timeout time.Duration, req *http.Request) (resp *http.Response, err error) {
 	client := http.Client{
-		Timeout: time.Duration(time.Second),
+		Timeout: timeout,
 	}
+	resp, err = client.Do(req)
+	if err != nil {
+		return resp, err
+	}
+	// the user of this function is responsible to close the response.
+	return resp, nil
+}
 
-	resp, err := client.Get(url)
+func (pt *PullType) GetHttp(url string) (body []byte, statusCode int, err error) {
+	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return body, 500, err
 	}
-
-	// http://devs.cloudimmunity.com/gotchas-and-common-mistakes-in-go-golang/index.html#close_http_resp_body
+	timeout := time.Duration(time.Second*3)
+	resp, err := makeRequest(timeout, request)
+	if err != nil {
+		return body, 500, err
+	}
 	defer resp.Body.Close()
 	body, err = ioutil.ReadAll(resp.Body)
 	return body, resp.StatusCode, nil

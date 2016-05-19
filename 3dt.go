@@ -13,9 +13,9 @@ func getVersion() string {
 	return (fmt.Sprintf("Version: %s, Revision: %s", api.Version, api.Revision))
 }
 
-func runDiag(config api.Config) int {
+func runDiag(dt api.Dt) int {
 	var exitCode int = 0
-	units, err := api.GetUnitsProperties(&config)
+	units, err := api.GetUnitsProperties(dt.Cfg, dt.DtHealth)
 	if err != nil {
 		log.Error(err)
 		return 1
@@ -39,6 +39,16 @@ func main() {
 		log.Error(err)
 		os.Exit(1)
 	}
+
+	// init 3dt dependencies
+	dt := api.Dt{
+		DtPuller: &api.PullType{},
+		DtHealth: &api.DcosHealth{},
+		DtSnapshotJob: &api.SnapshotJob{},
+		Cfg: &config,
+		HTTPRequest: &api.HTTPRequest{},
+	}
+
 	// print version and exit
 	if config.FlagVersion {
 		fmt.Println(getVersion())
@@ -47,7 +57,7 @@ func main() {
 
 	// run local diagnostics, verify all systemd units are healthy.
 	if config.FlagDiag {
-		os.Exit(runDiag(config))
+		os.Exit(runDiag(dt))
 	}
 
 	// set verbose (debug) output.
@@ -57,14 +67,13 @@ func main() {
 
 	// start pulling every 60 seconds.
 	if config.FlagPull {
-		puller := api.PullType{}
-		go api.StartPullWithInterval(config, &puller, readyChan)
+		go api.StartPullWithInterval(dt, readyChan)
 	}
 
 	// start diagnostic server and expose endpoints.
 	log.Info("Start 3DT")
-	go api.StartUpdateHealthReport(config, readyChan, false)
-	router := api.NewRouter(&config)
+	go api.StartUpdateHealthReport(dt.Cfg, dt.DtHealth, readyChan, false)
+	router := api.NewRouter(dt)
 	log.Infof("Exposing 3DT API on 0.0.0.0:%d", config.FlagPort)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.FlagPort), router))
 }

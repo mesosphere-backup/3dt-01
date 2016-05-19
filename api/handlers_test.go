@@ -12,26 +12,30 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+	"io"
 )
 
-// Testing SystemdType
-type FakeSystemdType struct {
+type FakeHealthReport struct {
 	units []string
+	customRole string
 }
 
-func (st *FakeSystemdType) GetHostname() string {
+func (st *FakeHealthReport) GetHostname() string {
 	return "MyHostName"
 }
 
-func (st *FakeSystemdType) DetectIp() string {
+func (st *FakeHealthReport) DetectIp() string {
 	return "127.0.0.1"
 }
 
-func (st *FakeSystemdType) GetNodeRole() string {
+func (st *FakeHealthReport) GetNodeRole() string {
+	if st.customRole != "" {
+		return st.customRole
+	}
 	return "master"
 }
 
-func (st *FakeSystemdType) GetUnitProperties(pname string) (map[string]interface{}, error) {
+func (st *FakeHealthReport) GetUnitProperties(pname string) (map[string]interface{}, error) {
 	result := make(map[string]interface{})
 	st.units = append(st.units, pname)
 	if pname == "unit_to_fail" {
@@ -43,24 +47,24 @@ func (st *FakeSystemdType) GetUnitProperties(pname string) (map[string]interface
 	return result, nil
 }
 
-func (st *FakeSystemdType) InitializeDbusConnection() error {
+func (st *FakeHealthReport) InitializeDbusConnection() error {
 	return nil
 }
 
-func (st *FakeSystemdType) CloseDbusConnection() error {
+func (st *FakeHealthReport) CloseDbusConnection() error {
 	return nil
 }
 
-func (st *FakeSystemdType) GetUnitNames() (units []string, err error) {
+func (st *FakeHealthReport) GetUnitNames() (units []string, err error) {
 	units = []string{"dcos-setup.service", "dcos-link-env.service", "dcos-download.service", "unit_a", "unit_b", "unit_c", "unit_to_fail"}
 	return units, err
 }
 
-func (st *FakeSystemdType) GetJournalOutput(unit string) (string, error) {
+func (st *FakeHealthReport) GetJournalOutput(unit string, timeout int) (string, error) {
 	return "journal output", nil
 }
 
-func (st *FakeSystemdType) GetMesosNodeId(role string, field string) string {
+func (st *FakeHealthReport) GetMesosNodeId(role string, field string) string {
 	return "node-id-123"
 }
 
@@ -78,8 +82,12 @@ func (suit *HandlersTestSuit) SetupTest() {
 	// setup variables
 	args := []string{"3dt", "test"}
 	suit.cfg, _ = LoadDefaultConfig(args)
-	suit.cfg.HealthReport = &FakeSystemdType{}
-	suit.router = NewRouter(&suit.cfg)
+	dt := Dt{
+		DtHealth: &FakeHealthReport{},
+		DtPuller: &FakePuller{},
+		DtSnapshotJob: &SnapshotJob{},
+	}
+	suit.router = NewRouter(dt)
 	suit.assert = assertPackage.New(suit.T())
 
 	// mock the response
@@ -219,31 +227,32 @@ func (suit *HandlersTestSuit) SetupTest() {
 
 	// Update global monitoring responses
 	GlobalMonitoringResponse.UpdateMonitoringResponse(suit.mockedMonitoringResponse)
-	GlobalHealthReport.UpdateHealthReport(suit.mockedUnitsHealthResponseJsonStruct)
+	GlobalUnitsHealthReport.UpdateHealthReport(suit.mockedUnitsHealthResponseJsonStruct)
 }
 
 func (suit *HandlersTestSuit) TearDownTest() {
 	// clear global variables that might be set
-	GlobalHealthReport = UnitsHealth{}
+	GlobalUnitsHealthReport = UnitsHealth{}
 	GlobalMonitoringResponse = MonitoringResponse{}
 }
 
 // Helper functions
-func MakeHttpRequest(t *testing.T, router *mux.Router, url string) (response []byte, err error) {
-	req, err := http.NewRequest("GET", url, nil)
+func MakeFakeHttpRequest(t *testing.T, router *mux.Router, url, method string, body io.Reader) (response []byte, statusCode int, err error) {
+	req, err := http.NewRequest(method, url, body)
 	if err != nil {
-		return response, err
+		return response, http.StatusBadRequest, err
 	}
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	if w.Code != 200 {
-		return response, errors.New(fmt.Sprintf("wrong HTTP response: %d", w.Code))
+	var e error
+	if w.Code != http.StatusOK {
+		e = errors.New(fmt.Sprintf("wrong HTTP response: %d", w.Code))
 	}
-	return w.Body.Bytes(), nil
+	return w.Body.Bytes(), w.Code, e
 }
 
 func (s *HandlersTestSuit) get(url string) []byte {
-	response, err := MakeHttpRequest(s.T(), s.router, url)
+	response, _, err := MakeFakeHttpRequest(s.T(), s.router, url, "GET", nil)
 	s.assert.Nil(err, "Error makeing GET request")
 	return response
 }
@@ -251,10 +260,10 @@ func (s *HandlersTestSuit) get(url string) []byte {
 // Tests
 func (s *HandlersTestSuit) TestUnitsHealthStruct() {
 	// Test structure HealthReport get/set health report
-	GlobalHealthReport.UpdateHealthReport(UnitsHealthResponseJsonStruct{})
-	s.assert.Equal(GlobalHealthReport.GetHealthReport(), UnitsHealthResponseJsonStruct{}, "GetHealthReport() should be empty")
-	GlobalHealthReport.UpdateHealthReport(s.mockedUnitsHealthResponseJsonStruct)
-	s.assert.Equal(GlobalHealthReport.GetHealthReport(), s.mockedUnitsHealthResponseJsonStruct, "GetHealthReport() should NOT be empty")
+	GlobalUnitsHealthReport.UpdateHealthReport(UnitsHealthResponseJsonStruct{})
+	s.assert.Equal(GlobalUnitsHealthReport.GetHealthReport(), UnitsHealthResponseJsonStruct{}, "GetHealthReport() should be empty")
+	GlobalUnitsHealthReport.UpdateHealthReport(s.mockedUnitsHealthResponseJsonStruct)
+	s.assert.Equal(GlobalUnitsHealthReport.GetHealthReport(), s.mockedUnitsHealthResponseJsonStruct, "GetHealthReport() should NOT be empty")
 }
 
 func (s *HandlersTestSuit) TestUnitsHealthStatusFunc() {
@@ -458,13 +467,13 @@ func (s *HandlersTestSuit) TestIsInListFunc() {
 
 func (s *HandlersTestSuit) TestStartUpdateHealthReportActualImplementationFunc() {
 	// clear any health report
-	GlobalHealthReport.UpdateHealthReport(UnitsHealthResponseJsonStruct{})
-	s.cfg.HealthReport = &DcosHealth{}
+	GlobalUnitsHealthReport.UpdateHealthReport(UnitsHealthResponseJsonStruct{})
 
 	readyChan := make(chan bool, 1)
-	StartUpdateHealthReport(s.cfg, readyChan, true)
-	hr := GlobalHealthReport.GetHealthReport()
-	s.assert.Equal(hr, UnitsHealthResponseJsonStruct{})
+	StartUpdateHealthReport(&s.cfg, &DcosHealth{}, readyChan, true)
+
+	hr := GlobalUnitsHealthReport.GetHealthReport()
+	s.assert.Empty(hr.Array)
 }
 
 // TestCheckHealthReportRace is meant to be run under the race detector
@@ -475,10 +484,10 @@ func (s *HandlersTestSuit) TestCheckHealthReportRace() {
 	// from the main thread.
 	done := make(chan struct{})
 	go func() {
-		GlobalHealthReport.UpdateHealthReport(UnitsHealthResponseJsonStruct{})
+		GlobalUnitsHealthReport.UpdateHealthReport(UnitsHealthResponseJsonStruct{})
 		close(done)
 	}()
-	_ = GlobalHealthReport.GetHealthReport()
+	_ = GlobalUnitsHealthReport.GetHealthReport()
 	// We wait for the spawned goroutine to exit before the test
 	// returns in order to prevent the spawned goroutine from racing
 	// with TearDownTest.
@@ -487,36 +496,36 @@ func (s *HandlersTestSuit) TestCheckHealthReportRace() {
 
 func (s *HandlersTestSuit) TestStartUpdateHealthReportFunc() {
 	readyChan := make(chan bool, 1)
-	StartUpdateHealthReport(s.cfg, readyChan, true)
-	hr := GlobalHealthReport.GetHealthReport()
-	s.assert.Equal(hr, UnitsHealthResponseJsonStruct{
-		Array: []UnitHealthResponseFieldsStruct{
-			{
-				UnitId:     "unit_a",
-				UnitHealth: 0,
-				UnitTitle:  "My fake description",
-				PrettyName: "PrettyName",
-			},
-			{
-				UnitId:     "unit_b",
-				UnitHealth: 0,
-				UnitTitle:  "My fake description",
-				PrettyName: "PrettyName",
-			},
-			{
-				UnitId:     "unit_c",
-				UnitHealth: 0,
-				UnitTitle:  "My fake description",
-				PrettyName: "PrettyName",
-			},
+	f := &FakeHealthReport{}
+	StartUpdateHealthReport(&s.cfg, f, readyChan, true)
+	hr := GlobalUnitsHealthReport.GetHealthReport()
+	s.assert.Equal(hr.Array, []UnitHealthResponseFieldsStruct{
+		{
+			UnitId:     "unit_a",
+			UnitHealth: 0,
+			UnitTitle:  "My fake description",
+			PrettyName: "PrettyName",
 		},
-		Hostname:    "MyHostName",
-		IpAddress:   "127.0.0.1",
-		DcosVersion: "",
-		Role:        "master",
-		MesosId:     "node-id-123",
-		TdtVersion:  "0.0.13",
+		{
+			UnitId:     "unit_b",
+			UnitHealth: 0,
+			UnitTitle:  "My fake description",
+			PrettyName: "PrettyName",
+		},
+		{
+			UnitId:     "unit_c",
+			UnitHealth: 0,
+			UnitTitle:  "My fake description",
+			PrettyName: "PrettyName",
+		},
 	})
+	s.assert.NotEmpty(hr.System)
+	s.assert.Equal(hr.Hostname, "MyHostName")
+	s.assert.Equal(hr.IpAddress, "127.0.0.1")
+	s.assert.Equal(hr.DcosVersion, "")
+	s.assert.Equal(hr.Role, "master")
+	s.assert.Equal(hr.MesosId, "node-id-123")
+	s.assert.Equal(hr.TdtVersion, "0.1.0")
 }
 
 func TestHandlersTestSuit(t *testing.T) {

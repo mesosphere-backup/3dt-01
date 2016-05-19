@@ -1,18 +1,22 @@
 package api
 
 import (
-	"fmt"
-
-	"github.com/gorilla/mux"
 	"net/http"
+
+	"fmt"
+	"github.com/gorilla/handlers"
+	"github.com/gorilla/mux"
 )
 
+const ApiVer int = 1
 const BaseRoute string = "/system/health/v1"
 
 type routeHandler struct {
 	url     string
 	handler func(http.ResponseWriter, *http.Request)
 	headers []header
+	methods []string
+	gzip    bool
 }
 
 type header struct {
@@ -22,26 +26,27 @@ type header struct {
 
 func headerMiddleware(next http.Handler, headers []header) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defaultHeaders := []header{
-			{
-				name:  "Content-type",
-				value: "application/json",
-			},
-		}
-		for _, header := range append(defaultHeaders, headers...) {
+		setJsonContentType := true
+		for _, header := range headers {
+			if header.name == "Content-type" {
+				setJsonContentType = false
+			}
 			w.Header().Add(header.name, header.value)
+		}
+		if setJsonContentType {
+			w.Header().Add("Content-type", "application/json")
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-func getRoutes(config *Config) []routeHandler {
+func getRoutes(dt Dt) []routeHandler {
 	return []routeHandler{
 		{
 			// /system/health/v1
 			url: BaseRoute,
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				unitsHealthStatus(w, r, config)
+				unitsHealthStatus(w, r)
 			},
 		},
 		{
@@ -100,18 +105,112 @@ func getRoutes(config *Config) []routeHandler {
 			url:     fmt.Sprintf("%s/nodes/{nodeid}/units/{unitid}", BaseRoute),
 			handler: getNodeUnitByNodeIdUnitIdHandler,
 		},
+		{
+			// /system/health/v1/logs
+			url: BaseRoute + "/logs",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				logsListHandler(w, r, dt)
+			},
+		},
+		{
+			// /system/health/v1/logs/<unitid/<hours>
+			url:     BaseRoute + "/logs/{provider}/{entity}",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				getUnitLogHandler(w, r, dt)
+			},
+			headers: []header{
+				{
+					name:  "Content-type",
+					value: "text/html",
+				},
+			},
+			gzip: true,
+		},
+		{
+			// /system/health/v1/report/snapshot
+			url: BaseRoute + "/report/snapshot/create",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				createSnapshotHandler(w, r, dt)
+			},
+			methods: []string{"POST"},
+		},
+		{
+			url: BaseRoute + "/report/snapshot/cancel",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				cancelSnapshotReportHandler(w, r, dt)
+			},
+			methods: []string{"POST"},
+		},
+		{
+			url: BaseRoute + "/report/snapshot/status",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				statusSnapshotReporthandler(w, r, dt)
+			},
+		},
+		{
+			url: BaseRoute + "/report/snapshot/status/all",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				statusAllSnapshotReporthandler(w, r, dt)
+			},
+		},
+		{
+			// /system/health/v1/report/snapshot/list
+			url: BaseRoute + "/report/snapshot/list",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				listAvailableLocalSnapshotFilesHandler(w, r, dt)
+			},
+		},
+		{
+			// /system/health/v1/report/snapshot/list/all
+			url: BaseRoute + "/report/snapshot/list/all",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				listAvailableGLobalSnapshotFilesHandler(w, r, dt)
+			},
+		},
+		{
+			// /system/health/v1/report/snapshot/serve/<file>
+			url: BaseRoute + "/report/snapshot/serve/{file}",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				downloadSnapshotHandler(w, r, dt)
+			},
+			headers: []header{
+				{
+					name:  "Content-type",
+					value: "application/octet-stream",
+				},
+			},
+		},
+		{
+			// /system/health/v1/report/snapshot/delete/<file>
+			url: BaseRoute + "/report/snapshot/delete/{file}",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				deleteSnapshotHandler(w, r, dt)
+			},
+			methods: []string{"POST"},
+		},
 	}
 }
 
-func loadRoutes(router *mux.Router, config *Config) *mux.Router {
-	for _, route := range getRoutes(config) {
+func wrapHandler(handler http.Handler, route routeHandler) http.Handler {
+	handlerWithHeader := headerMiddleware(handler, route.headers)
+	if route.gzip {
+		return handlers.CompressHandler(handlerWithHeader)
+	}
+	return handlerWithHeader
+}
+
+func loadRoutes(router *mux.Router, dt Dt) *mux.Router {
+	for _, route := range getRoutes(dt) {
+		if len(route.methods) == 0 {
+			route.methods = []string{"GET"}
+		}
 		handler := http.HandlerFunc(route.handler)
-		router.Handle(route.url, headerMiddleware(handler, route.headers)).Methods("GET")
+		router.Handle(route.url, wrapHandler(handler, route)).Methods(route.methods...)
 	}
 	return router
 }
 
-func NewRouter(config *Config) *mux.Router {
+func NewRouter(dt Dt) *mux.Router {
 	router := mux.NewRouter().StrictSlash(true)
-	return loadRoutes(router, config)
+	return loadRoutes(router, dt)
 }

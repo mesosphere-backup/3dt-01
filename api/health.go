@@ -6,6 +6,9 @@ import (
 	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"github.com/coreos/go-systemd/dbus"
+	"github.com/shirou/gopsutil/disk"
+	"github.com/shirou/gopsutil/load"
+	"github.com/shirou/gopsutil/mem"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -13,10 +16,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"bytes"
+	"io"
 )
 
 // Global health report variable
-var GlobalHealthReport UnitsHealth
+var GlobalUnitsHealthReport UnitsHealth
 
 type UnitsHealth struct {
 	sync.Mutex
@@ -35,37 +40,26 @@ func (uh *UnitsHealth) UpdateHealthReport(healthReport UnitsHealthResponseJsonSt
 	uh.healthReport = healthReport
 }
 
-// start updating health report
-func StartUpdateHealthReport(config Config, readyChan chan bool, runOnce bool) {
+func StartUpdateHealthReport(config *Config, dcosHealth HealthReporter, readyChan chan bool, runOnce bool) {
 	var ready bool
 	for {
-		healthReport, err := GetUnitsProperties(&config)
+		healthReport, err := GetUnitsProperties(config, dcosHealth)
 		if err == nil {
 			if ready == false {
 				readyChan <- true
 				ready = true
 			}
-			GlobalHealthReport.UpdateHealthReport(healthReport)
 		} else {
 			log.Error("Could not update systemd units health report")
 			log.Error(err)
 		}
+		GlobalUnitsHealthReport.UpdateHealthReport(healthReport)
 		if runOnce {
 			log.Debug("Run startUpdateHealthReport only once")
 			return
 		}
 		time.Sleep(time.Second * 60)
 	}
-}
-
-// HealthReporter implementation
-type DcosHealth struct {
-	sync.Mutex
-	dcon     *dbus.Conn
-	hostname string
-	role     string
-	ip       string
-	mesos_id string
 }
 
 func (st *DcosHealth) GetHostname() string {
@@ -169,12 +163,20 @@ func (st *DcosHealth) GetUnitNames() (units []string, err error) {
 	return units, nil
 }
 
-func (st *DcosHealth) GetJournalOutput(unit string) (string, error) {
-	out, err := exec.Command("journalctl", "--no-pager", "-n", "50", "-u", unit).Output()
+func (st *DcosHealth) GetJournalOutput(unit string, timeout int) (string, error) {
+	if strings.ContainsAny(unit, " ;&|") {
+		return "", errors.New("Unit name canot contain special charachters or space. Got "+unit)
+	}
+	command := []string{"journalctl", "--no-pager", "-n", "50", "-u", unit}
+	doneChan := make(chan bool)
+	r, err := runCmd(command, doneChan, timeout)
 	if err != nil {
 		return "", err
 	}
-	return string(out), nil
+	buffer := new(bytes.Buffer)
+	io.Copy(buffer, r)
+	doneChan <- true
+	return buffer.String(), nil
 }
 
 func (st *DcosHealth) GetMesosNodeId(role string, field string) string {
@@ -223,7 +225,7 @@ func IsInList(item string, l []string) bool {
 	return false
 }
 
-func NormalizeProperty(unitName string, p map[string]interface{}, si HealthReporter) UnitHealthResponseFieldsStruct {
+func NormalizeProperty(unitName string, p map[string]interface{}, si HealthReporter, config *Config) UnitHealthResponseFieldsStruct {
 	var unitHealth int = 0
 	var unitOutput string
 
@@ -242,7 +244,7 @@ func NormalizeProperty(unitName string, p map[string]interface{}, si HealthRepor
 	}
 
 	if unitHealth > 0 {
-		journalOutput, err := si.GetJournalOutput(unitName)
+		journalOutput, err := si.GetJournalOutput(unitName, config.FlagCommandExecTimeoutSec)
 		if err == nil {
 			unitOutput += "\n"
 			unitOutput += journalOutput
@@ -270,17 +272,63 @@ func NormalizeProperty(unitName string, p map[string]interface{}, si HealthRepor
 	}
 }
 
+func updateSystemMetrics() (sysMetrics SysMetrics, err error) {
+	var globalError string
+	v, err := mem.VirtualMemory()
+	if err == nil {
+		sysMetrics.Memory = *v
+	} else {
+		globalError += err.Error()
+	}
+
+	la, err := load.Avg()
+	if err == nil {
+		sysMetrics.LoadAvarage = *la
+	} else {
+		globalError += err.Error()
+	}
+	d, err := disk.Partitions(true)
+	if err == nil {
+		sysMetrics.Partitions = d
+	} else {
+		globalError += err.Error()
+		return sysMetrics, errors.New(globalError)
+	}
+
+	var diskUsage []disk.UsageStat
+	for _, diskProps := range d {
+		currentDiskUsage, err := disk.Usage(diskProps.Mountpoint)
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+		if currentDiskUsage.String() == "" {
+			continue
+		}
+		diskUsage = append(diskUsage, *currentDiskUsage)
+	}
+	sysMetrics.DiskUsage = diskUsage
+	return sysMetrics, nil
+}
+
 // endpoint "/api/v1/system/health"
-func GetUnitsProperties(config *Config) (UnitsHealthResponseJsonStruct, error) {
+func GetUnitsProperties(config *Config, dcosHealth HealthReporter) (healthReport UnitsHealthResponseJsonStruct, err error) {
+	// update system metrics first to make sure we always return them.
+	sysMetrics, err := updateSystemMetrics()
+	if err != nil {
+		log.Error(err)
+	}
+	healthReport.System = sysMetrics
+
 	// detect DC/OS systemd units
-	foundUnits, err := config.HealthReport.GetUnitNames()
+	foundUnits, err := dcosHealth.GetUnitNames()
 	if err != nil {
 		log.Error(err)
 	}
 	var allUnitsProperties []UnitHealthResponseFieldsStruct
 	// open dbus connection
-	if err = config.HealthReport.InitializeDbusConnection(); err != nil {
-		return UnitsHealthResponseJsonStruct{}, err
+	if err = dcosHealth.InitializeDbusConnection(); err != nil {
+		return healthReport, err
 	}
 	log.Debug("Opened dbus connection")
 
@@ -293,25 +341,26 @@ func GetUnitsProperties(config *Config) (UnitsHealthResponseJsonStruct, error) {
 			log.Debugf("Skipping blacklisted systemd unit %s", unit)
 			continue
 		}
-		currentProperty, err := config.HealthReport.GetUnitProperties(unit)
+		currentProperty, err := dcosHealth.GetUnitProperties(unit)
 		if err != nil {
 			log.Errorf("Could not get properties for unit: %s", unit)
 			continue
 		}
-		allUnitsProperties = append(allUnitsProperties, NormalizeProperty(unit, currentProperty, config.HealthReport))
+		allUnitsProperties = append(allUnitsProperties, NormalizeProperty(unit, currentProperty, dcosHealth, config))
 	}
 	// after we finished querying systemd units, close dbus connection
-	if err = config.HealthReport.CloseDbusConnection(); err != nil {
+	if err = dcosHealth.CloseDbusConnection(); err != nil {
 		// we should probably return here, since we cannot guarantee that all units have been queried.
-		return UnitsHealthResponseJsonStruct{}, err
+		return healthReport, err
 	}
 	return UnitsHealthResponseJsonStruct{
 		Array:       allUnitsProperties,
-		Hostname:    config.HealthReport.GetHostname(),
-		IpAddress:   config.HealthReport.DetectIp(),
+		System:      sysMetrics,
+		Hostname:    dcosHealth.GetHostname(),
+		IpAddress:   dcosHealth.DetectIp(),
 		DcosVersion: config.DcosVersion,
-		Role:        config.HealthReport.GetNodeRole(),
-		MesosId:     config.HealthReport.GetMesosNodeId(config.HealthReport.GetNodeRole(), "id"),
+		Role:        dcosHealth.GetNodeRole(),
+		MesosId:     dcosHealth.GetMesosNodeId(dcosHealth.GetNodeRole(), "id"),
 		TdtVersion:  config.Version,
 	}, nil
 }

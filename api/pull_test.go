@@ -2,12 +2,11 @@ package api
 
 import (
 	// intentionally rename package to do some magic
-	"fmt"
 	assertPackage "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
-	"sync"
 	"testing"
 	"time"
+	"sync"
 )
 
 // Fake Interface and implementation for Pulling functionality
@@ -15,6 +14,7 @@ type FakePuller struct {
 	test              bool
 	urls              []string
 	fakeHttpResponses []*HttpResponse
+	mockedNode        Node
 }
 
 func (pt *FakePuller) GetTimestamp() time.Time {
@@ -22,6 +22,9 @@ func (pt *FakePuller) GetTimestamp() time.Time {
 }
 
 func (pt *FakePuller) LookupMaster() (nodes []Node, err error) {
+	if pt.mockedNode.Ip != "" {
+		return []Node{pt.mockedNode}, nil
+	}
 	var fakeMasterHost Node
 	fakeMasterHost.Ip = "127.0.0.1"
 	fakeMasterHost.Role = "master"
@@ -37,73 +40,6 @@ func (pt *FakePuller) GetAgentsFromMaster() (nodes []Node, err error) {
 	return nodes, nil
 }
 
-func (pt *FakePuller) GetUnitsPropertiesViaHttp(url string) ([]byte, int, error) {
-	var response string
-
-	// master
-	if url == fmt.Sprintf("http://127.0.0.1:1050%s", BaseRoute) {
-		response = `
-			{
-			  "units": [
-			    {
-			      "id":"dcos-setup.service",
-			      "health":0,
-			      "output":"",
-			      "description":"Nice Description.",
-			      "help":"",
-			      "name":"PrettyName"
-			    },
-			    {
-			      "id":"dcos-master.service",
-			      "health":0,
-			      "output":"",
-			      "description":"Nice Master Description.",
-			      "help":"",
-			      "name":"PrettyName"
-			    }
-			  ],
-			  "hostname":"master01",
-			  "ip":"127.0.0.1",
-			  "dcos_version":"1.6",
-			  "node_role":"master",
-			  "mesos_id":"master-123",
-			  "3dt_version": "0.0.7"
-			}`
-	}
-
-	// agent
-	if url == fmt.Sprintf("http://127.0.0.2:1050%s", BaseRoute) {
-		response = `
-			{
-			  "units": [
-			    {
-			      "id":"dcos-setup.service",
-			      "health":0,
-			      "output":"",
-			      "description":"Nice Description.",
-			      "help":"",
-			      "name":"PrettyName"
-			    },
-			    {
-			      "id":"dcos-agent.service",
-			      "health":1,
-			      "output":"",
-			      "description":"Nice Agent Description.",
-			      "help":"",
-			      "name":"PrettyName"
-			    }
-			  ],
-			  "hostname":"agent01",
-			  "ip":"127.0.0.2",
-			  "dcos_version":"1.6",
-			  "node_role":"agent",
-			  "mesos_id":"agent-123",
-			  "3dt_version": "0.0.7"
-			}`
-	}
-	return []byte(response), 200, nil
-}
-
 func (pt *FakePuller) WaitBetweenPulls(interval int) {
 }
 
@@ -114,13 +50,16 @@ func (pt *FakePuller) UpdateHttpResponses(responses []*HttpResponse) {
 type PullerTestSuit struct {
 	suite.Suite
 	assert *assertPackage.Assertions
-	puller *FakePuller
+	dt     Dt
 }
 
 func (suit *PullerTestSuit) SetupTest() {
 	suit.assert = assertPackage.New(suit.T())
-	suit.puller = &FakePuller{}
-	runPull(1, 1050, suit.puller)
+	suit.dt = Dt{
+		DtPuller: &FakePuller{},
+		HTTPRequest: &FakeHTTPRequest{},
+	}
+	runPull(1, 1050, suit.dt)
 }
 
 func (suit *PullerTestSuit) TearDownTest() {

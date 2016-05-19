@@ -12,10 +12,12 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+	"io"
 )
 
 type FakeHealthReport struct {
 	units []string
+	customRole string
 }
 
 func (st *FakeHealthReport) GetHostname() string {
@@ -27,6 +29,9 @@ func (st *FakeHealthReport) DetectIp() string {
 }
 
 func (st *FakeHealthReport) GetNodeRole() string {
+	if st.customRole != "" {
+		return st.customRole
+	}
 	return "master"
 }
 
@@ -232,21 +237,22 @@ func (suit *HandlersTestSuit) TearDownTest() {
 }
 
 // Helper functions
-func MakeHttpRequest(t *testing.T, router *mux.Router, url string) (response []byte, err error) {
-	req, err := http.NewRequest("GET", url, nil)
+func MakeFakeHttpRequest(t *testing.T, router *mux.Router, url, method string, body io.Reader) (response []byte, statusCode int, err error) {
+	req, err := http.NewRequest(method, url, body)
 	if err != nil {
-		return response, err
+		return response, http.StatusBadRequest, err
 	}
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	if w.Code != 200 {
-		return response, errors.New(fmt.Sprintf("wrong HTTP response: %d", w.Code))
+	var e error
+	if w.Code != http.StatusOK {
+		e = errors.New(fmt.Sprintf("wrong HTTP response: %d", w.Code))
 	}
-	return w.Body.Bytes(), nil
+	return w.Body.Bytes(), w.Code, e
 }
 
 func (s *HandlersTestSuit) get(url string) []byte {
-	response, err := MakeHttpRequest(s.T(), s.router, url)
+	response, _, err := MakeFakeHttpRequest(s.T(), s.router, url, "GET", nil)
 	s.assert.Nil(err, "Error makeing GET request")
 	return response
 }

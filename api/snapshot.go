@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-// snapshotJob
+// main snapshotJob
 type SnapshotJob struct {
 	sync.Mutex
 	cancelChan chan bool
@@ -34,13 +34,15 @@ type SnapshotJob struct {
 	JobDuration      time.Duration `json:"job_duration"`
 }
 
+// snapshot job response format
 type snapshotReportResponse struct {
-	responseCode int
+	ResponseCode int      `json:"response_http_code"`
 	Version      int      `json:"version"`
 	Status       string   `json:"status"`
 	Errors       []string `json:"errors"`
 }
 
+// snapshot job status format
 type snapshotReportStatus struct {
 	// job related fields
 	Running          bool     `json:"is_running"`
@@ -62,11 +64,11 @@ type snapshotReportStatus struct {
 	DiskUsedPercent float64 `json:"snapshot_partition_disk_usage_percent"`
 }
 
-func (j *SnapshotJob) isRunning(config *Config, puller Puller, ht HTTPRequester) (bool, string, error) {
+func (j *SnapshotJob) isRunning(config *Config, puller Puller, hr HTTPRequester) (bool, string, error) {
 	if j.Running {
 		return true, "", nil
 	}
-	clusterSnapshotStatus, err := j.getStatusAll(config, puller, ht)
+	clusterSnapshotStatus, err := j.getStatusAll(config, puller, hr)
 	if err != nil {
 		return false, "", err
 	}
@@ -82,8 +84,8 @@ func (j *SnapshotJob) getHttpAddToZip(node Node, endpoints map[string]string, fo
 	summaryReport *bytes.Buffer, config *Config, hr HTTPRequester) error {
 	for fileName, httpEndpoint := range endpoints {
 		full_url := "http://" + node.Ip + httpEndpoint
-		log.Debugf("GET %s", full_url)
 		j.Status = "GET " + full_url
+		log.Debug(j.Status)
 		timeout := time.Duration(time.Minute * time.Duration(config.FlagSnapshotJobGetSingleUrlTimeoutMinutes))
 		request, err := http.NewRequest("GET", full_url, nil)
 		if err != nil {
@@ -209,7 +211,7 @@ func prepareResponseOk(httpStatusCode int, okMsg string) (response snapshotRepor
 
 func prepareResponseWithErr(httpStatusCode int, e error) (response snapshotReportResponse, err error) {
 	response.Version = ApiVer
-	response.responseCode = httpStatusCode
+	response.ResponseCode = httpStatusCode
 	if e != nil {
 		response.Status = e.Error()
 	}
@@ -247,17 +249,17 @@ func (j *SnapshotJob) delete(snapshotName string, config *Config, puller Puller,
 		j.Status = "Attempting to delete a snapshot on a remote host. POST " + url
 		log.Debug(j.Status)
 		timeout := time.Duration(time.Second * 5)
-		request, err := http.NewRequest("POST", url, nil)
+		response, _, err := hr.Post(url, timeout)
 		if err != nil {
 			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
-		resp, err := hr.MakeRequest(request, timeout)
-		if err != nil {
+		// unmarshal a response from a remote node and return it back.
+		var remoteResponse snapshotReportResponse
+		if err = json.Unmarshal(response, &remoteResponse); err != nil {
 			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
-		defer resp.Body.Close()
-		j.Status = "Successfully deleted snapshot " + snapshotName
-		return prepareResponseOk(http.StatusOK, j.Status)
+		j.Status = remoteResponse.Status
+		return remoteResponse, nil
 	}
 	j.Status = "Snapshot not found " + snapshotName
 	return prepareResponseOk(http.StatusNotFound, j.Status)
@@ -345,7 +347,7 @@ func (j *SnapshotJob) runBackgroundReport(nodes []Node, config *Config, puller P
 		}
 	}(jobIsDone, j)
 
-	// makesure we always cancel a timeout gorutine when the report is finished.
+	// makesure we always cancel a timeout goroutine when the report is finished.
 	defer func(jobIsDone chan bool) {
 		jobIsDone <- true
 	}(jobIsDone)
@@ -464,15 +466,11 @@ func findRequestedNodes(masterNodes []Node, agentNodes []Node, requestedNodes []
 }
 
 func (j *SnapshotJob) cancel(config *Config, puller Puller, dcosHealth HealthReporter, hr HTTPRequester) (response snapshotReportResponse, err error) {
-
 	if dcosHealth.GetNodeRole() == "agent" {
 		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Canceling snapshot job on agent node is not implemented."))
 	}
 
-	isRunning, node, err := j.isRunning(config, puller, hr)
-	if err != nil {
-		j.Errors = append(j.Errors, err.Error())
-	}
+	isRunning, node, _ := j.isRunning(config, puller, hr)
 	if !isRunning {
 		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Job is not running"))
 	}
@@ -485,18 +483,16 @@ func (j *SnapshotJob) cancel(config *Config, puller Puller, dcosHealth HealthRep
 		j.Status = "Attempting to cancel a job on a remote host. POST " + url
 		log.Debug(j.Status)
 		timeout := time.Duration(time.Second * 5)
-		request, err := http.NewRequest("POST", url, nil)
+		response, _, err := hr.Post(url, timeout)
 		if err != nil {
 			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
-		resp, err := hr.MakeRequest(request, timeout)
-		if err != nil {
+		// unmarshal a response from a remote node and return it back.
+		var remoteResponse snapshotReportResponse
+		if err = json.Unmarshal(response, &remoteResponse); err != nil {
 			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != 200 {
-			return prepareResponseWithErr(resp.StatusCode, errors.New("Could not cancel a job on a remote host "+url))
-		}
+		return remoteResponse, nil
 
 	}
 	return prepareResponseOk(http.StatusOK, "Attempting to cancel a job, please check job status.")

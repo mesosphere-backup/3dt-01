@@ -14,6 +14,7 @@ type FakePuller struct {
 	test              bool
 	urls              []string
 	fakeHttpResponses []*HttpResponse
+	mockedNode        Node
 }
 
 func (pt *FakePuller) GetTimestamp() time.Time {
@@ -21,6 +22,9 @@ func (pt *FakePuller) GetTimestamp() time.Time {
 }
 
 func (pt *FakePuller) LookupMaster() (nodes []Node, err error) {
+	if pt.mockedNode.Ip != "" {
+		return []Node{pt.mockedNode}, nil
+	}
 	var fakeMasterHost Node
 	fakeMasterHost.Ip = "127.0.0.1"
 	fakeMasterHost.Role = "master"
@@ -35,95 +39,6 @@ func (pt *FakePuller) GetAgentsFromMaster() (nodes []Node, err error) {
 	nodes = append(nodes, fakeAgentHost)
 	return nodes, nil
 }
-
-//func (pt *FakePuller) GetHttp(url string) ([]byte, int, error) {
-//	var response string
-//
-//	if url == fmt.Sprintf("http://127.0.0.1:1050%s/report/snapshot/status", BaseRoute) {
-//		response = `
-//			{
-//			  "is_running":true,
-//			  "status":"MyStatus",
-//			  "errors":null,
-//			  "last_snapshot_dir":"/path/to/snapshot",
-//			  "job_started":"0001-01-01 00:00:00 +0000 UTC",
-//			  "job_ended":"0001-01-01 00:00:00 +0000 UTC",
-//			  "job_duration":"2s",
-//			  "snapshot_dir":"/home/core/1",
-//			  "snapshot_job_timeout_min":720,
-//			  "snapshot_partition_disk_usage_percent":28.0,
-//			  "journald_logs_since_hours": "24",
-//			  "snapshot_job_get_since_url_timeout_min": 5,
-//			  "command_exec_timeout_sec": 10
-//			}
-//		`
-//	}
-//	if url == fmt.Sprintf("http://127.0.0.1:1050%s/report/snapshot/list", BaseRoute) {
-//		response = `["/system/health/v1/report/snapshot/serve/snapshot-2016-05-13T22:11:36.zip"]`
-//	}
-//	// master
-//	if url == fmt.Sprintf("http://127.0.0.1:1050%s", BaseRoute) {
-//		response = `
-//			{
-//			  "units": [
-//			    {
-//			      "id":"dcos-setup.service",
-//			      "health":0,
-//			      "output":"",
-//			      "description":"Nice Description.",
-//			      "help":"",
-//			      "name":"PrettyName"
-//			    },
-//			    {
-//			      "id":"dcos-master.service",
-//			      "health":0,
-//			      "output":"",
-//			      "description":"Nice Master Description.",
-//			      "help":"",
-//			      "name":"PrettyName"
-//			    }
-//			  ],
-//			  "hostname":"master01",
-//			  "ip":"127.0.0.1",
-//			  "dcos_version":"1.6",
-//			  "node_role":"master",
-//			  "mesos_id":"master-123",
-//			  "3dt_version": "0.0.7"
-//			}`
-//	}
-//
-//	// agent
-//	if url == fmt.Sprintf("http://127.0.0.2:1050%s", BaseRoute) {
-//		response = `
-//			{
-//			  "units": [
-//			    {
-//			      "id":"dcos-setup.service",
-//			      "health":0,
-//			      "output":"",
-//			      "description":"Nice Description.",
-//			      "help":"",
-//			      "name":"PrettyName"
-//			    },
-//			    {
-//			      "id":"dcos-agent.service",
-//			      "health":1,
-//			      "output":"",
-//			      "description":"Nice Agent Description.",
-//			      "help":"",
-//			      "name":"PrettyName"
-//			    }
-//			  ],
-//			  "hostname":"agent01",
-//			  "ip":"127.0.0.2",
-//			  "dcos_version":"1.6",
-//			  "node_role":"agent",
-//			  "mesos_id":"agent-123",
-//			  "3dt_version": "0.0.7"
-//			}`
-//	}
-//	return []byte(response), 200, nil
-//}
 
 func (pt *FakePuller) WaitBetweenPulls(interval int) {
 }

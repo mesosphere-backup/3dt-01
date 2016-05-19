@@ -16,7 +16,7 @@ import (
 
 // A helper function to send a response.
 func writeResponse(w http.ResponseWriter, response snapshotReportResponse) {
-	w.WriteHeader(response.responseCode)
+	w.WriteHeader(response.ResponseCode)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Error(err)
 	}

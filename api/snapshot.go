@@ -36,9 +36,9 @@ type SnapshotJob struct {
 
 type snapshotReportResponse struct {
 	responseCode int
-	Version int      `json:"version"`
-	Status  string   `json:"status"`
-	Errors  []string `json:"errors"`
+	Version      int      `json:"version"`
+	Status       string   `json:"status"`
+	Errors       []string `json:"errors"`
 }
 
 type snapshotReportStatus struct {
@@ -62,11 +62,11 @@ type snapshotReportStatus struct {
 	DiskUsedPercent float64 `json:"snapshot_partition_disk_usage_percent"`
 }
 
-func (j *SnapshotJob) isRunning(config *Config, puller Puller) (bool, string, error) {
+func (j *SnapshotJob) isRunning(config *Config, puller Puller, ht HTTPRequester) (bool, string, error) {
 	if j.Running {
 		return true, "", nil
 	}
-	clusterSnapshotStatus, err := j.getStatusAll(config, puller)
+	clusterSnapshotStatus, err := j.getStatusAll(config, puller, ht)
 	if err != nil {
 		return false, "", err
 	}
@@ -78,7 +78,8 @@ func (j *SnapshotJob) isRunning(config *Config, puller Puller) (bool, string, er
 	return false, "", nil
 }
 
-func (j *SnapshotJob) getHttpAddToZip(node Node, endpoints map[string]string, folder string, zipWriter *zip.Writer, summaryReport *bytes.Buffer, config *Config) error {
+func (j *SnapshotJob) getHttpAddToZip(node Node, endpoints map[string]string, folder string, zipWriter *zip.Writer,
+	summaryReport *bytes.Buffer, config *Config, hr HTTPRequester) error {
 	for fileName, httpEndpoint := range endpoints {
 		full_url := "http://" + node.Ip + httpEndpoint
 		log.Debugf("GET %s", full_url)
@@ -92,7 +93,7 @@ func (j *SnapshotJob) getHttpAddToZip(node Node, endpoints map[string]string, fo
 			continue
 		}
 		request.Header.Add("Accept-Encoding", "gzip")
-		resp, err := makeRequest(timeout, request)
+		resp, err := hr.MakeRequest(request, timeout)
 		if err != nil {
 			j.Errors = append(j.Errors, err.Error())
 			log.Errorf("Could not fetch url: %s", full_url)
@@ -121,7 +122,7 @@ func (j *SnapshotJob) getHttpAddToZip(node Node, endpoints map[string]string, fo
 }
 
 // Collect all status reports from master nodes and return a map[master_ip] snapshotReportStatus
-func (j *SnapshotJob) getStatusAll(config *Config, puller Puller) (map[string]snapshotReportStatus, error) {
+func (j *SnapshotJob) getStatusAll(config *Config, puller Puller, ht HTTPRequester) (map[string]snapshotReportStatus, error) {
 	statuses := make(map[string]snapshotReportStatus)
 
 	masterNodes, err := puller.LookupMaster()
@@ -132,7 +133,7 @@ func (j *SnapshotJob) getStatusAll(config *Config, puller Puller) (map[string]sn
 	for _, master := range masterNodes {
 		var status snapshotReportStatus
 		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/status", master.Ip, config.FlagPort, BaseRoute)
-		body, statusCode, err := puller.GetHttp(url)
+		body, statusCode, err := ht.Get(url, time.Duration(time.Second*3))
 		if err = json.Unmarshal(body, &status); err != nil {
 			log.Errorf("GET %s failed, status code: %d", url, statusCode)
 			log.Error(err)
@@ -179,8 +180,8 @@ func (j *SnapshotJob) stop() {
 	j.Running = false
 }
 
-func (j *SnapshotJob) isSnapshotAvailable(snapshotName string, config *Config, puller Puller) (string, string, bool, error) {
-	snapshots, err := listAllSnapshots(config, puller)
+func (j *SnapshotJob) isSnapshotAvailable(snapshotName string, config *Config, puller Puller, hr HTTPRequester) (string, string, bool, error) {
+	snapshots, err := listAllSnapshots(config, puller, hr)
 	if err != nil {
 		return "", "", false, err
 	}
@@ -216,7 +217,7 @@ func prepareResponseWithErr(httpStatusCode int, e error) (response snapshotRepor
 }
 
 // delete a snapshot
-func (j *SnapshotJob) delete(snapshotName string, config *Config, puller Puller, dcoshealth HealthReporter) (response snapshotReportResponse, err error) {
+func (j *SnapshotJob) delete(snapshotName string, config *Config, puller Puller, dcoshealth HealthReporter, hr HTTPRequester) (response snapshotReportResponse, err error) {
 	if !strings.HasPrefix(snapshotName, "snapshot-") || !strings.HasSuffix(snapshotName, ".zip") {
 		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("format allowed  snapshot-*.zip"))
 	}
@@ -232,12 +233,12 @@ func (j *SnapshotJob) delete(snapshotName string, config *Config, puller Puller,
 		if err = os.Remove(snapshotPath); err != nil {
 			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
-		msg := "Deleted "+snapshotPath
+		msg := "Deleted " + snapshotPath
 		log.Infof(msg)
 		return prepareResponseOk(http.StatusOK, msg)
 	}
 
-	node, _, ok, err := j.isSnapshotAvailable(snapshotName, config, puller)
+	node, _, ok, err := j.isSnapshotAvailable(snapshotName, config, puller, hr)
 	if err != nil {
 		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 	}
@@ -250,7 +251,7 @@ func (j *SnapshotJob) delete(snapshotName string, config *Config, puller Puller,
 		if err != nil {
 			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
-		resp, err := makeRequest(timeout, request)
+		resp, err := hr.MakeRequest(request, timeout)
 		if err != nil {
 			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
@@ -262,12 +263,12 @@ func (j *SnapshotJob) delete(snapshotName string, config *Config, puller Puller,
 	return prepareResponseOk(http.StatusNotFound, j.Status)
 }
 
-func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, puller Puller, dcosHealth HealthReporter) (response snapshotReportResponse, err error) {
+func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, puller Puller, dcosHealth HealthReporter, hr HTTPRequester) (response snapshotReportResponse, err error) {
 	if dcosHealth.GetNodeRole() == "agent" {
 		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Running snapshot job on agent node is not implemented."))
 	}
 
-	isRunning, _, err := j.isRunning(config, puller)
+	isRunning, _, err := j.isRunning(config, puller, hr)
 	if err != nil {
 		log.Warningf("Error: %s, Assuming the snapshot is not running", err.Error())
 	}
@@ -279,7 +280,7 @@ func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, puller Pull
 	if os.IsNotExist(err) {
 		log.Infof("snapshot dir: %s not found, attempting to create one", config.FlagSnapshotDir)
 		if err := os.Mkdir(config.FlagSnapshotDir, os.ModePerm); err != nil {
-			j.Status = "Could not create snapshot directory: "+config.FlagSnapshotDir
+			j.Status = "Could not create snapshot directory: " + config.FlagSnapshotDir
 			return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New(j.Status))
 		}
 	}
@@ -308,7 +309,7 @@ func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, puller Pull
 	log.Debugf("Found requested nodes: %s", foundNodes)
 
 	j.cancelChan = make(chan bool)
-	go j.runBackgroundReport(foundNodes, config, puller)
+	go j.runBackgroundReport(foundNodes, config, puller, hr)
 	return prepareResponseOk(http.StatusOK, "Snapshot job started: "+filepath.Base(j.LastSnapshotPath))
 }
 
@@ -316,7 +317,7 @@ func updateSummaryReport(preflix string, node Node, error string, r *bytes.Buffe
 	r.WriteString(fmt.Sprintf("%s [%s] %s %s %s\n", time.Now().String(), preflix, node.Ip, node.Role, error))
 }
 
-func (j *SnapshotJob) runBackgroundReport(nodes []Node, config *Config, puller Puller) {
+func (j *SnapshotJob) runBackgroundReport(nodes []Node, config *Config, puller Puller, hr HTTPRequester) {
 	log.Info("Started background job")
 	// log a start time
 	j.JobStarted = time.Now()
@@ -407,7 +408,7 @@ func (j *SnapshotJob) runBackgroundReport(nodes []Node, config *Config, puller P
 		}
 
 		endpoints := make(map[string]string)
-		body, statusCode, err := puller.GetHttp(url)
+		body, statusCode, err := hr.Get(url, time.Duration(time.Second*3))
 		if err != nil {
 			errMsg := fmt.Sprintf("could not get a list of logs, url: %s, status code %d", url, statusCode)
 			j.Errors = append(j.Errors, errMsg)
@@ -424,7 +425,7 @@ func (j *SnapshotJob) runBackgroundReport(nodes []Node, config *Config, puller P
 		}
 
 		// add http endpoints
-		err = j.getHttpAddToZip(node, endpoints, j.LastSnapshotPath, zipWriter, summaryErrorsReport, config)
+		err = j.getHttpAddToZip(node, endpoints, j.LastSnapshotPath, zipWriter, summaryErrorsReport, config, hr)
 		if err != nil {
 			errMsg := "could not add logs for a node, url: " + url
 			j.Errors = append(j.Errors, errMsg)
@@ -462,13 +463,13 @@ func findRequestedNodes(masterNodes []Node, agentNodes []Node, requestedNodes []
 	return matchedNodes, errors.New(fmt.Sprintf("Requested nodes: %s not found", requestedNodes))
 }
 
-func (j *SnapshotJob) cancel(config *Config, puller Puller, dcosHealth HealthReporter) (response snapshotReportResponse, err error) {
+func (j *SnapshotJob) cancel(config *Config, puller Puller, dcosHealth HealthReporter, hr HTTPRequester) (response snapshotReportResponse, err error) {
 
 	if dcosHealth.GetNodeRole() == "agent" {
 		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Canceling snapshot job on agent node is not implemented."))
 	}
 
-	isRunning, node, err := j.isRunning(config, puller)
+	isRunning, node, err := j.isRunning(config, puller, hr)
 	if err != nil {
 		j.Errors = append(j.Errors, err.Error())
 	}
@@ -488,7 +489,7 @@ func (j *SnapshotJob) cancel(config *Config, puller Puller, dcosHealth HealthRep
 		if err != nil {
 			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
-		resp, err := makeRequest(timeout, request)
+		resp, err := hr.MakeRequest(request, timeout)
 		if err != nil {
 			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
@@ -504,7 +505,7 @@ func (j *SnapshotJob) cancel(config *Config, puller Puller, dcosHealth HealthRep
 func dispatchLogs(provider string, entity string, config *Config, healthReport HealthReporter) (doneChan chan bool, r io.ReadCloser, err error) {
 	// make a buffered doneChan to communicate back to process.
 	doneChan = make(chan bool, 1)
-	intProviders, err := loadInternalProviders(config, healthReport)
+
 	if err != nil {
 		log.Error(err)
 	}
@@ -517,6 +518,7 @@ func dispatchLogs(provider string, entity string, config *Config, healthReport H
 		r, err = readJournalOutput(entity, config, doneChan)
 		return doneChan, r, err
 	}
+	intProviders, err := loadInternalProviders(config, healthReport)
 	if provider == "files" {
 		log.Debugf("dispatching a file %s", entity)
 		for _, fileProvider := range append(intProviders.LocalFiles, extProviders.LocalFiles...) {
@@ -532,6 +534,7 @@ func dispatchLogs(provider string, entity string, config *Config, healthReport H
 		log.Debugf("dispatching a command %s", entity)
 		for _, cmdProvider := range append(intProviders.LocalCommands, extProviders.LocalCommands...) {
 			if len(cmdProvider.Command) > 0 {
+				// Make sure command does not have "/"
 				if entity == filepath.Base(cmdProvider.Command[0]) {
 					r, err = runCmd(cmdProvider.Command, doneChan, config.FlagCommandExecTimeoutSec)
 					return doneChan, r, err
@@ -699,7 +702,7 @@ func loadInternalProviders(config *Config, dcosHealth HealthReporter) (internalC
 	}, nil
 }
 
-func listAllSnapshots(config *Config, puller Puller) (map[string][]string, error) {
+func listAllSnapshots(config *Config, puller Puller, ht HTTPRequester) (map[string][]string, error) {
 	collectedSnapshots := make(map[string][]string)
 	masterNodes, err := puller.LookupMaster()
 	if err != nil {
@@ -708,7 +711,7 @@ func listAllSnapshots(config *Config, puller Puller) (map[string][]string, error
 	for _, master := range masterNodes {
 		var snapshotUrls []string
 		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/list", master.Ip, config.FlagPort, BaseRoute)
-		body, _, err := puller.GetHttp(url)
+		body, _, err := ht.Get(url, time.Duration(time.Second*3))
 		if err != nil {
 			log.Error(err)
 			continue

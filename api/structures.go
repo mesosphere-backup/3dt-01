@@ -133,6 +133,7 @@ type DcosHealth struct {
 type Dt struct {
 	DtPuller        Puller
 	DtHealth        HealthReporter
+	HTTPRequest     HTTPRequester
 	DtSnapshotJob   *SnapshotJob
 	Cfg             *Config
 }

@@ -29,7 +29,7 @@ func writeResponse(w http.ResponseWriter, response snapshotReportResponse) {
 // If snapshot was found on a remote host the local node will send a POST request to remove the snapshot.
 func deleteSnapshotHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	vars := mux.Vars(r)
-	response, err := dt.DtSnapshotJob.delete(vars["file"], dt.Cfg, dt.DtPuller, dt.DtHealth)
+	response, err := dt.DtSnapshotJob.delete(vars["file"], dt.Cfg, dt.DtPuller, dt.DtHealth, dt.HTTPRequest)
 	if err != nil {
 		log.Error(err)
 	}
@@ -45,7 +45,7 @@ func statusSnapshotReporthandler(w http.ResponseWriter, r *http.Request, dt Dt) 
 
 // A handler function returns a map of master node ip address as a key and snapshotReportStatus as a value.
 func statusAllSnapshotReporthandler(w http.ResponseWriter, r *http.Request, dt Dt) {
-	status, err := dt.DtSnapshotJob.getStatusAll(dt.Cfg, dt.DtPuller)
+	status, err := dt.DtSnapshotJob.getStatusAll(dt.Cfg, dt.DtPuller, dt.HTTPRequest)
 	if err != nil {
 		response, _ := prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		writeResponse(w, response)
@@ -59,7 +59,7 @@ func statusAllSnapshotReporthandler(w http.ResponseWriter, r *http.Request, dt D
 // A handler function cancels a job running on a local node first. If a job is running on a remote node
 // it will try to send a POST request to cancel it.
 func cancelSnapshotReportHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
-	response, err := dt.DtSnapshotJob.cancel(dt.Cfg, dt.DtPuller, dt.DtHealth)
+	response, err := dt.DtSnapshotJob.cancel(dt.Cfg, dt.DtPuller, dt.DtHealth, dt.HTTPRequest)
 	if err != nil {
 		log.Error(err)
 	}
@@ -68,7 +68,7 @@ func cancelSnapshotReportHandler(w http.ResponseWriter, r *http.Request, dt Dt) 
 
 // A handler function returns a map of master ip as a key and a list of snapshots as a value.
 func listAvailableGLobalSnapshotFilesHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
-	allSnapshots, err := listAllSnapshots(dt.Cfg, dt.DtPuller)
+	allSnapshots, err := listAllSnapshots(dt.Cfg, dt.DtPuller, dt.HTTPRequest)
 	if err != nil {
 		response, _ := prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		writeResponse(w, response)
@@ -111,7 +111,7 @@ func downloadSnapshotHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 		return
 	}
 	// do a reverse proxy
-	node, location, ok, err := dt.DtSnapshotJob.isSnapshotAvailable(vars["file"], dt.Cfg, dt.DtPuller)
+	node, location, ok, err := dt.DtSnapshotJob.isSnapshotAvailable(vars["file"], dt.Cfg, dt.DtPuller, dt.HTTPRequest)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -145,7 +145,7 @@ func createSnapshotHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 		writeResponse(w, response)
 		return
 	}
-	response, err := dt.DtSnapshotJob.run(req, dt.Cfg, dt.DtPuller, dt.DtHealth)
+	response, err := dt.DtSnapshotJob.run(req, dt.Cfg, dt.DtPuller, dt.DtHealth, dt.HTTPRequest)
 	if err != nil {
 		log.Error(err)
 	}

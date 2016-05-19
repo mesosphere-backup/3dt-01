@@ -46,6 +46,7 @@ func main() {
 		DtHealth: &api.DcosHealth{},
 		DtSnapshotJob: &api.SnapshotJob{},
 		Cfg: &config,
+		HTTPRequest: &api.HTTPRequest{},
 	}
 
 	// print version and exit

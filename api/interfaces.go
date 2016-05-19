@@ -1,6 +1,9 @@
 package api
 
-import "time"
+import (
+	"time"
+	"net/http"
+)
 
 // Puller interface
 type Puller interface {
@@ -9,9 +12,6 @@ type Puller interface {
 
 	// function gets a list of agents from master.mesos:5050/slaves, append to *[]Host
 	GetAgentsFromMaster() ([]Node, error)
-
-	// functions make a GET request to a remote node, return an array of response, response status and error
-	GetHttp(string) ([]byte, int, error)
 
 	// function to wait between pulls
 	WaitBetweenPulls(int)
@@ -56,4 +56,15 @@ type HealthReporter interface {
 type agentResponder interface {
 	getAgentSource() ([]string, error)
 	getMesosAgents([]string) ([]Node, error)
+}
+
+//
+type HTTPRequester interface {
+	// Make a GET request pass url, returns a list of bytes, http response code and error
+	Get(string, time.Duration) ([]byte, int, error)
+	Post(string, time.Duration) ([]byte, int, error)
+
+	// Make a HTTP request pass timeout, http.Request object, returns a *http.Response and error.
+	// Caller is responsible for calling http.Response.Body().Close()
+	MakeRequest(*http.Request, time.Duration) (*http.Response, error)
 }

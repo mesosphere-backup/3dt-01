@@ -22,33 +22,6 @@ func (pt *PullType) GetTimestamp() time.Time {
 	return time.Now()
 }
 
-func makeRequest(timeout time.Duration, req *http.Request) (resp *http.Response, err error) {
-	client := http.Client{
-		Timeout: timeout,
-	}
-	resp, err = client.Do(req)
-	if err != nil {
-		return resp, err
-	}
-	// the user of this function is responsible to close the response.
-	return resp, nil
-}
-
-func (pt *PullType) GetHttp(url string) (body []byte, statusCode int, err error) {
-	request, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return body, 500, err
-	}
-	timeout := time.Duration(time.Second*3)
-	resp, err := makeRequest(timeout, request)
-	if err != nil {
-		return body, 500, err
-	}
-	defer resp.Body.Close()
-	body, err = ioutil.ReadAll(resp.Body)
-	return body, resp.StatusCode, nil
-}
-
 func (pt *PullType) LookupMaster() (nodes_response []Node, err error) {
 	url := "http://127.0.0.1:8181/exhibitor/v1/cluster/status"
 	client := http.Client{Timeout: time.Duration(time.Second)}
@@ -387,33 +360,33 @@ func StartPullWithInterval(dt Dt, ready chan bool) {
 		if r == true {
 			log.Info(fmt.Sprintf("Start pulling with interval %d", dt.Cfg.FlagPullInterval))
 			for {
-				runPull(dt.Cfg.FlagPullInterval, dt.Cfg.FlagPort, dt.DtPuller)
+				runPull(dt.Cfg.FlagPullInterval, dt.Cfg.FlagPort, dt)
 			}
 
 		}
 	case <-time.After(time.Second * 10):
 		log.Error("Not ready to pull from localhost after 10 seconds")
 		for {
-			runPull(dt.Cfg.FlagPullInterval, dt.Cfg.FlagPort, dt.DtPuller)
+			runPull(dt.Cfg.FlagPullInterval, dt.Cfg.FlagPort, dt)
 		}
 	}
 }
 
-func runPull(sec int, port int, pi Puller) {
+func runPull(sec int, port int, dt Dt) {
 	var ClusterHosts []Node
-	masterNodes, err := pi.LookupMaster()
+	masterNodes, err := dt.DtPuller.LookupMaster()
 	if err != nil {
 		log.Error(err)
 		log.Warningf("Could not get a list of master nodes, waiting %d sec", sec)
-		pi.WaitBetweenPulls(sec)
+		dt.DtPuller.WaitBetweenPulls(sec)
 		return
 	}
 
-	agentNodes, err := pi.GetAgentsFromMaster()
+	agentNodes, err := dt.DtPuller.GetAgentsFromMaster()
 	if err != nil {
 		log.Error(err)
 		log.Warningf("Could not get a list of agent nodes, waiting %d sec", sec)
-		pi.WaitBetweenPulls(sec)
+		dt.DtPuller.WaitBetweenPulls(sec)
 		return
 	}
 
@@ -426,21 +399,21 @@ func runPull(sec int, port int, pi Puller) {
 
 	// Pull data from each host
 	for i := 0; i <= len(ClusterHosts); i++ {
-		go pullHostStatus(hostsChan, respChan, port, pi)
+		go pullHostStatus(hostsChan, respChan, port, dt)
 	}
 
 	// blocking here got get all responses from hosts
 	ClusterHttpResponses := collectResponses(respChan, len(ClusterHosts))
 
 	// update collected units/nodes health statuses
-	updateHealthStatus(ClusterHttpResponses, pi)
+	updateHealthStatus(ClusterHttpResponses)
 
 	log.Debug(fmt.Sprintf("Waiting %d seconds before next pull", sec))
-	pi.WaitBetweenPulls(sec)
+	dt.DtPuller.WaitBetweenPulls(sec)
 }
 
 // function builds a map of all unique units with status
-func updateHealthStatus(responses []*HttpResponse, pi Puller) {
+func updateHealthStatus(responses []*HttpResponse) {
 	units := make(map[string]*Unit)
 	nodes := make(map[string]*Node)
 
@@ -503,7 +476,7 @@ func collectResponses(respChan <-chan *HttpResponse, totalHosts int) (responses 
 	}
 }
 
-func pullHostStatus(hosts <-chan Node, respChan chan<- *HttpResponse, port int, pi Puller) {
+func pullHostStatus(hosts <-chan Node, respChan chan<- *HttpResponse, port int, dt Dt) {
 	for host := range hosts {
 		var response HttpResponse
 
@@ -512,10 +485,10 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *HttpResponse, port int, 
 
 		// Make a request to get node units status
 		// use fake interface implementation for tests
-		body, statusCode, err := pi.GetHttp(url)
+		body, statusCode, err := dt.HTTPRequest.Get(url, time.Duration(time.Second*3))
 		if err != nil {
 			log.Error(err)
-			response.Status = 500
+			response.Status = statusCode
 			host.Health = 3 // 3 stands for unknown
 			respChan <- &response
 			response.Node = host
@@ -558,7 +531,7 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *HttpResponse, port int, 
 				[]Node{host},
 				propertiesMap.UnitHealth,
 				propertiesMap.UnitTitle,
-				pi.GetTimestamp(),
+				dt.DtPuller.GetTimestamp(),
 				propertiesMap.PrettyName,
 			})
 		}

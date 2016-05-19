@@ -4,14 +4,107 @@ import (
 	assertPackage "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 	"testing"
-	"bytes"
-	"archive/zip"
+	"time"
+	"net/http"
+	"fmt"
 )
 
-type FakeSnapshotUtils struct {}
+type FakeHTTPRequest struct {}
 
-func (j *FakeSnapshotUtils) getHttpAddToZip(node Node, report map[string]string, folder string, zipWriter *zip.Writer, summaryReport *bytes.Buffer) error {
-	return nil
+func (f *FakeHTTPRequest) Get(url string, timeout time.Duration) ([]byte, int, error) {
+	var response string
+	if url == fmt.Sprintf("http://127.0.0.1:1050%s/report/snapshot/status", BaseRoute) {
+		response = `
+			{
+			  "is_running":true,
+			  "status":"MyStatus",
+			  "errors":null,
+			  "last_snapshot_dir":"/path/to/snapshot",
+			  "job_started":"0001-01-01 00:00:00 +0000 UTC",
+			  "job_ended":"0001-01-01 00:00:00 +0000 UTC",
+			  "job_duration":"2s",
+			  "snapshot_dir":"/home/core/1",
+			  "snapshot_job_timeout_min":720,
+			  "snapshot_partition_disk_usage_percent":28.0,
+			  "journald_logs_since_hours": "24",
+			  "snapshot_job_get_since_url_timeout_min": 5,
+			  "command_exec_timeout_sec": 10
+			}
+		`
+	}
+	if url == fmt.Sprintf("http://127.0.0.1:1050%s/report/snapshot/list", BaseRoute) {
+		response = `["/system/health/v1/report/snapshot/serve/snapshot-2016-05-13T22:11:36.zip"]`
+	}
+	// master
+	if url == fmt.Sprintf("http://127.0.0.1:1050%s", BaseRoute) {
+		response = `
+			{
+			  "units": [
+			    {
+			      "id":"dcos-setup.service",
+			      "health":0,
+			      "output":"",
+			      "description":"Nice Description.",
+			      "help":"",
+			      "name":"PrettyName"
+			    },
+			    {
+			      "id":"dcos-master.service",
+			      "health":0,
+			      "output":"",
+			      "description":"Nice Master Description.",
+			      "help":"",
+			      "name":"PrettyName"
+			    }
+			  ],
+			  "hostname":"master01",
+			  "ip":"127.0.0.1",
+			  "dcos_version":"1.6",
+			  "node_role":"master",
+			  "mesos_id":"master-123",
+			  "3dt_version": "0.0.7"
+			}`
+	}
+
+	// agent
+	if url == fmt.Sprintf("http://127.0.0.2:1050%s", BaseRoute) {
+		response = `
+			{
+			  "units": [
+			    {
+			      "id":"dcos-setup.service",
+			      "health":0,
+			      "output":"",
+			      "description":"Nice Description.",
+			      "help":"",
+			      "name":"PrettyName"
+			    },
+			    {
+			      "id":"dcos-agent.service",
+			      "health":1,
+			      "output":"",
+			      "description":"Nice Agent Description.",
+			      "help":"",
+			      "name":"PrettyName"
+			    }
+			  ],
+			  "hostname":"agent01",
+			  "ip":"127.0.0.2",
+			  "dcos_version":"1.6",
+			  "node_role":"agent",
+			  "mesos_id":"agent-123",
+			  "3dt_version": "0.0.7"
+			}`
+	}
+	return []byte(response), http.StatusOK, nil
+}
+
+func (f *FakeHTTPRequest) Post(url string, timeout time.Duration) (resp []byte, statusCode int, err error) {
+	return resp, statusCode, err
+}
+
+func (f *FakeHTTPRequest) MakeRequest(req *http.Request, timeout time.Duration) (resp *http.Response, err error) {
+	return resp, err
 }
 
 type SnapshotTestSuit struct {
@@ -28,6 +121,7 @@ func (suit *SnapshotTestSuit) SetupTest() {
 		DtHealth: &FakeHealthReport{},
 		DtPuller: &FakePuller{},
 		DtSnapshotJob: &SnapshotJob{},
+		HTTPRequest: &FakeHTTPRequest{},
 	}
 }
 
@@ -101,7 +195,7 @@ func (s *SnapshotTestSuit) TestGetStatus() {
 }
 
 func (s *SnapshotTestSuit) TestGetAllStatus() {
-	status, err := s.dt.DtSnapshotJob.getStatusAll(s.dt.Cfg, s.dt.DtPuller)
+	status, err := s.dt.DtSnapshotJob.getStatusAll(s.dt.Cfg, s.dt.DtPuller, s.dt.HTTPRequest)
 	s.assert.Nil(err)
 	s.assert.Contains(status, "127.0.0.1")
 	s.assert.Equal(status["127.0.0.1"], snapshotReportStatus{
@@ -122,14 +216,14 @@ func (s *SnapshotTestSuit) TestGetAllStatus() {
 
 func (s *SnapshotTestSuit) TestisSnapshotAvailable() {
 	// should find
-	host, remoteSnapshot, ok, err := s.dt.DtSnapshotJob.isSnapshotAvailable("snapshot-2016-05-13T22:11:36.zip", s.dt.Cfg, s.dt.DtPuller)
+	host, remoteSnapshot, ok, err := s.dt.DtSnapshotJob.isSnapshotAvailable("snapshot-2016-05-13T22:11:36.zip", s.dt.Cfg, s.dt.DtPuller, s.dt.HTTPRequest)
 	s.assert.True(ok)
 	s.assert.Equal(host, "127.0.0.1")
 	s.assert.Equal(remoteSnapshot, "/system/health/v1/report/snapshot/serve/snapshot-2016-05-13T22:11:36.zip")
 	s.assert.Nil(err)
 
 	// should not find
-	host, remoteSnapshot, ok, err = s.dt.DtSnapshotJob.isSnapshotAvailable("snapshot-123.zip", s.dt.Cfg, s.dt.DtPuller)
+	host, remoteSnapshot, ok, err = s.dt.DtSnapshotJob.isSnapshotAvailable("snapshot-123.zip", s.dt.Cfg, s.dt.DtPuller, s.dt.HTTPRequest)
 	s.assert.False(ok)
 	s.assert.Empty(host)
 	s.assert.Empty(remoteSnapshot)

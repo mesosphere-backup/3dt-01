@@ -398,7 +398,7 @@ func runPull(sec int, port int, dt Dt) {
 	loadJobs(hostsChan, ClusterHosts)
 
 	// Pull data from each host
-	for i := 0; i <= len(ClusterHosts); i++ {
+	for i := 1; i <= len(ClusterHosts); i++ {
 		go pullHostStatus(hostsChan, respChan, port, dt)
 	}
 

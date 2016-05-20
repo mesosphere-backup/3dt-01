@@ -14,7 +14,7 @@ func getVersion() string {
 }
 
 func runDiag(config api.Config) int {
-	var exitCode int = 0
+	var exitCode int
 	units, err := api.GetUnitsProperties(&config)
 	if err != nil {
 		log.Error(err)
@@ -22,7 +22,7 @@ func runDiag(config api.Config) int {
 	}
 	for _, unit := range units.Array {
 		if unit.UnitHealth != 0 {
-			fmt.Printf("[%s]: %s %s\n", unit.UnitId, unit.UnitTitle, unit.UnitOutput)
+			fmt.Printf("[%s]: %s %s\n", unit.UnitID, unit.UnitTitle, unit.UnitOutput)
 			exitCode = 1
 		}
 	}
@@ -57,7 +57,7 @@ func main() {
 
 	// start pulling every 60 seconds.
 	if config.FlagPull {
-		puller := api.PullType{}
+		puller := api.DcosPuller{}
 		go api.StartPullWithInterval(config, &puller, readyChan)
 	}
 

@@ -10,22 +10,22 @@ import (
 // Route handlers
 // /api/v1/system/health, get a units status, used by 3dt puller
 func unitsHealthStatus(w http.ResponseWriter, r *http.Request, config *Config) {
-	if err := json.NewEncoder(w).Encode(GlobalHealthReport.GetHealthReport()); err != nil {
+	if err := json.NewEncoder(w).Encode(unitsHealthReport.GetHealthReport()); err != nil {
 		log.Error("Failed to encode responses to json")
 	}
 }
 
 // /api/v1/system/health/units, get an array of all units collected from all hosts in a cluster
 func getAllUnitsHandler(w http.ResponseWriter, r *http.Request) {
-	if err := json.NewEncoder(w).Encode(GlobalMonitoringResponse.GetAllUnits()); err != nil {
+	if err := json.NewEncoder(w).Encode(globalMonitoringResponse.GetAllUnits()); err != nil {
 		log.Error("Failed to encode responses to json")
 	}
 }
 
 // /api/v1/system/health/units/:unit_id:
-func getUnitByIdHandler(w http.ResponseWriter, r *http.Request) {
+func getUnitByIDHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	unitResponse, err := GlobalMonitoringResponse.GetUnit(vars["unitid"])
+	unitResponse, err := globalMonitoringResponse.GetUnit(vars["unitid"])
 	if err != nil {
 		log.Error(err)
 		json.NewEncoder(w).Encode(err)
@@ -37,9 +37,9 @@ func getUnitByIdHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // /api/v1/system/health/units/:unit_id:/nodes
-func getNodesByUnitIdHandler(w http.ResponseWriter, r *http.Request) {
+func getNodesByUnitIDHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	nodesForUnitResponse, err := GlobalMonitoringResponse.GetNodesForUnit(vars["unitid"])
+	nodesForUnitResponse, err := globalMonitoringResponse.GetNodesForUnit(vars["unitid"])
 	if err != nil {
 		log.Error(err)
 		json.NewEncoder(w).Encode(err)
@@ -51,9 +51,9 @@ func getNodesByUnitIdHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // /api/v1/system/health/units/:unit_id:/nodes/:node_id:
-func getNodeByUnitIdNodeIdHandler(w http.ResponseWriter, r *http.Request) {
+func getNodeByUnitIDNodeIDHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	nodePerUnit, err := GlobalMonitoringResponse.GetSpecificNodeForUnit(vars["unitid"], vars["nodeid"])
+	nodePerUnit, err := globalMonitoringResponse.GetSpecificNodeForUnit(vars["unitid"], vars["nodeid"])
 
 	if err != nil {
 		log.Error(err)
@@ -67,22 +67,22 @@ func getNodeByUnitIdNodeIdHandler(w http.ResponseWriter, r *http.Request) {
 
 // list the entire tree
 func reportHandler(w http.ResponseWriter, r *http.Request) {
-	if err := json.NewEncoder(w).Encode(GlobalMonitoringResponse); err != nil {
+	if err := json.NewEncoder(w).Encode(globalMonitoringResponse); err != nil {
 		log.Error("Failed to encode responses to json")
 	}
 }
 
 // /api/v1/system/health/nodes
 func getNodesHandler(w http.ResponseWriter, r *http.Request) {
-	if err := json.NewEncoder(w).Encode(GlobalMonitoringResponse.GetNodes()); err != nil {
+	if err := json.NewEncoder(w).Encode(globalMonitoringResponse.GetNodes()); err != nil {
 		log.Error("Failed to encode responses to json")
 	}
 }
 
 // /api/v1/system/health/nodes/:node_id:
-func getNodeByIdHandler(w http.ResponseWriter, r *http.Request) {
+func getNodeByIDHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	nodes, err := GlobalMonitoringResponse.GetNodeById(vars["nodeid"])
+	nodes, err := globalMonitoringResponse.GetNodeByID(vars["nodeid"])
 	if err != nil {
 		log.Error(err)
 		json.NewEncoder(w).Encode(err)
@@ -95,9 +95,9 @@ func getNodeByIdHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // /api/v1/system/health/nodes/:node_id:/units
-func getNodeUnitsByNodeIdHandler(w http.ResponseWriter, r *http.Request) {
+func getNodeUnitsByNodeIDHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	units, err := GlobalMonitoringResponse.GetNodeUnitsId(vars["nodeid"])
+	units, err := globalMonitoringResponse.GetNodeUnitsID(vars["nodeid"])
 	if err != nil {
 		log.Error(err)
 		json.NewEncoder(w).Encode(err)
@@ -109,9 +109,9 @@ func getNodeUnitsByNodeIdHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getNodeUnitByNodeIdUnitIdHandler(w http.ResponseWriter, r *http.Request) {
+func getNodeUnitByNodeIDUnitIDHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	unit, err := GlobalMonitoringResponse.GetNodeUnitByNodeIdUnitId(vars["nodeid"], vars["unitid"])
+	unit, err := globalMonitoringResponse.GetNodeUnitByNodeIDUnitID(vars["nodeid"], vars["unitid"])
 	if err != nil {
 		log.Error(err)
 		json.NewEncoder(w).Encode(err)

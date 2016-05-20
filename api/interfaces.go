@@ -11,7 +11,7 @@ type Puller interface {
 	GetAgentsFromMaster() ([]Node, error)
 
 	// functions make a GET request to a remote node, return an array of response, response status and error
-	GetUnitsPropertiesViaHttp(string) ([]byte, int, error)
+	GetUnitsPropertiesViaHTTP(string) ([]byte, int, error)
 
 	// function to wait between pulls
 	WaitBetweenPulls(int)
@@ -20,8 +20,8 @@ type Puller interface {
 	GetTimestamp() time.Time
 }
 
-// Systemd unit interface
-type HealthReporter interface {
+// DCOSHelper DC/OS specific tools interface.
+type DCOSHelper interface {
 	// open dbus connection
 	InitializeDbusConnection() error
 
@@ -34,7 +34,7 @@ type HealthReporter interface {
 
 	// A wrapper to /opt/mesosphere/bin/detect_ip script
 	// should return empty string if script fails.
-	DetectIp() string
+	DetectIP() string
 
 	// get system's hostname
 	GetHostname() string
@@ -49,7 +49,7 @@ type HealthReporter interface {
 	GetJournalOutput(string) (string, error)
 
 	// Get mesos node id, first argument is a role, second argument is a json field name
-	GetMesosNodeId(string, string) string
+	GetMesosNodeID(string, string) string
 }
 
 // interface defines where to get a list of mesos agent

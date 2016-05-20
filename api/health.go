@@ -15,27 +15,32 @@ import (
 	"time"
 )
 
-// Global health report variable
-var GlobalHealthReport UnitsHealth
+// unitsHealthReport gets updated in a separate goroutine every 60 sec This variable contains a status of a DC/OS
+// systemd units for the past 60 sec.
+var unitsHealthReport unitsHealth
 
-type UnitsHealth struct {
+// unitsHealth is a container for global health report. Getting and updating of health report must go through
+// GetHealthReport and UpdateHealthReport this allows to access data in concurrent manner.
+type unitsHealth struct {
 	sync.Mutex
-	healthReport UnitsHealthResponseJsonStruct
+	healthReport UnitsHealthResponseJSONStruct
 }
 
-func (uh *UnitsHealth) GetHealthReport() UnitsHealthResponseJsonStruct {
+// getHealthReport returns a global health report of UnitsHealthResponseJsonStruct type.
+func (uh *unitsHealth) GetHealthReport() UnitsHealthResponseJSONStruct {
 	uh.Lock()
 	defer uh.Unlock()
 	return uh.healthReport
 }
 
-func (uh *UnitsHealth) UpdateHealthReport(healthReport UnitsHealthResponseJsonStruct) {
+// updateHealthReport updates a global health report of UnitsHealthResponseJsonStruct type.
+func (uh *unitsHealth) UpdateHealthReport(healthReport UnitsHealthResponseJSONStruct) {
 	uh.Lock()
 	defer uh.Unlock()
 	uh.healthReport = healthReport
 }
 
-// start updating health report
+// StartUpdateHealthReport should be started in a separate goroutine to update global health report periodically.
 func StartUpdateHealthReport(config Config, readyChan chan bool, runOnce bool) {
 	var ready bool
 	for {
@@ -45,7 +50,7 @@ func StartUpdateHealthReport(config Config, readyChan chan bool, runOnce bool) {
 				readyChan <- true
 				ready = true
 			}
-			GlobalHealthReport.UpdateHealthReport(healthReport)
+			unitsHealthReport.UpdateHealthReport(healthReport)
 		} else {
 			log.Error("Could not update systemd units health report")
 			log.Error(err)
@@ -58,17 +63,18 @@ func StartUpdateHealthReport(config Config, readyChan chan bool, runOnce bool) {
 	}
 }
 
-// HealthReporter implementation
-type DcosHealth struct {
+// dcosTools is implementation of DCOSHelper interface.
+type dcosTools struct {
 	sync.Mutex
 	dcon     *dbus.Conn
 	hostname string
 	role     string
 	ip       string
-	mesos_id string
+	mesosID  string
 }
 
-func (st *DcosHealth) GetHostname() string {
+// GetHostname return a localhost hostname.
+func (st *dcosTools) GetHostname() string {
 	if st.hostname != "" {
 		return st.hostname
 	}
@@ -81,20 +87,22 @@ func (st *DcosHealth) GetHostname() string {
 	return st.hostname
 }
 
-func (st *DcosHealth) DetectIp() string {
+// DetectIP returns a detected IP by running /opt/mesosphere/bin/detect_ip. It will run only once and cache the result.
+// When the function is called again, ip will be taken from cache.
+func (st *dcosTools) DetectIP() string {
 	if st.ip != "" {
 		log.Debugf("Found IP in memory: %s", st.ip)
 		return st.ip
 	}
 
-	var detect_ip_cmd string
+	var detectIPCmd string
 	// Try to get a path to detect_ip script from environment variable.
 	// Variable should be available when start 3dt from systemd. Otherwise hardcode the path.
-	detect_ip_cmd = os.Getenv("MESOS_IP_DISCOVERY_COMMAND")
-	if detect_ip_cmd == "" {
-		detect_ip_cmd = "/opt/mesosphere/bin/detect_ip"
+	detectIPCmd = os.Getenv("MESOS_IP_DISCOVERY_COMMAND")
+	if detectIPCmd == "" {
+		detectIPCmd = "/opt/mesosphere/bin/detect_ip"
 	}
-	out, err := exec.Command(detect_ip_cmd).Output()
+	out, err := exec.Command(detectIPCmd).Output()
 	st.ip = strings.TrimRight(string(out), "\n")
 	if err != nil {
 		log.Error(err)
@@ -104,8 +112,9 @@ func (st *DcosHealth) DetectIp() string {
 	return st.ip
 }
 
-// detect node role
-func (st *DcosHealth) GetNodeRole() string {
+// GetNodeRole returns a nodes role. It will run only once and cache the result.
+// When the function is called again, ip will be taken from cache.
+func (st *dcosTools) GetNodeRole() string {
 	if st.role != "" {
 		return st.role
 	}
@@ -120,7 +129,8 @@ func (st *DcosHealth) GetNodeRole() string {
 	return ""
 }
 
-func (st *DcosHealth) InitializeDbusConnection() (err error) {
+// InitializeDbusConnection opens a dbus connection. The connection is available via st.dcon
+func (st *dcosTools) InitializeDbusConnection() (err error) {
 	// we need to lock the dbus connection for each request
 	st.Lock()
 	if st.dcon == nil {
@@ -135,7 +145,8 @@ func (st *DcosHealth) InitializeDbusConnection() (err error) {
 	return errors.New("dbus connection is already opened")
 }
 
-func (st *DcosHealth) CloseDbusConnection() error {
+// CloseDbusConnection closes a dbus connection.
+func (st *dcosTools) CloseDbusConnection() error {
 	// unlock the dbus connection no matter what
 	defer st.Unlock()
 	if st.dcon != nil {
@@ -147,7 +158,8 @@ func (st *DcosHealth) CloseDbusConnection() error {
 	return errors.New("dbus connection is closed")
 }
 
-func (st *DcosHealth) GetUnitProperties(pname string) (result map[string]interface{}, err error) {
+// GetUnitProperties return a map of systemd unit properties received from dbus.
+func (st *dcosTools) GetUnitProperties(pname string) (result map[string]interface{}, err error) {
 	// get Service specific properties.
 	result, err = st.dcon.GetUnitProperties(pname)
 	if err != nil {
@@ -157,7 +169,8 @@ func (st *DcosHealth) GetUnitProperties(pname string) (result map[string]interfa
 	return result, nil
 }
 
-func (st *DcosHealth) GetUnitNames() (units []string, err error) {
+// GetUnitNames read a directory /etc/systemd/system/dcos.target.wants and return a list of found systemd units.
+func (st *dcosTools) GetUnitNames() (units []string, err error) {
 	files, err := ioutil.ReadDir("/etc/systemd/system/dcos.target.wants")
 	if err != nil {
 		return units, err
@@ -169,7 +182,8 @@ func (st *DcosHealth) GetUnitNames() (units []string, err error) {
 	return units, nil
 }
 
-func (st *DcosHealth) GetJournalOutput(unit string) (string, error) {
+// GetJournalOutput returns last 50 lines of journald command output for a specific systemd unit.
+func (st *dcosTools) GetJournalOutput(unit string) (string, error) {
 	out, err := exec.Command("journalctl", "--no-pager", "-n", "50", "-u", unit).Output()
 	if err != nil {
 		return "", err
@@ -177,10 +191,11 @@ func (st *DcosHealth) GetJournalOutput(unit string) (string, error) {
 	return string(out), nil
 }
 
-func (st *DcosHealth) GetMesosNodeId(role string, field string) string {
-	if st.mesos_id != "" {
-		log.Debugf("Found in memory mesos node id: %s", st.mesos_id)
-		return st.mesos_id
+// GetMesosNodeID return a mesos node id.
+func (st *dcosTools) GetMesosNodeID(role string, field string) string {
+	if st.mesosID != "" {
+		log.Debugf("Found in memory mesos node id: %s", st.mesosID)
+		return st.mesosID
 	}
 
 	var port int
@@ -191,7 +206,7 @@ func (st *DcosHealth) GetMesosNodeId(role string, field string) string {
 	}
 	log.Debugf("using role %s, port %d to get node id", role, port)
 
-	var url string = fmt.Sprintf("http://%s:%d/state", st.ip, port)
+	url := fmt.Sprintf("http://%s:%d/state", st.ip, port)
 
 	log.Debugf("GET %s", url)
 	resp, err := http.Get(url)
@@ -202,29 +217,29 @@ func (st *DcosHealth) GetMesosNodeId(role string, field string) string {
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 
-	var respJson map[string]interface{}
-	json.Unmarshal(body, &respJson)
-	if id, ok := respJson[field]; ok {
-		st.mesos_id = id.(string)
-		log.Debugf("Received node id %s", st.mesos_id)
-		return st.mesos_id
+	var respJSON map[string]interface{}
+	json.Unmarshal(body, &respJSON)
+	if id, ok := respJSON[field]; ok {
+		st.mesosID = id.(string)
+		log.Debugf("Received node id %s", st.mesosID)
+		return st.mesosID
 	}
 	log.Errorf("Could not unmarshal json response, field: %s", field)
 	return ""
 }
 
 // Help functions
-func IsInList(item string, l []string) bool {
-	for _, list_item := range l {
-		if item == list_item {
+func isInList(item string, l []string) bool {
+	for _, listItem := range l {
+		if item == listItem {
 			return true
 		}
 	}
 	return false
 }
 
-func NormalizeProperty(unitName string, p map[string]interface{}, si HealthReporter) UnitHealthResponseFieldsStruct {
-	var unitHealth int = 0
+func normalizeProperty(unitName string, p map[string]interface{}, d DCOSHelper) healthResponseValues {
+	var unitHealth int
 	var unitOutput string
 
 	// check keys
@@ -236,13 +251,13 @@ func NormalizeProperty(unitName string, p map[string]interface{}, si HealthRepor
 
 	okStates := []string{"active", "inactive", "activating"}
 	log.Debugf("%s ActiveState: %s", unitName, p["ActiveState"])
-	if !IsInList(p["ActiveState"].(string), okStates) {
+	if !isInList(p["ActiveState"].(string), okStates) {
 		unitHealth = 1
 		unitOutput += fmt.Sprintf("%s state is not one of the possible states %s. Current state is [ %s ]. Please check `systemctl show all %s` to check current unit state. ", unitName, okStates, p["ActiveState"], unitName)
 	}
 
 	if unitHealth > 0 {
-		journalOutput, err := si.GetJournalOutput(unitName)
+		journalOutput, err := d.GetJournalOutput(unitName)
 		if err == nil {
 			unitOutput += "\n"
 			unitOutput += journalOutput
@@ -260,8 +275,8 @@ func NormalizeProperty(unitName string, p map[string]interface{}, si HealthRepor
 		prettyName, description = s[0], s[1]
 	}
 
-	return UnitHealthResponseFieldsStruct{
-		UnitId:     unitName,
+	return healthResponseValues{
+		UnitID:     unitName,
 		UnitHealth: unitHealth,
 		UnitOutput: unitOutput,
 		UnitTitle:  description,
@@ -270,17 +285,17 @@ func NormalizeProperty(unitName string, p map[string]interface{}, si HealthRepor
 	}
 }
 
-// endpoint "/api/v1/system/health"
-func GetUnitsProperties(config *Config) (UnitsHealthResponseJsonStruct, error) {
+// GetUnitsProperties return a structured units health response of UnitsHealthResponseJsonStruct type.
+func GetUnitsProperties(config *Config) (UnitsHealthResponseJSONStruct, error) {
 	// detect DC/OS systemd units
-	foundUnits, err := config.HealthReport.GetUnitNames()
+	foundUnits, err := config.DcosTools.GetUnitNames()
 	if err != nil {
 		log.Error(err)
 	}
-	var allUnitsProperties []UnitHealthResponseFieldsStruct
+	var allUnitsProperties []healthResponseValues
 	// open dbus connection
-	if err = config.HealthReport.InitializeDbusConnection(); err != nil {
-		return UnitsHealthResponseJsonStruct{}, err
+	if err = config.DcosTools.InitializeDbusConnection(); err != nil {
+		return UnitsHealthResponseJSONStruct{}, err
 	}
 	log.Debug("Opened dbus connection")
 
@@ -289,29 +304,29 @@ func GetUnitsProperties(config *Config) (UnitsHealthResponseJsonStruct, error) {
 
 	units := append(config.SystemdUnits, foundUnits...)
 	for _, unit := range units {
-		if IsInList(unit, excludeUnits) {
+		if isInList(unit, excludeUnits) {
 			log.Debugf("Skipping blacklisted systemd unit %s", unit)
 			continue
 		}
-		currentProperty, err := config.HealthReport.GetUnitProperties(unit)
+		currentProperty, err := config.DcosTools.GetUnitProperties(unit)
 		if err != nil {
 			log.Errorf("Could not get properties for unit: %s", unit)
 			continue
 		}
-		allUnitsProperties = append(allUnitsProperties, NormalizeProperty(unit, currentProperty, config.HealthReport))
+		allUnitsProperties = append(allUnitsProperties, normalizeProperty(unit, currentProperty, config.DcosTools))
 	}
 	// after we finished querying systemd units, close dbus connection
-	if err = config.HealthReport.CloseDbusConnection(); err != nil {
+	if err = config.DcosTools.CloseDbusConnection(); err != nil {
 		// we should probably return here, since we cannot guarantee that all units have been queried.
-		return UnitsHealthResponseJsonStruct{}, err
+		return UnitsHealthResponseJSONStruct{}, err
 	}
-	return UnitsHealthResponseJsonStruct{
+	return UnitsHealthResponseJSONStruct{
 		Array:       allUnitsProperties,
-		Hostname:    config.HealthReport.GetHostname(),
-		IpAddress:   config.HealthReport.DetectIp(),
+		Hostname:    config.DcosTools.GetHostname(),
+		IPAddress:   config.DcosTools.DetectIP(),
 		DcosVersion: config.DcosVersion,
-		Role:        config.HealthReport.GetNodeRole(),
-		MesosId:     config.HealthReport.GetMesosNodeId(config.HealthReport.GetNodeRole(), "id"),
+		Role:        config.DcosTools.GetNodeRole(),
+		MesosID:     config.DcosTools.GetMesosNodeID(config.DcosTools.GetNodeRole(), "id"),
 		TdtVersion:  config.Version,
 	}, nil
 }

@@ -7,6 +7,7 @@ import (
 	"net/http"
 )
 
+// BaseRoute a base 3dt endpoint location.
 const BaseRoute string = "/system/health/v1"
 
 type routeHandler struct {
@@ -68,17 +69,17 @@ func getRoutes(config *Config) []routeHandler {
 		{
 			// /system/health/v1/units/<unitid>
 			url:     fmt.Sprintf("%s/units/{unitid}", BaseRoute),
-			handler: getUnitByIdHandler,
+			handler: getUnitByIDHandler,
 		},
 		{
 			// /system/health/v1/units/<unitid>/nodes
 			url:     fmt.Sprintf("%s/units/{unitid}/nodes", BaseRoute),
-			handler: getNodesByUnitIdHandler,
+			handler: getNodesByUnitIDHandler,
 		},
 		{
 			// /system/health/v1/units/<unitid>/nodes/<nodeid>
 			url:     fmt.Sprintf("%s/units/{unitid}/nodes/{nodeid}", BaseRoute),
-			handler: getNodeByUnitIdNodeIdHandler,
+			handler: getNodeByUnitIDNodeIDHandler,
 		},
 		{
 			// /system/health/v1/nodes
@@ -88,17 +89,17 @@ func getRoutes(config *Config) []routeHandler {
 		{
 			// /system/health/v1/nodes/<nodeid>
 			url:     fmt.Sprintf("%s/nodes/{nodeid}", BaseRoute),
-			handler: getNodeByIdHandler,
+			handler: getNodeByIDHandler,
 		},
 		{
 			// /system/health/v1/nodes/<nodeid>/units
 			url:     fmt.Sprintf("%s/nodes/{nodeid}/units", BaseRoute),
-			handler: getNodeUnitsByNodeIdHandler,
+			handler: getNodeUnitsByNodeIDHandler,
 		},
 		{
 			// /system/health/v1/nodes/<nodeid>/units/<unitid>
 			url:     fmt.Sprintf("%s/nodes/{nodeid}/units/{unitid}", BaseRoute),
-			handler: getNodeUnitByNodeIdUnitIdHandler,
+			handler: getNodeUnitByNodeIDUnitIDHandler,
 		},
 	}
 }
@@ -111,6 +112,7 @@ func loadRoutes(router *mux.Router, config *Config) *mux.Router {
 	return router
 }
 
+// NewRouter returns a new *mux.Router with loaded routes.
 func NewRouter(config *Config) *mux.Router {
 	router := mux.NewRouter().StrictSlash(true)
 	return loadRoutes(router, config)

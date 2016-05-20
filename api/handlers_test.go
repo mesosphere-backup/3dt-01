@@ -464,7 +464,7 @@ func (s *HandlersTestSuit) TestStartUpdateHealthReportActualImplementationFunc()
 	readyChan := make(chan bool, 1)
 	StartUpdateHealthReport(s.cfg, readyChan, true)
 	hr := unitsHealthReport.GetHealthReport()
-	s.assert.Equal(hr, UnitsHealthResponseJSONStruct{})
+	s.assert.Empty(hr.Array)
 }
 
 // TestCheckHealthReportRace is meant to be run under the race detector
@@ -489,34 +489,37 @@ func (s *HandlersTestSuit) TestStartUpdateHealthReportFunc() {
 	readyChan := make(chan bool, 1)
 	StartUpdateHealthReport(s.cfg, readyChan, true)
 	hr := unitsHealthReport.GetHealthReport()
-	s.assert.Equal(hr, UnitsHealthResponseJSONStruct{
-		Array: []healthResponseValues{
-			{
-				UnitID:     "unit_a",
-				UnitHealth: 0,
-				UnitTitle:  "My fake description",
-				PrettyName: "PrettyName",
-			},
-			{
-				UnitID:     "unit_b",
-				UnitHealth: 0,
-				UnitTitle:  "My fake description",
-				PrettyName: "PrettyName",
-			},
-			{
-				UnitID:     "unit_c",
-				UnitHealth: 0,
-				UnitTitle:  "My fake description",
-				PrettyName: "PrettyName",
-			},
+	s.assert.Equal(hr.Array, []healthResponseValues{
+		{
+			UnitID:     "unit_a",
+			UnitHealth: 0,
+			UnitTitle:  "My fake description",
+			PrettyName: "PrettyName",
 		},
-		Hostname:    "MyHostName",
-		IPAddress:   "127.0.0.1",
-		DcosVersion: "",
-		Role:        "master",
-		MesosID:     "node-id-123",
-		TdtVersion:  "0.0.13",
+		{
+			UnitID:     "unit_b",
+			UnitHealth: 0,
+			UnitTitle:  "My fake description",
+			PrettyName: "PrettyName",
+		},
+		{
+			UnitID:     "unit_c",
+			UnitHealth: 0,
+			UnitTitle:  "My fake description",
+			PrettyName: "PrettyName",
+		},
 	})
+	s.assert.NotEmpty(hr.System)
+	s.assert.NotEmpty(hr.System.DiskUsage)
+	s.assert.NotEmpty(hr.System.LoadAvarage)
+	s.assert.NotEmpty(hr.System.Memory)
+	s.assert.NotEmpty(hr.System.Partitions)
+	s.assert.Equal(hr.Hostname, "MyHostName")
+	s.assert.Equal(hr.IPAddress, "127.0.0.1")
+	s.assert.Equal(hr.DcosVersion, "")
+	s.assert.Equal(hr.Role, "master")
+	s.assert.Equal(hr.MesosID, "node-id-123")
+	s.assert.Equal(hr.TdtVersion, "0.0.14")
 }
 
 func TestHandlersTestSuit(t *testing.T) {

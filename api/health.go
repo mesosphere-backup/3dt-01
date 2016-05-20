@@ -8,6 +8,9 @@ import (
 	"github.com/coreos/go-systemd/dbus"
 	"io/ioutil"
 	"net/http"
+	"github.com/shirou/gopsutil/mem"
+	"github.com/shirou/gopsutil/disk"
+	"github.com/shirou/gopsutil/load"
 	"os"
 	"os/exec"
 	"strings"
@@ -50,11 +53,11 @@ func StartUpdateHealthReport(config Config, readyChan chan bool, runOnce bool) {
 				readyChan <- true
 				ready = true
 			}
-			unitsHealthReport.UpdateHealthReport(healthReport)
 		} else {
 			log.Error("Could not update systemd units health report")
 			log.Error(err)
 		}
+		unitsHealthReport.UpdateHealthReport(healthReport)
 		if runOnce {
 			log.Debug("Run startUpdateHealthReport only once")
 			return
@@ -285,8 +288,54 @@ func normalizeProperty(unitName string, p map[string]interface{}, d DCOSHelper) 
 	}
 }
 
+func updateSystemMetrics() (sysMetrics sysMetrics, err error) {
+	var globalError string
+	v, err := mem.VirtualMemory()
+	if err == nil {
+		sysMetrics.Memory = *v
+	} else {
+		globalError += err.Error()
+	}
+
+	la, err := load.Avg()
+	if err == nil {
+		sysMetrics.LoadAvarage = *la
+	} else {
+		globalError += err.Error()
+	}
+	d, err := disk.Partitions(true)
+	if err == nil {
+		sysMetrics.Partitions = d
+	} else {
+		globalError += err.Error()
+		return sysMetrics, errors.New(globalError)
+	}
+
+	var diskUsage []disk.UsageStat
+	for _, diskProps := range d {
+		currentDiskUsage, err := disk.Usage(diskProps.Mountpoint)
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+		if currentDiskUsage.String() == "" {
+			continue
+		}
+		diskUsage = append(diskUsage, *currentDiskUsage)
+	}
+	sysMetrics.DiskUsage = diskUsage
+	return sysMetrics, nil
+}
+
 // GetUnitsProperties return a structured units health response of UnitsHealthResponseJsonStruct type.
-func GetUnitsProperties(config *Config) (UnitsHealthResponseJSONStruct, error) {
+func GetUnitsProperties(config *Config) (healthReport UnitsHealthResponseJSONStruct, err error) {
+	// update system metrics first to make sure we always return them.
+ 	sysMetrics, err := updateSystemMetrics()
+ 	if err != nil {
+ 		log.Error(err)
+ 	}
+ 	healthReport.System = sysMetrics
+
 	// detect DC/OS systemd units
 	foundUnits, err := config.DcosTools.GetUnitNames()
 	if err != nil {
@@ -295,7 +344,7 @@ func GetUnitsProperties(config *Config) (UnitsHealthResponseJSONStruct, error) {
 	var allUnitsProperties []healthResponseValues
 	// open dbus connection
 	if err = config.DcosTools.InitializeDbusConnection(); err != nil {
-		return UnitsHealthResponseJSONStruct{}, err
+		return healthReport, err
 	}
 	log.Debug("Opened dbus connection")
 
@@ -318,15 +367,17 @@ func GetUnitsProperties(config *Config) (UnitsHealthResponseJSONStruct, error) {
 	// after we finished querying systemd units, close dbus connection
 	if err = config.DcosTools.CloseDbusConnection(); err != nil {
 		// we should probably return here, since we cannot guarantee that all units have been queried.
-		return UnitsHealthResponseJSONStruct{}, err
+		return healthReport, err
 	}
-	return UnitsHealthResponseJSONStruct{
-		Array:       allUnitsProperties,
-		Hostname:    config.DcosTools.GetHostname(),
-		IPAddress:   config.DcosTools.DetectIP(),
-		DcosVersion: config.DcosVersion,
-		Role:        config.DcosTools.GetNodeRole(),
-		MesosID:     config.DcosTools.GetMesosNodeID(config.DcosTools.GetNodeRole(), "id"),
-		TdtVersion:  config.Version,
-	}, nil
+
+	// update the rest of healthReport fields
+	healthReport.Array = allUnitsProperties
+	healthReport.Hostname = config.DcosTools.GetHostname()
+	healthReport.IPAddress = config.DcosTools.DetectIP()
+	healthReport.DcosVersion = config.DcosVersion
+	healthReport.Role = config.DcosTools.GetNodeRole()
+	healthReport.MesosID = config.DcosTools.GetMesosNodeID(config.DcosTools.GetNodeRole(), "id")
+	healthReport.TdtVersion = config.Version
+
+	return healthReport, nil
 }

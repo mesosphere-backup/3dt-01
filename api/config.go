@@ -9,7 +9,7 @@ import (
 )
 
 // Version of 3dt code.
-const Version string = "0.0.13"
+const Version string = "0.0.14"
 
 // Revision injected by LDFLAGS a git commit reference.
 var Revision string

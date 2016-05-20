@@ -10,7 +10,16 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 	"net"
+	"path/filepath"
 	"strconv"
+)
+
+const (
+	// MasterRole DC/OS role for a master.
+	MasterRole = "master"
+
+	// AgentRole DC/OS role for an agent.
+	AgentRole = "agent"
 )
 
 // globalMonitoringResponse a global variable updated by a puller every 60 seconds.
@@ -46,64 +55,81 @@ func (pt *DcosPuller) GetUnitsPropertiesViaHTTP(url string) ([]byte, int, error)
 
 // LookupMaster looks for DC/OS master ip.
 func (pt *DcosPuller) LookupMaster() (nodesResponse []Node, err error) {
-	url := "http://127.0.0.1:8181/exhibitor/v1/cluster/status"
+	finder := &findMastersInExhibitor{
+		url: "http://127.0.0.1:8181/exhibitor/v1/cluster/status",
+		next: &findNodesInDNS{
+			dnsRecord: "master.mesos",
+			role:      MasterRole,
+			next:      nil,
+		},
+	}
+	return finder.find()
+}
+
+// find masters via dns. Used to find master nodes from agents.
+type findMastersInExhibitor struct {
+	url  string
+	next nodeFinder
+}
+
+func (f *findMastersInExhibitor) findMesosMasters() (nodes []Node, err error) {
 	client := http.Client{Timeout: time.Duration(time.Second)}
-	resp, err := client.Get(url)
+	resp, err := client.Get(f.url)
 	if err != nil {
-		log.Errorf("Could not get a list of masters, url %s", url)
-		return nodesResponse, err
+		return nodes, err
 	}
 	defer resp.Body.Close()
 	nodesResponseString, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Errorf("Unable to read the response from %s", url)
-		return nodesResponse, err
+		return nodes, err
 	}
 
 	var exhibitorNodesResponse []exhibitorNodeResponse
 	if err := json.Unmarshal([]byte(nodesResponseString), &exhibitorNodesResponse); err != nil {
-		log.Error("Could not deserialize nodes response")
-		return nodesResponse, err
+		return nodes, err
 	}
-	log.Debugf("Nodes response from exhibitor: %+v", exhibitorNodesResponse)
+	if len(exhibitorNodesResponse) == 0 {
+		return nodes, errors.New("master nodes not found in exhibitor")
+	}
 
 	for _, exhibitorNodeResponse := range exhibitorNodesResponse {
-		var node Node
-		node.Role = "master"
-		node.IP = exhibitorNodeResponse.Hostname
-		node.Leader = exhibitorNodeResponse.IsLeader
-		nodesResponse = append(nodesResponse, node)
+		nodes = append(nodes, Node{
+			Role:   MasterRole,
+			IP:     exhibitorNodeResponse.Hostname,
+			Leader: exhibitorNodeResponse.IsLeader,
+		})
 	}
-	return nodesResponse, nil
+	return nodes, nil
 }
 
-// agentResponder interface implementation to get a list of agents from a leader master (dns based) or from
-// history service.
-type dnsResponder struct {
-	defaultMasterAddress string
+func (f *findMastersInExhibitor) find() (nodes []Node, err error) {
+	nodes, err = f.findMesosMasters()
+	if err == nil {
+		return nodes, nil
+	}
+	// try next provider if it is available
+	if f.next != nil {
+		log.Warning(err)
+		return f.next.find()
+	}
+	return nodes, err
 }
 
-type historyServiceResponder struct {
-	defaultPastTime string
+// find agents in history service
+type findAgentsInHistoryService struct {
+	pastTime string
+	next     nodeFinder
 }
 
-func (hs historyServiceResponder) getAgentSource() (jsonFiles []string, err error) {
-	basePath := "/var/lib/mesosphere/dcos/history-service" + hs.defaultPastTime
+func (f *findAgentsInHistoryService) getMesosAgents() (nodes []Node, err error) {
+	basePath := "/var/lib/mesosphere/dcos/history-service" + f.pastTime
 	files, err := ioutil.ReadDir(basePath)
 	if err != nil {
-		return jsonFiles, err
+		return nodes, err
 	}
-	for _, file := range files {
-		jsonFiles = append(jsonFiles, basePath+file.Name())
-	}
-	return jsonFiles, nil
-}
-
-func (hs historyServiceResponder) getMesosAgents(jsonPath []string) (nodes []Node, err error) {
 	nodeCount := make(map[string]int)
-
-	for _, historyFile := range jsonPath {
-		agents, err := ioutil.ReadFile(historyFile)
+	for _, historyFile := range files {
+		agents, err := ioutil.ReadFile(filepath.Join(basePath, historyFile.Name()))
 		if err != nil {
 			log.Error(err)
 			continue
@@ -121,7 +147,6 @@ func (hs historyServiceResponder) getMesosAgents(jsonPath []string) (nodes []Nod
 			continue
 		}
 
-		// get all nodes for the past hour
 		for _, agent := range sr.Agents {
 			if _, ok := nodeCount[agent.Hostname]; ok {
 				nodeCount[agent.Hostname]++
@@ -134,29 +159,68 @@ func (hs historyServiceResponder) getMesosAgents(jsonPath []string) (nodes []Nod
 	if len(nodeCount) == 0 {
 		return nodes, errors.New("Agent nodes were not found in hisotry service for the past hour")
 	}
+
 	for ip := range nodeCount {
-		var node Node
-		node.Role = "agent"
-		node.IP = ip
-		nodes = append(nodes, node)
+		nodes = append(nodes, Node{
+			Role: AgentRole,
+			IP:   ip,
+		})
 	}
 	return nodes, nil
 }
 
-func (dr dnsResponder) getAgentSource() (leaderIps []string, err error) {
-	leaderIps, err = net.LookupHost(dr.defaultMasterAddress)
-	if err != nil {
-		return leaderIps, err
+func (f *findAgentsInHistoryService) find() (nodes []Node, err error) {
+	nodes, err = f.getMesosAgents()
+	if err == nil {
+		return nodes, nil
 	}
-	log.Debugf("Resolving leader.mesos ip: %s", leaderIps)
-	if len(leaderIps) > 1 {
-		log.Warningf("leader.mesos returned more then 1 IP! %s", leaderIps)
+	// try next provider if it is available
+	if f.next != nil {
+		log.Warning(err)
+		return f.next.find()
 	}
-	return leaderIps, nil
+	return nodes, err
 }
 
-func (dr dnsResponder) getMesosAgents(leaderIP []string) (nodes []Node, err error) {
-	agentRequest := fmt.Sprintf("http://%s:5050/slaves", leaderIP)
+// find agents by resolving dns entry
+type findNodesInDNS struct {
+	dnsRecord string
+	role      string
+	next      nodeFinder
+}
+
+func (f *findNodesInDNS) resolveDomain() (ips []string, err error) {
+	return net.LookupHost(f.dnsRecord)
+}
+
+func (f *findNodesInDNS) getMesosMasters() (nodes []Node, err error) {
+	ips, err := f.resolveDomain()
+	if err != nil {
+		return nodes, err
+	}
+	if len(ips) == 0 {
+		return nodes, errors.New("Could not resolve " + f.dnsRecord)
+	}
+
+	for _, ip := range ips {
+		nodes = append(nodes, Node{
+			Role: MasterRole,
+			IP:   ip,
+		})
+	}
+	return nodes, nil
+}
+
+func (f *findNodesInDNS) getMesosAgents() (nodes []Node, err error) {
+	leaderIps, err := f.resolveDomain()
+	if err != nil {
+		return nodes, err
+	}
+	if len(leaderIps) == 0 {
+		return nodes, errors.New("Could not resolve " + f.dnsRecord)
+	}
+
+	agentRequest := fmt.Sprintf("http://%s:5050/slaves", leaderIps[0])
 	timeout := time.Duration(time.Second)
 	client := http.Client{Timeout: timeout}
 	getAgents, err := client.Get(agentRequest)
@@ -175,38 +239,52 @@ func (dr dnsResponder) getMesosAgents(leaderIP []string) (nodes []Node, err erro
 	}
 
 	for _, agent := range sr.Agents {
-		var node Node
-		node.Role = "agent"
-		node.IP = agent.Hostname
-		nodes = append(nodes, node)
+		nodes = append(nodes, Node{
+			Role: AgentRole,
+			IP:   agent.Hostname,
+		})
+	}
+	return nodes, nil
+}
+
+func (f *findNodesInDNS) dispatchGetNodesByRole() (nodes []Node, err error) {
+	if f.role == MasterRole {
+		nodes, err = f.getMesosMasters()
+	} else {
+		if f.role != AgentRole {
+			return nodes, errors.New("Unknown role " + f.role)
+		}
+		nodes, err = f.getMesosAgents()
+	}
+	return nodes, nil
+}
+
+func (f *findNodesInDNS) find() (nodes []Node, err error) {
+	nodes, err = f.dispatchGetNodesByRole()
+	if err == nil {
+		return nodes, err
+	}
+	if f.next != nil {
+		log.Warning(err)
+		return f.next.find()
 	}
 	return nodes, err
 }
 
-// GetAgentsFromMaster returns a list of agent nodes.
+// GetAgentsFromMaster returns a list of DC/OS agent nodes.
 func (pt *DcosPuller) GetAgentsFromMaster() (nodes []Node, err error) {
-	retries := []agentResponder{
-		dnsResponder{
-			defaultMasterAddress: "leader.mesos",
-		},
-		historyServiceResponder{
-			defaultPastTime: "/hour/",
+	finder := &findNodesInDNS{
+		dnsRecord: "leader.mesos",
+		role:      AgentRole,
+		next: &findAgentsInHistoryService{
+			pastTime: "/minute/",
+			next: &findAgentsInHistoryService{
+				pastTime: "/hour/",
+				next:     nil,
+			},
 		},
 	}
-	for _, retry := range retries {
-		source, err := retry.getAgentSource()
-		if err != nil {
-			log.Error(err)
-			continue
-		}
-		nodes, err := retry.getMesosAgents(source)
-		if err != nil {
-			log.Error(err)
-			continue
-		}
-		return nodes, nil
-	}
-	return nodes, errors.New("Could not get a list of agent nodes")
+	return finder.find()
 }
 
 // WaitBetweenPulls sleep.

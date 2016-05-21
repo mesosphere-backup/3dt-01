@@ -6,16 +6,18 @@ import (
 	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"github.com/coreos/go-systemd/dbus"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 )
 
-// dcosTools is implementation of DCOSHelper interface.
-type dcosTools struct {
+// DCOSTools is implementation of DCOSHelper interface.
+type DCOSTools struct {
 	sync.Mutex
 	dcon     *dbus.Conn
 	hostname string
@@ -25,7 +27,7 @@ type dcosTools struct {
 }
 
 // GetHostname return a localhost hostname.
-func (st *dcosTools) GetHostname() (string, error) {
+func (st *DCOSTools) GetHostname() (string, error) {
 	if st.hostname != "" {
 		return st.hostname, nil
 	}
@@ -39,7 +41,7 @@ func (st *dcosTools) GetHostname() (string, error) {
 
 // DetectIP returns a detected IP by running /opt/mesosphere/bin/detect_ip. It will run only once and cache the result.
 // When the function is called again, ip will be taken from cache.
-func (st *dcosTools) DetectIP() (string, error) {
+func (st *DCOSTools) DetectIP() (string, error) {
 	if st.ip != "" {
 		log.Debugf("Found IP in memory: %s", st.ip)
 		return st.ip, nil
@@ -63,7 +65,7 @@ func (st *dcosTools) DetectIP() (string, error) {
 
 // GetNodeRole returns a nodes role. It will run only once and cache the result.
 // When the function is called again, ip will be taken from cache.
-func (st *dcosTools) GetNodeRole() (string, error) {
+func (st *DCOSTools) GetNodeRole() (string, error) {
 	if st.role != "" {
 		return st.role, nil
 	}
@@ -79,7 +81,7 @@ func (st *dcosTools) GetNodeRole() (string, error) {
 }
 
 // InitializeDbusConnection opens a dbus connection. The connection is available via st.dcon
-func (st *dcosTools) InitializeDbusConnection() (err error) {
+func (st *DCOSTools) InitializeDbusConnection() (err error) {
 	// we need to lock the dbus connection for each request
 	st.Lock()
 	if st.dcon == nil {
@@ -95,7 +97,7 @@ func (st *dcosTools) InitializeDbusConnection() (err error) {
 }
 
 // CloseDbusConnection closes a dbus connection.
-func (st *dcosTools) CloseDbusConnection() error {
+func (st *DCOSTools) CloseDbusConnection() error {
 	// unlock the dbus connection no matter what
 	defer st.Unlock()
 	if st.dcon != nil {
@@ -108,7 +110,7 @@ func (st *dcosTools) CloseDbusConnection() error {
 }
 
 // GetUnitProperties return a map of systemd unit properties received from dbus.
-func (st *dcosTools) GetUnitProperties(pname string) (result map[string]interface{}, err error) {
+func (st *DCOSTools) GetUnitProperties(pname string) (result map[string]interface{}, err error) {
 	// get Service specific properties.
 	result, err = st.dcon.GetUnitProperties(pname)
 	if err != nil {
@@ -119,7 +121,7 @@ func (st *dcosTools) GetUnitProperties(pname string) (result map[string]interfac
 }
 
 // GetUnitNames read a directory /etc/systemd/system/dcos.target.wants and return a list of found systemd units.
-func (st *dcosTools) GetUnitNames() (units []string, err error) {
+func (st *DCOSTools) GetUnitNames() (units []string, err error) {
 	files, err := ioutil.ReadDir("/etc/systemd/system/dcos.target.wants")
 	if err != nil {
 		return units, err
@@ -132,7 +134,7 @@ func (st *dcosTools) GetUnitNames() (units []string, err error) {
 }
 
 // GetJournalOutput returns last 50 lines of journald command output for a specific systemd unit.
-func (st *dcosTools) GetJournalOutput(unit string) (string, error) {
+func (st *DCOSTools) GetJournalOutput(unit string) (string, error) {
 	out, err := exec.Command("journalctl", "--no-pager", "-n", "50", "-u", unit).Output()
 	if err != nil {
 		return "", err
@@ -141,7 +143,7 @@ func (st *dcosTools) GetJournalOutput(unit string) (string, error) {
 }
 
 // GetMesosNodeID return a mesos node id.
-func (st *dcosTools) GetMesosNodeID(getRole func() (string, error)) (string, error) {
+func (st *DCOSTools) GetMesosNodeID(getRole func() (string, error)) (string, error) {
 	if st.mesosID != "" {
 		log.Debugf("Found in memory mesos node id: %s", st.mesosID)
 		return st.mesosID, nil
@@ -192,9 +194,55 @@ func isInList(item string, l []string) bool {
 	return false
 }
 
+func (st *DCOSTools) doRequest(method, url string, timeout time.Duration, body io.Reader) (responseBody []byte, httpResponseCode int, err error) {
+	request, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return responseBody, http.StatusBadRequest, err
+	}
+
+	resp, err := st.HTTPRequest(request, timeout)
+	if err != nil {
+		return responseBody, http.StatusBadRequest, err
+	}
+
+	defer resp.Body.Close()
+	responseBody, err = ioutil.ReadAll(resp.Body)
+	return responseBody, resp.StatusCode, nil
+}
+
+// Get HTTP request.
+func (st *DCOSTools) Get(url string, timeout time.Duration) (body []byte, httpResponseCode int, err error) {
+	log.Debugf("GET %s, timeout: %s", url, timeout.String())
+	return st.doRequest("GET", url, timeout, nil)
+
+}
+
+// Post HTTP request.
+func (st *DCOSTools) Post(url string, timeout time.Duration) (body []byte, httpResponseCode int, err error) {
+	log.Debugf("POST %s, timeout: %s", url, timeout.String())
+	return st.doRequest("POST", url, timeout, nil)
+}
+
+// HTTPRequest custom HTTP request with predefined *http.Request
+func (st *DCOSTools) HTTPRequest(req *http.Request, timeout time.Duration) (resp *http.Response, err error) {
+	client := http.Client{
+		Timeout: timeout,
+	}
+	resp, err = client.Do(req)
+	if err != nil {
+		return resp, err
+	}
+	defer req.Body.Close()
+
+	// the user of this function is responsible to close the response body.
+	return resp, nil
+}
+
 func normalizeProperty(unitName string, p map[string]interface{}, d DCOSHelper) healthResponseValues {
-	var unitHealth int
-	var unitOutput string
+	var (
+		unitHealth                          int
+		unitOutput, prettyName, description string
+	)
 
 	// check keys
 	log.Debugf("%s LoadState: %s", unitName, p["LoadState"])
@@ -220,7 +268,6 @@ func normalizeProperty(unitName string, p map[string]interface{}, d DCOSHelper) 
 		}
 	}
 
-	var prettyName, description string
 	s := strings.Split(p["Description"].(string), ": ")
 	if len(s) != 2 {
 		description = strings.Join(s, " ")
@@ -237,4 +284,98 @@ func normalizeProperty(unitName string, p map[string]interface{}, d DCOSHelper) 
 		Help:       "",
 		PrettyName: prettyName,
 	}
+}
+
+type stdoutTimeoutPipe struct {
+	stdoutPipe io.ReadCloser
+	cmd        *exec.Cmd
+	done       chan struct{}
+}
+
+func (cm *stdoutTimeoutPipe) Read(p []byte) (n int, err error) {
+	n, err = cm.stdoutPipe.Read(p)
+	return
+}
+
+func (cm *stdoutTimeoutPipe) Close() error {
+	return cm.kill(true)
+}
+
+func (cm *stdoutTimeoutPipe) kill(callWait bool) error {
+	select {
+	case <-cm.done:
+		return errors.New("Already closed")
+	default:
+		close(cm.done)
+		if cm.cmd != nil {
+			if callWait {
+				cm.cmd.Wait()
+				return nil
+			}
+			cm.cmd.Process.Kill()
+		}
+	}
+	return nil
+}
+
+// Run a command. The Wait() will be called only if the caller closes done channel or timeout occurs.
+// This will make sure we can read from StdoutPipe.
+func runCmd(command []string, timeout int) (io.ReadCloser, error) {
+	stdout := &stdoutTimeoutPipe{}
+	stdout.done = make(chan struct{})
+	// if command has arguments, append them to args.
+	args := []string{}
+	if len(command) > 1 {
+		args = command[1:len(command)]
+	}
+	log.Debugf("Run: %s", command)
+	cmd := exec.Command(command[0], args...)
+
+	var err error
+	// get stdout pipe
+	stdout.stdoutPipe, err = cmd.StdoutPipe()
+	if err != nil {
+		stdout.Close()
+		return stdout, err
+	}
+	// Execute a command
+	if err := cmd.Start(); err != nil {
+		stdout.Close()
+		return stdout, err
+	}
+	stdout.cmd = cmd
+
+	// Run a separate goroutine to handle timeout and read command's return code.
+	go func() {
+		fullCommand := strings.Join(cmd.Args, " ")
+		select {
+		case <-stdout.done:
+			log.Infof("Command %s executed successfully, PID %d", fullCommand, stdout.cmd.Process.Pid)
+		case <-time.After(time.Duration(timeout) * time.Second):
+			log.Errorf("Timeout occured, command %s, killing PID %d", fullCommand, cmd.Process.Pid)
+			stdout.kill(false)
+		}
+	}()
+	return stdout, nil
+}
+
+// open a file for reading, a caller if responsible to close a file descriptor.
+func readFile(fileLocation string) (r io.ReadCloser, err error) {
+	file, err := os.Open(fileLocation)
+	if err != nil {
+		return r, err
+	}
+	return file, nil
+}
+
+func readJournalOutputSince(unit, sinceString string, timeout int, doneChan chan bool) (io.ReadCloser, error) {
+	stdout := &stdoutTimeoutPipe{}
+	if !strings.HasPrefix(unit, "dcos-") {
+		return stdout, errors.New("Unit should start with dcos-, got: " + unit)
+	}
+	if strings.ContainsAny(unit, " ;&|") {
+		return stdout, errors.New("Unit cannot contain special charachters or spaces")
+	}
+	command := []string{"journalctl", "--no-pager", "-u", unit, "--since", sinceString}
+	return runCmd(command, timeout)
 }

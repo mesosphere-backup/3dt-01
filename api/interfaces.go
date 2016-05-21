@@ -1,6 +1,7 @@
 package api
 
 import (
+	"net/http"
 	"time"
 )
 
@@ -52,6 +53,16 @@ type DCOSHelper interface {
 
 	// Get mesos node id, first argument is a function to determine a role.
 	GetMesosNodeID(func() (string, error)) (string, error)
+
+	// Get makes HTTP GET request, return read arrays of bytes
+	Get(string, time.Duration) ([]byte, int, error)
+
+	// Post makes HTTP GET request, return read arrays of bytes
+	Post(string, time.Duration) ([]byte, int, error)
+
+	// MakeRequest makes an HTTP request with predefined http.Request object.
+	// Caller is responsible for calling http.Response.Body().Close()
+	HTTPRequest(*http.Request, time.Duration) (*http.Response, error)
 }
 
 // with the nodeFinder interface we can chain finding methods

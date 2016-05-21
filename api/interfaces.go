@@ -1,6 +1,8 @@
 package api
 
-import "time"
+import (
+	"time"
+)
 
 // Puller interface
 type Puller interface {

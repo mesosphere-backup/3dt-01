@@ -288,42 +288,67 @@ func normalizeProperty(unitName string, p map[string]interface{}, d DCOSHelper) 
 	}
 }
 
-func updateSystemMetrics() (sysMetrics sysMetrics, err error) {
-	var globalError string
-	v, err := mem.VirtualMemory()
-	if err == nil {
-		sysMetrics.Memory = *v
-	} else {
-		globalError += err.Error()
+func getHostVirtualMemory() (mem.VirtualMemoryStat, error) {
+	vmem, err := mem.VirtualMemory()
+	if err != nil {
+		return *vmem, err
 	}
+	return *vmem, nil
+}
 
+func getHostLoadAvarage() (load.AvgStat, error) {
 	la, err := load.Avg()
-	if err == nil {
-		sysMetrics.LoadAvarage = *la
-	} else {
-		globalError += err.Error()
+	if err != nil {
+		return *la, err
 	}
-	d, err := disk.Partitions(true)
-	if err == nil {
-		sysMetrics.Partitions = d
-	} else {
-		globalError += err.Error()
-		return sysMetrics, errors.New(globalError)
-	}
+	return *la, nil
+}
 
-	var diskUsage []disk.UsageStat
-	for _, diskProps := range d {
+func getHostDiskPartitions(all bool) (diskPartitions []disk.PartitionStat, err error){
+	diskPartitions, err = disk.Partitions(all)
+	if err != nil {
+		return diskPartitions, err
+	}
+	return diskPartitions, nil
+}
+
+func getHostDiskUsage(diskPartitions []disk.PartitionStat) (diskUsage []disk.UsageStat, err error){
+	for _, diskProps := range diskPartitions {
 		currentDiskUsage, err := disk.Usage(diskProps.Mountpoint)
 		if err != nil {
+			// Just log the error, do not return.
 			log.Error(err)
 			continue
 		}
+		// Skip the virtual partitions e.g. /proc
 		if currentDiskUsage.String() == "" {
 			continue
 		}
 		diskUsage = append(diskUsage, *currentDiskUsage)
 	}
-	sysMetrics.DiskUsage = diskUsage
+	return diskUsage, nil
+}
+
+func updateSystemMetrics() (sysMetrics sysMetrics, err error) {
+	// Try to update system metrics. Do not return if we could not update some of them.
+	if sysMetrics.Memory, err = getHostVirtualMemory(); err != nil {
+		log.Error(err)
+	}
+
+	if sysMetrics.LoadAvarage, err = getHostLoadAvarage(); err != nil {
+		log.Error(err)
+	}
+
+	// Get all partitions available on a host.
+	if sysMetrics.Partitions, err = getHostDiskPartitions(true); err != nil {
+		// If we could not get a list of partitions then return. Disk usage requires a list of partitions.
+		return sysMetrics, err
+	}
+
+	if sysMetrics.DiskUsage, err = getHostDiskUsage(sysMetrics.Partitions); err != nil {
+		return sysMetrics, err
+	}
+
 	return sysMetrics, nil
 }
 
@@ -337,13 +362,13 @@ func GetUnitsProperties(config *Config) (healthReport UnitsHealthResponseJSONStr
  	healthReport.System = sysMetrics
 
 	// detect DC/OS systemd units
-	foundUnits, err := config.DcosTools.GetUnitNames()
+	foundUnits, err := config.DCOSTools.GetUnitNames()
 	if err != nil {
 		log.Error(err)
 	}
 	var allUnitsProperties []healthResponseValues
 	// open dbus connection
-	if err = config.DcosTools.InitializeDbusConnection(); err != nil {
+	if err = config.DCOSTools.InitializeDbusConnection(); err != nil {
 		return healthReport, err
 	}
 	log.Debug("Opened dbus connection")
@@ -357,26 +382,26 @@ func GetUnitsProperties(config *Config) (healthReport UnitsHealthResponseJSONStr
 			log.Debugf("Skipping blacklisted systemd unit %s", unit)
 			continue
 		}
-		currentProperty, err := config.DcosTools.GetUnitProperties(unit)
+		currentProperty, err := config.DCOSTools.GetUnitProperties(unit)
 		if err != nil {
 			log.Errorf("Could not get properties for unit: %s", unit)
 			continue
 		}
-		allUnitsProperties = append(allUnitsProperties, normalizeProperty(unit, currentProperty, config.DcosTools))
+		allUnitsProperties = append(allUnitsProperties, normalizeProperty(unit, currentProperty, config.DCOSTools))
 	}
 	// after we finished querying systemd units, close dbus connection
-	if err = config.DcosTools.CloseDbusConnection(); err != nil {
+	if err = config.DCOSTools.CloseDbusConnection(); err != nil {
 		// we should probably return here, since we cannot guarantee that all units have been queried.
 		return healthReport, err
 	}
 
 	// update the rest of healthReport fields
 	healthReport.Array = allUnitsProperties
-	healthReport.Hostname = config.DcosTools.GetHostname()
-	healthReport.IPAddress = config.DcosTools.DetectIP()
-	healthReport.DcosVersion = config.DcosVersion
-	healthReport.Role = config.DcosTools.GetNodeRole()
-	healthReport.MesosID = config.DcosTools.GetMesosNodeID(config.DcosTools.GetNodeRole(), "id")
+	healthReport.Hostname = config.DCOSTools.GetHostname()
+	healthReport.IPAddress = config.DCOSTools.DetectIP()
+	healthReport.DcosVersion = config.DCOSVersion
+	healthReport.Role = config.DCOSTools.GetNodeRole()
+	healthReport.MesosID = config.DCOSTools.GetMesosNodeID(config.DCOSTools.GetNodeRole(), "id")
 	healthReport.TdtVersion = config.Version
 
 	return healthReport, nil

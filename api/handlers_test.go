@@ -78,7 +78,7 @@ func (s *HandlersTestSuit) SetupTest() {
 	// setup variables
 	args := []string{"3dt", "test"}
 	s.cfg, _ = LoadDefaultConfig(args)
-	s.cfg.DcosTools = &fakeDCOSTools{}
+	s.cfg.DCOSTools = &fakeDCOSTools{}
 	s.router = NewRouter(&s.cfg)
 	s.assert = assertPackage.New(s.T())
 
@@ -459,7 +459,7 @@ func (s *HandlersTestSuit) TestIsInListFunc() {
 func (s *HandlersTestSuit) TestStartUpdateHealthReportActualImplementationFunc() {
 	// clear any health report
 	unitsHealthReport.UpdateHealthReport(UnitsHealthResponseJSONStruct{})
-	s.cfg.DcosTools = &dcosTools{}
+	s.cfg.DCOSTools = &dcosTools{}
 
 	readyChan := make(chan bool, 1)
 	StartUpdateHealthReport(s.cfg, readyChan, true)

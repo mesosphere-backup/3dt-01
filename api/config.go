@@ -16,19 +16,20 @@ var Revision string
 
 // Config structure is a main config object
 type Config struct {
-	Version                 string
-	Revision                string
-	MesosIPDiscoveryCommand string
-	DCOSVersion             string
-	DCOSTools               DCOSHelper
-	SystemdUnits            []string
+	Version                        string
+	Revision                       string
+	MesosIPDiscoveryCommand        string
+	DCOSVersion                    string
+	DCOSTools                      DCOSHelper
+	SystemdUnits                   []string
 
-	FlagPull                bool
-	FlagDiag                bool
-	FlagVerbose             bool
-	FlagVersion             bool
-	FlagPort                int
-	FlagPullInterval        int
+	FlagPull                       bool
+	FlagDiag                       bool
+	FlagVerbose                    bool
+	FlagVersion                    bool
+	FlagPort                       int
+	FlagPullInterval               int
+	FlagUpdateHealthReportInterval int
 }
 
 func (c *Config) setFlags(fs *flag.FlagSet) {
@@ -37,7 +38,9 @@ func (c *Config) setFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.FlagVerbose, "verbose", c.FlagVerbose, "Use verbose debug output.")
 	fs.BoolVar(&c.FlagVersion, "version", c.FlagVersion, "Print version.")
 	fs.IntVar(&c.FlagPort, "port", c.FlagPort, "Web server TCP port.")
-	fs.IntVar(&c.FlagPullInterval, "pull-interval", c.FlagPullInterval, "Set pull interval, default 60 sec.")
+	fs.IntVar(&c.FlagPullInterval, "pull-interval", c.FlagPullInterval, "Set pull interval in seconds.")
+	fs.IntVar(&c.FlagUpdateHealthReportInterval, "health-update-interval", c.FlagUpdateHealthReportInterval,
+		"Set update health interval in seconds.")
 }
 
 // LoadDefaultConfig sets default config values or sets the values from a command line.
@@ -49,8 +52,10 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	// default tcp port is 1050
 	config.FlagPort = 1050
 
-	// default pulling interval is 60 seconds
+	// default pulling and health update interval is 60 seconds
 	config.FlagPullInterval = 60
+	config.FlagUpdateHealthReportInterval = 60
+
 	config.Version = Version
 	config.Revision = Revision
 

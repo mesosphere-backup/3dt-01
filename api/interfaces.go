@@ -34,13 +34,13 @@ type DCOSHelper interface {
 
 	// A wrapper to /opt/mesosphere/bin/detect_ip script
 	// should return empty string if script fails.
-	DetectIP() string
+	DetectIP() (string, error)
 
 	// get system's hostname
-	GetHostname() string
+	GetHostname() (string, error)
 
 	// Detect node role: master/agent
-	GetNodeRole() string
+	GetNodeRole() (string, error)
 
 	// Get DC/OS systemd units on a system
 	GetUnitNames() ([]string, error)
@@ -48,8 +48,8 @@ type DCOSHelper interface {
 	// Get journal output
 	GetJournalOutput(string) (string, error)
 
-	// Get mesos node id, first argument is a role, second argument is a json field name
-	GetMesosNodeID(string, string) string
+	// Get mesos node id, first argument is a function to determine a role.
+	GetMesosNodeID(func() (string, error)) (string, error)
 }
 
 // with the nodeFinder interface we can chain finding methods

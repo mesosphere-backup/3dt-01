@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 
+	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"net/http"
 )
@@ -14,6 +15,8 @@ type routeHandler struct {
 	url     string
 	handler func(http.ResponseWriter, *http.Request)
 	headers []header
+	methods []string
+	gzip    bool
 }
 
 type header struct {
@@ -23,14 +26,15 @@ type header struct {
 
 func headerMiddleware(next http.Handler, headers []header) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defaultHeaders := []header{
-			{
-				name:  "Content-type",
-				value: "application/json",
-			},
-		}
-		for _, header := range append(defaultHeaders, headers...) {
+		setJSONContentType := true
+		for _, header := range headers {
+			if header.name == "Content-type" {
+				setJSONContentType = false
+			}
 			w.Header().Add(header.name, header.value)
+		}
+		if setJSONContentType {
+			w.Header().Add("Content-type", "application/json")
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -104,10 +108,21 @@ func getRoutes(config *Config) []routeHandler {
 	}
 }
 
+func wrapHandler(handler http.Handler, route routeHandler) http.Handler {
+	handlerWithHeader := headerMiddleware(handler, route.headers)
+	if route.gzip {
+		return handlers.CompressHandler(handlerWithHeader)
+	}
+	return handlerWithHeader
+}
+
 func loadRoutes(router *mux.Router, config *Config) *mux.Router {
 	for _, route := range getRoutes(config) {
+		if len(route.methods) == 0 {
+			route.methods = []string{"GET"}
+		}
 		handler := http.HandlerFunc(route.handler)
-		router.Handle(route.url, headerMiddleware(handler, route.headers)).Methods("GET")
+		router.Handle(route.url, wrapHandler(handler, route)).Methods(route.methods...)
 	}
 	return router
 }

@@ -8,6 +8,9 @@ import (
 	"github.com/coreos/go-systemd/dbus"
 	"io/ioutil"
 	"net/http"
+	"github.com/shirou/gopsutil/mem"
+	"github.com/shirou/gopsutil/disk"
+	"github.com/shirou/gopsutil/load"
 	"os"
 	"os/exec"
 	"strings"
@@ -50,11 +53,11 @@ func StartUpdateHealthReport(config Config, readyChan chan bool, runOnce bool) {
 				readyChan <- true
 				ready = true
 			}
-			unitsHealthReport.UpdateHealthReport(healthReport)
 		} else {
 			log.Error("Could not update systemd units health report")
 			log.Error(err)
 		}
+		unitsHealthReport.UpdateHealthReport(healthReport)
 		if runOnce {
 			log.Debug("Run startUpdateHealthReport only once")
 			return
@@ -285,17 +288,88 @@ func normalizeProperty(unitName string, p map[string]interface{}, d DCOSHelper) 
 	}
 }
 
+func getHostVirtualMemory() (mem.VirtualMemoryStat, error) {
+	vmem, err := mem.VirtualMemory()
+	if err != nil {
+		return *vmem, err
+	}
+	return *vmem, nil
+}
+
+func getHostLoadAvarage() (load.AvgStat, error) {
+	la, err := load.Avg()
+	if err != nil {
+		return *la, err
+	}
+	return *la, nil
+}
+
+func getHostDiskPartitions(all bool) (diskPartitions []disk.PartitionStat, err error){
+	diskPartitions, err = disk.Partitions(all)
+	if err != nil {
+		return diskPartitions, err
+	}
+	return diskPartitions, nil
+}
+
+func getHostDiskUsage(diskPartitions []disk.PartitionStat) (diskUsage []disk.UsageStat, err error){
+	for _, diskProps := range diskPartitions {
+		currentDiskUsage, err := disk.Usage(diskProps.Mountpoint)
+		if err != nil {
+			// Just log the error, do not return.
+			log.Error(err)
+			continue
+		}
+		// Skip the virtual partitions e.g. /proc
+		if currentDiskUsage.String() == "" {
+			continue
+		}
+		diskUsage = append(diskUsage, *currentDiskUsage)
+	}
+	return diskUsage, nil
+}
+
+func updateSystemMetrics() (sysMetrics sysMetrics, err error) {
+	// Try to update system metrics. Do not return if we could not update some of them.
+	if sysMetrics.Memory, err = getHostVirtualMemory(); err != nil {
+		log.Error(err)
+	}
+
+	if sysMetrics.LoadAvarage, err = getHostLoadAvarage(); err != nil {
+		log.Error(err)
+	}
+
+	// Get all partitions available on a host.
+	if sysMetrics.Partitions, err = getHostDiskPartitions(true); err != nil {
+		// If we could not get a list of partitions then return. Disk usage requires a list of partitions.
+		return sysMetrics, err
+	}
+
+	if sysMetrics.DiskUsage, err = getHostDiskUsage(sysMetrics.Partitions); err != nil {
+		return sysMetrics, err
+	}
+
+	return sysMetrics, nil
+}
+
 // GetUnitsProperties return a structured units health response of UnitsHealthResponseJsonStruct type.
-func GetUnitsProperties(config *Config) (UnitsHealthResponseJSONStruct, error) {
+func GetUnitsProperties(config *Config) (healthReport UnitsHealthResponseJSONStruct, err error) {
+	// update system metrics first to make sure we always return them.
+ 	sysMetrics, err := updateSystemMetrics()
+ 	if err != nil {
+ 		log.Error(err)
+ 	}
+ 	healthReport.System = sysMetrics
+
 	// detect DC/OS systemd units
-	foundUnits, err := config.DcosTools.GetUnitNames()
+	foundUnits, err := config.DCOSTools.GetUnitNames()
 	if err != nil {
 		log.Error(err)
 	}
 	var allUnitsProperties []healthResponseValues
 	// open dbus connection
-	if err = config.DcosTools.InitializeDbusConnection(); err != nil {
-		return UnitsHealthResponseJSONStruct{}, err
+	if err = config.DCOSTools.InitializeDbusConnection(); err != nil {
+		return healthReport, err
 	}
 	log.Debug("Opened dbus connection")
 
@@ -308,25 +382,27 @@ func GetUnitsProperties(config *Config) (UnitsHealthResponseJSONStruct, error) {
 			log.Debugf("Skipping blacklisted systemd unit %s", unit)
 			continue
 		}
-		currentProperty, err := config.DcosTools.GetUnitProperties(unit)
+		currentProperty, err := config.DCOSTools.GetUnitProperties(unit)
 		if err != nil {
 			log.Errorf("Could not get properties for unit: %s", unit)
 			continue
 		}
-		allUnitsProperties = append(allUnitsProperties, normalizeProperty(unit, currentProperty, config.DcosTools))
+		allUnitsProperties = append(allUnitsProperties, normalizeProperty(unit, currentProperty, config.DCOSTools))
 	}
 	// after we finished querying systemd units, close dbus connection
-	if err = config.DcosTools.CloseDbusConnection(); err != nil {
+	if err = config.DCOSTools.CloseDbusConnection(); err != nil {
 		// we should probably return here, since we cannot guarantee that all units have been queried.
-		return UnitsHealthResponseJSONStruct{}, err
+		return healthReport, err
 	}
-	return UnitsHealthResponseJSONStruct{
-		Array:       allUnitsProperties,
-		Hostname:    config.DcosTools.GetHostname(),
-		IPAddress:   config.DcosTools.DetectIP(),
-		DcosVersion: config.DcosVersion,
-		Role:        config.DcosTools.GetNodeRole(),
-		MesosID:     config.DcosTools.GetMesosNodeID(config.DcosTools.GetNodeRole(), "id"),
-		TdtVersion:  config.Version,
-	}, nil
+
+	// update the rest of healthReport fields
+	healthReport.Array = allUnitsProperties
+	healthReport.Hostname = config.DCOSTools.GetHostname()
+	healthReport.IPAddress = config.DCOSTools.DetectIP()
+	healthReport.DcosVersion = config.DCOSVersion
+	healthReport.Role = config.DCOSTools.GetNodeRole()
+	healthReport.MesosID = config.DCOSTools.GetMesosNodeID(config.DCOSTools.GetNodeRole(), "id")
+	healthReport.TdtVersion = config.Version
+
+	return healthReport, nil
 }

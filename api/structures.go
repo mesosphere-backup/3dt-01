@@ -1,8 +1,11 @@
 package api
 
 import (
-	"time"
+	"github.com/shirou/gopsutil/disk"
+	"github.com/shirou/gopsutil/load"
+	"github.com/shirou/gopsutil/mem"
 	"sync"
+	"time"
 )
 
 // MonitoringResponse top level global variable to store the entire units/nodes status tree.
@@ -14,12 +17,12 @@ type monitoringResponse struct {
 
 // Unit for systemd unit.
 type unit struct {
-	UnitName  	string
-	Nodes     	[]Node
-	Health    	int
-	Title     	string
-	Timestamp 	time.Time
-	PrettyName	string
+	UnitName   string
+	Nodes      []Node
+	Health     int
+	Title      string
+	Timestamp  time.Time
+	PrettyName string
 }
 
 // Node for DC/OS node
@@ -45,12 +48,13 @@ type httpResponse struct {
 // UnitsHealthResponseJSONStruct json response /system/health/v1
 type UnitsHealthResponseJSONStruct struct {
 	Array       []healthResponseValues `json:"units"`
-	Hostname    string                    `json:"hostname"`
-	IPAddress   string			  `json:"ip"`
-	DcosVersion string 			  `json:"dcos_version"`
-	Role        string			  `json:"node_role"`
-	MesosID     string			  `json:"mesos_id"`
-	TdtVersion  string			  `json:"3dt_version"`
+	System      sysMetrics             `json:"system"`
+	Hostname    string                 `json:"hostname"`
+	IPAddress   string                 `json:"ip"`
+	DcosVersion string                 `json:"dcos_version"`
+	Role        string                 `json:"node_role"`
+	MesosID     string                 `json:"mesos_id"`
+	TdtVersion  string                 `json:"3dt_version"`
 }
 
 type healthResponseValues struct {
@@ -62,16 +66,23 @@ type healthResponseValues struct {
 	PrettyName string `json:"name"`
 }
 
+type sysMetrics struct {
+	Memory      mem.VirtualMemoryStat `json:"memory"`
+	LoadAvarage load.AvgStat          `json:"load_avarage"`
+	Partitions  []disk.PartitionStat  `json:"partitions"`
+	DiskUsage   []disk.UsageStat      `json:"disk_usage"`
+}
+
 // unit health overview, collected from all hosts
 type unitsResponseJSONStruct struct {
 	Array []unitResponseFieldsStruct `json:"units"`
 }
 
 type unitResponseFieldsStruct struct {
-	UnitID     string  `json:"id"`
-	PrettyName string  `json:"name"`
-	UnitHealth int     `json:"health"`
-	UnitTitle  string  `json:"description"`
+	UnitID     string `json:"id"`
+	PrettyName string `json:"name"`
+	UnitHealth int    `json:"health"`
+	UnitTitle  string `json:"description"`
 }
 
 // nodes response
@@ -101,8 +112,8 @@ type agentsResponse struct {
 }
 
 type exhibitorNodeResponse struct {
-	Code		int
-	Description	string
-	Hostname	string
-	IsLeader	bool
+	Code        int
+	Description string
+	Hostname    string
+	IsLeader    bool
 }

@@ -44,7 +44,7 @@ func (pt *DcosPuller) GetUnitsPropertiesViaHTTP(url string) ([]byte, int, error)
 
 	resp, err := client.Get(url)
 	if err != nil {
-		return body, 500, err
+		return body, http.StatusServiceUnavailable, err
 	}
 
 	// http://devs.cloudimmunity.com/gotchas-and-common-mistakes-in-go-golang/index.html#close_http_resp_body
@@ -64,6 +64,27 @@ func (pt *DcosPuller) LookupMaster() (nodesResponse []Node, err error) {
 		},
 	}
 	return finder.find()
+}
+
+// GetAgentsFromMaster returns a list of DC/OS agent nodes.
+func (pt *DcosPuller) GetAgentsFromMaster() (nodes []Node, err error) {
+	finder := &findNodesInDNS{
+		dnsRecord: "leader.mesos",
+		role:      AgentRole,
+		next: &findAgentsInHistoryService{
+			pastTime: "/minute/",
+			next: &findAgentsInHistoryService{
+				pastTime: "/hour/",
+				next:     nil,
+			},
+		},
+	}
+	return finder.find()
+}
+
+// WaitBetweenPulls sleep.
+func (pt *DcosPuller) WaitBetweenPulls(interval int) {
+	time.Sleep(time.Duration(interval) * time.Second)
 }
 
 // find masters via dns. Used to find master nodes from agents.
@@ -271,27 +292,6 @@ func (f *findNodesInDNS) find() (nodes []Node, err error) {
 	return nodes, err
 }
 
-// GetAgentsFromMaster returns a list of DC/OS agent nodes.
-func (pt *DcosPuller) GetAgentsFromMaster() (nodes []Node, err error) {
-	finder := &findNodesInDNS{
-		dnsRecord: "leader.mesos",
-		role:      AgentRole,
-		next: &findAgentsInHistoryService{
-			pastTime: "/minute/",
-			next: &findAgentsInHistoryService{
-				pastTime: "/hour/",
-				next:     nil,
-			},
-		},
-	}
-	return finder.find()
-}
-
-// WaitBetweenPulls sleep.
-func (pt *DcosPuller) WaitBetweenPulls(interval int) {
-	time.Sleep(time.Duration(interval) * time.Second)
-}
-
 func (mr *monitoringResponse) updateMonitoringResponse(r monitoringResponse) {
 	mr.Lock()
 	defer mr.Unlock()
@@ -456,26 +456,22 @@ func (mr *monitoringResponse) GetNodeUnitByNodeIDUnitID(nodeIP string, unitID st
 }
 
 // StartPullWithInterval will start to pull a DC/OS cluster health status
-func StartPullWithInterval(config Config, pi Puller, ready chan bool) {
+func StartPullWithInterval(config Config, pi Puller, ready chan struct{}) {
 	select {
-	case r := <-ready:
-		if r == true {
-			log.Info(fmt.Sprintf("Start pulling with interval %d", config.FlagPullInterval))
-			for {
-				runPull(config.FlagPullInterval, config.FlagPort, pi)
-			}
-
-		}
+	case <-ready:
+		log.Infof("Start pulling with interval %d", config.FlagPullInterval)
 	case <-time.After(time.Second * 10):
 		log.Error("Not ready to pull from localhost after 10 seconds")
-		for {
-			runPull(config.FlagPullInterval, config.FlagPort, pi)
-		}
+	}
+
+	// Start infinite loop
+	for {
+		runPull(config.FlagPullInterval, config.FlagPort, pi)
 	}
 }
 
 func runPull(sec int, port int, pi Puller) {
-	var ClusterHosts []Node
+	var clusterHosts []Node
 	masterNodes, err := pi.LookupMaster()
 	if err != nil {
 		log.Error(err)
@@ -492,25 +488,25 @@ func runPull(sec int, port int, pi Puller) {
 		return
 	}
 
-	ClusterHosts = append(ClusterHosts, masterNodes...)
-	ClusterHosts = append(ClusterHosts, agentNodes...)
+	clusterHosts = append(clusterHosts, masterNodes...)
+	clusterHosts = append(clusterHosts, agentNodes...)
 
-	respChan := make(chan *httpResponse, len(ClusterHosts))
-	hostsChan := make(chan Node, len(ClusterHosts))
-	loadJobs(hostsChan, ClusterHosts)
+	respChan := make(chan *httpResponse, len(clusterHosts))
+	hostsChan := make(chan Node, len(clusterHosts))
+	loadJobs(hostsChan, clusterHosts)
 
 	// Pull data from each host
-	for i := 0; i <= len(ClusterHosts); i++ {
+	for i := 1; i <= len(clusterHosts); i++ {
 		go pullHostStatus(hostsChan, respChan, port, pi)
 	}
 
 	// blocking here got get all responses from hosts
-	clusterHTTPResponses := collectResponses(respChan, len(ClusterHosts))
+	clusterHTTPResponses := collectResponses(respChan, len(clusterHosts))
 
 	// update collected units/nodes health statuses
 	updateHealthStatus(clusterHTTPResponses, pi)
 
-	log.Debug(fmt.Sprintf("Waiting %d seconds before next pull", sec))
+	log.Debugf("Waiting %d seconds before next pull", sec)
 	pi.WaitBetweenPulls(sec)
 }
 
@@ -520,7 +516,7 @@ func updateHealthStatus(responses []*httpResponse, pi Puller) {
 	nodes := make(map[string]*Node)
 
 	for httpResponseIndex, httpResponse := range responses {
-		if httpResponse.Status != 200 {
+		if httpResponse.Status != http.StatusOK {
 			nodes[httpResponse.Node.IP] = &httpResponse.Node
 			log.Errorf("Status code: %d", httpResponse.Status)
 			continue
@@ -590,7 +586,7 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, port int, 
 		body, statusCode, err := pi.GetUnitsPropertiesViaHTTP(url)
 		if err != nil {
 			log.Error(err)
-			response.Status = 500
+			response.Status = statusCode
 			host.Health = 3 // 3 stands for unknown
 			respChan <- &response
 			response.Node = host
@@ -601,7 +597,7 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, port int, 
 		var jsonBody UnitsHealthResponseJSONStruct
 		if err := json.Unmarshal(body, &jsonBody); err != nil {
 			log.Errorf("Coult not deserialize json reponse from %s, url: %s", host.IP, url)
-			response.Status = 500
+			response.Status = statusCode
 			host.Health = 3 // 3 stands for unknown
 			respChan <- &response
 			response.Node = host

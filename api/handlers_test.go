@@ -19,16 +19,16 @@ type fakeDCOSTools struct {
 	units []string
 }
 
-func (st *fakeDCOSTools) GetHostname() string {
-	return "MyHostName"
+func (st *fakeDCOSTools) GetHostname() (string, error) {
+	return "MyHostName", nil
 }
 
-func (st *fakeDCOSTools) DetectIP() string {
-	return "127.0.0.1"
+func (st *fakeDCOSTools) DetectIP() (string, error) {
+	return "127.0.0.1", nil
 }
 
-func (st *fakeDCOSTools) GetNodeRole() string {
-	return "master"
+func (st *fakeDCOSTools) GetNodeRole() (string, error) {
+	return "master", nil
 }
 
 func (st *fakeDCOSTools) GetUnitProperties(pname string) (map[string]interface{}, error) {
@@ -60,8 +60,8 @@ func (st *fakeDCOSTools) GetJournalOutput(unit string) (string, error) {
 	return "journal output", nil
 }
 
-func (st *fakeDCOSTools) GetMesosNodeID(role string, field string) string {
-	return "node-id-123"
+func (st *fakeDCOSTools) GetMesosNodeID(getRole func() (string, error)) (string, error) {
+	return "node-id-123", nil
 }
 
 type HandlersTestSuit struct {
@@ -461,7 +461,7 @@ func (s *HandlersTestSuit) TestStartUpdateHealthReportActualImplementationFunc()
 	unitsHealthReport.UpdateHealthReport(UnitsHealthResponseJSONStruct{})
 	s.cfg.DCOSTools = &dcosTools{}
 
-	readyChan := make(chan bool, 1)
+	readyChan := make(chan struct{}, 1)
 	StartUpdateHealthReport(s.cfg, readyChan, true)
 	hr := unitsHealthReport.GetHealthReport()
 	s.assert.Empty(hr.Array)
@@ -486,7 +486,7 @@ func (s *HandlersTestSuit) TestCheckHealthReportRace() {
 }
 
 func (s *HandlersTestSuit) TestStartUpdateHealthReportFunc() {
-	readyChan := make(chan bool, 1)
+	readyChan := make(chan struct{}, 1)
 	StartUpdateHealthReport(s.cfg, readyChan, true)
 	hr := unitsHealthReport.GetHealthReport()
 	s.assert.Equal(hr.Array, []healthResponseValues{

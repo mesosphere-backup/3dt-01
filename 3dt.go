@@ -31,7 +31,7 @@ func runDiag(config api.Config) int {
 
 func main() {
 	// a message channel to ensure we can start pulling safely
-	readyChan := make(chan bool, 1)
+	readyChan := make(chan struct{})
 
 	// load config with default values
 	config, err := api.LoadDefaultConfig(os.Args)

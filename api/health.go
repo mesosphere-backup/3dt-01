@@ -6,11 +6,11 @@ import (
 	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"github.com/coreos/go-systemd/dbus"
-	"io/ioutil"
-	"net/http"
-	"github.com/shirou/gopsutil/mem"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/load"
+	"github.com/shirou/gopsutil/mem"
+	"io/ioutil"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -44,14 +44,14 @@ func (uh *unitsHealth) UpdateHealthReport(healthReport UnitsHealthResponseJSONSt
 }
 
 // StartUpdateHealthReport should be started in a separate goroutine to update global health report periodically.
-func StartUpdateHealthReport(config Config, readyChan chan bool, runOnce bool) {
-	var ready bool
+func StartUpdateHealthReport(config Config, readyChan chan struct{}, runOnce bool) {
+	var closedReadyChan bool
 	for {
 		healthReport, err := GetUnitsProperties(&config)
 		if err == nil {
-			if ready == false {
-				readyChan <- true
-				ready = true
+			if !closedReadyChan {
+				close(readyChan)
+				closedReadyChan = true
 			}
 		} else {
 			log.Error("Could not update systemd units health report")
@@ -62,7 +62,7 @@ func StartUpdateHealthReport(config Config, readyChan chan bool, runOnce bool) {
 			log.Debug("Run startUpdateHealthReport only once")
 			return
 		}
-		time.Sleep(time.Second * 60)
+		time.Sleep(time.Duration(config.FlagUpdateHealthReportInterval) * time.Second)
 	}
 }
 
@@ -77,25 +77,24 @@ type dcosTools struct {
 }
 
 // GetHostname return a localhost hostname.
-func (st *dcosTools) GetHostname() string {
+func (st *dcosTools) GetHostname() (string, error) {
 	if st.hostname != "" {
-		return st.hostname
+		return st.hostname, nil
 	}
 	var err error
 	st.hostname, err = os.Hostname()
 	if err != nil {
-		log.Error(err)
-		st.hostname = "UnknownHostname"
+		return "", err
 	}
-	return st.hostname
+	return st.hostname, nil
 }
 
 // DetectIP returns a detected IP by running /opt/mesosphere/bin/detect_ip. It will run only once and cache the result.
 // When the function is called again, ip will be taken from cache.
-func (st *dcosTools) DetectIP() string {
+func (st *dcosTools) DetectIP() (string, error) {
 	if st.ip != "" {
 		log.Debugf("Found IP in memory: %s", st.ip)
-		return st.ip
+		return st.ip, nil
 	}
 
 	var detectIPCmd string
@@ -108,28 +107,27 @@ func (st *dcosTools) DetectIP() string {
 	out, err := exec.Command(detectIPCmd).Output()
 	st.ip = strings.TrimRight(string(out), "\n")
 	if err != nil {
-		log.Error(err)
-		return st.ip
+		return st.ip, err
 	}
 	log.Debugf("Executed /opt/mesosphere/bin/detect_ip, output: %s", st.ip)
-	return st.ip
+	return st.ip, nil
 }
 
 // GetNodeRole returns a nodes role. It will run only once and cache the result.
 // When the function is called again, ip will be taken from cache.
-func (st *dcosTools) GetNodeRole() string {
+func (st *dcosTools) GetNodeRole() (string, error) {
 	if st.role != "" {
-		return st.role
+		return st.role, nil
 	}
 	if _, err := os.Stat("/etc/mesosphere/roles/master"); err == nil {
-		st.role = "master"
-		return st.role
+		st.role = MasterRole
+		return st.role, nil
 	}
 	if _, err := os.Stat("/etc/mesosphere/roles/slave"); err == nil {
-		st.role = "agent"
-		return st.role
+		st.role = AgentRole
+		return st.role, nil
 	}
-	return ""
+	return "", errors.New("Could not determine a role, no /etc/mesosphere/roles/{master,slave} file found")
 }
 
 // InitializeDbusConnection opens a dbus connection. The connection is available via st.dcon
@@ -195,17 +193,23 @@ func (st *dcosTools) GetJournalOutput(unit string) (string, error) {
 }
 
 // GetMesosNodeID return a mesos node id.
-func (st *dcosTools) GetMesosNodeID(role string, field string) string {
+func (st *dcosTools) GetMesosNodeID(getRole func() (string, error)) (string, error) {
 	if st.mesosID != "" {
 		log.Debugf("Found in memory mesos node id: %s", st.mesosID)
-		return st.mesosID
+		return st.mesosID, nil
+	}
+	role, err := getRole()
+	if err != nil {
+		return "", err
 	}
 
-	var port int
-	if role == "master" {
-		port = 5050
-	} else {
-		port = 5051
+	roleMesosPort := make(map[string]int)
+	roleMesosPort[MasterRole] = 5050
+	roleMesosPort[AgentRole] = 5051
+
+	port, ok := roleMesosPort[role]
+	if !ok {
+		return "", fmt.Errorf("%s role not found", role)
 	}
 	log.Debugf("using role %s, port %d to get node id", role, port)
 
@@ -215,20 +219,19 @@ func (st *dcosTools) GetMesosNodeID(role string, field string) string {
 	resp, err := http.Get(url)
 	if err != nil {
 		log.Errorf("Could not connect to %s", url)
-		return ""
+		return "", err
 	}
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 
 	var respJSON map[string]interface{}
 	json.Unmarshal(body, &respJSON)
-	if id, ok := respJSON[field]; ok {
+	if id, ok := respJSON["id"]; ok {
 		st.mesosID = id.(string)
 		log.Debugf("Received node id %s", st.mesosID)
-		return st.mesosID
+		return st.mesosID, nil
 	}
-	log.Errorf("Could not unmarshal json response, field: %s", field)
-	return ""
+	return "", errors.New("Field id not found")
 }
 
 // Help functions
@@ -304,7 +307,7 @@ func getHostLoadAvarage() (load.AvgStat, error) {
 	return *la, nil
 }
 
-func getHostDiskPartitions(all bool) (diskPartitions []disk.PartitionStat, err error){
+func getHostDiskPartitions(all bool) (diskPartitions []disk.PartitionStat, err error) {
 	diskPartitions, err = disk.Partitions(all)
 	if err != nil {
 		return diskPartitions, err
@@ -312,7 +315,7 @@ func getHostDiskPartitions(all bool) (diskPartitions []disk.PartitionStat, err e
 	return diskPartitions, nil
 }
 
-func getHostDiskUsage(diskPartitions []disk.PartitionStat) (diskUsage []disk.UsageStat, err error){
+func getHostDiskUsage(diskPartitions []disk.PartitionStat) (diskUsage []disk.UsageStat, err error) {
 	for _, diskProps := range diskPartitions {
 		currentDiskUsage, err := disk.Usage(diskProps.Mountpoint)
 		if err != nil {
@@ -352,14 +355,20 @@ func updateSystemMetrics() (sysMetrics sysMetrics, err error) {
 	return sysMetrics, nil
 }
 
+func logError(err error) {
+	if err != nil {
+		log.Error(err)
+	}
+}
+
 // GetUnitsProperties return a structured units health response of UnitsHealthResponseJsonStruct type.
 func GetUnitsProperties(config *Config) (healthReport UnitsHealthResponseJSONStruct, err error) {
 	// update system metrics first to make sure we always return them.
- 	sysMetrics, err := updateSystemMetrics()
- 	if err != nil {
- 		log.Error(err)
- 	}
- 	healthReport.System = sysMetrics
+	sysMetrics, err := updateSystemMetrics()
+	if err != nil {
+		log.Error(err)
+	}
+	healthReport.System = sysMetrics
 
 	// detect DC/OS systemd units
 	foundUnits, err := config.DCOSTools.GetUnitNames()
@@ -397,11 +406,18 @@ func GetUnitsProperties(config *Config) (healthReport UnitsHealthResponseJSONStr
 
 	// update the rest of healthReport fields
 	healthReport.Array = allUnitsProperties
-	healthReport.Hostname = config.DCOSTools.GetHostname()
-	healthReport.IPAddress = config.DCOSTools.DetectIP()
+	healthReport.Hostname, err = config.DCOSTools.GetHostname()
+	logError(err)
+
+	healthReport.IPAddress, err = config.DCOSTools.DetectIP()
+	logError(err)
+
 	healthReport.DcosVersion = config.DCOSVersion
-	healthReport.Role = config.DCOSTools.GetNodeRole()
-	healthReport.MesosID = config.DCOSTools.GetMesosNodeID(config.DCOSTools.GetNodeRole(), "id")
+	healthReport.Role, err = config.DCOSTools.GetNodeRole()
+	logError(err)
+
+	healthReport.MesosID, err = config.DCOSTools.GetMesosNodeID(config.DCOSTools.GetNodeRole)
+	logError(err)
 	healthReport.TdtVersion = config.Version
 
 	return healthReport, nil

@@ -9,7 +9,7 @@ import (
 )
 
 // Version of 3dt code.
-const Version string = "0.0.14"
+const Version string = "0.1.0"
 
 // Revision injected by LDFLAGS a git commit reference.
 var Revision string
@@ -20,7 +20,6 @@ type Config struct {
 	Revision                string
 	MesosIPDiscoveryCommand string
 	DCOSVersion             string
-	DCOSTools               DCOSHelper
 	SystemdUnits            []string
 
 	FlagPull                       bool
@@ -70,7 +69,6 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 		log.Warning("Environment variable DCOS_VERSION is not set")
 	}
 	config.DCOSVersion = os.Getenv("DCOS_VERSION")
-	config.DCOSTools = &DCOSTools{}
 	config.SystemdUnits = []string{"dcos-setup.service", "dcos-link-env.service", "dcos-download.service"}
 
 	flagSet := flag.NewFlagSet("3dt", flag.ContinueOnError)

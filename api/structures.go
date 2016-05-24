@@ -117,3 +117,11 @@ type exhibitorNodeResponse struct {
 	Hostname    string
 	IsLeader    bool
 }
+
+// Dt is a struct of dependencies used in 3dt code. There are 2 implementations, the one runs on a real system and
+// the one used for testing.
+type Dt struct {
+	Cfg         *Config
+	DtPuller    Puller
+	DtDCOSTools DCOSHelper
+}

@@ -83,7 +83,7 @@ type HandlersTestSuit struct {
 	suite.Suite
 	assert                              *assertPackage.Assertions
 	router                              *mux.Router
-	cfg                                 Config
+	dt                                  Dt
 	mockedUnitsHealthResponseJSONStruct UnitsHealthResponseJSONStruct
 	mockedMonitoringResponse            monitoringResponse
 }
@@ -92,9 +92,13 @@ type HandlersTestSuit struct {
 func (s *HandlersTestSuit) SetupTest() {
 	// setup variables
 	args := []string{"3dt", "test"}
-	s.cfg, _ = LoadDefaultConfig(args)
-	s.cfg.DCOSTools = &fakeDCOSTools{}
-	s.router = NewRouter(&s.cfg)
+	config, _ := LoadDefaultConfig(args)
+	s.dt = Dt{
+		Cfg: &config,
+		DtDCOSTools: &fakeDCOSTools{},
+		DtPuller: &fakePuller{},
+	}
+	s.router = NewRouter(s.dt)
 	s.assert = assertPackage.New(s.T())
 
 	// mock the response
@@ -474,10 +478,10 @@ func (s *HandlersTestSuit) TestIsInListFunc() {
 func (s *HandlersTestSuit) TestStartUpdateHealthReportActualImplementationFunc() {
 	// clear any health report
 	unitsHealthReport.UpdateHealthReport(UnitsHealthResponseJSONStruct{})
-	s.cfg.DCOSTools = &DCOSTools{}
+	s.dt.DtDCOSTools = &DCOSTools{}
 
 	readyChan := make(chan struct{}, 1)
-	StartUpdateHealthReport(s.cfg, readyChan, true)
+	StartUpdateHealthReport(s.dt, readyChan, true)
 	hr := unitsHealthReport.GetHealthReport()
 	s.assert.Empty(hr.Array)
 }
@@ -502,7 +506,7 @@ func (s *HandlersTestSuit) TestCheckHealthReportRace() {
 
 func (s *HandlersTestSuit) TestStartUpdateHealthReportFunc() {
 	readyChan := make(chan struct{}, 1)
-	StartUpdateHealthReport(s.cfg, readyChan, true)
+	StartUpdateHealthReport(s.dt, readyChan, true)
 	hr := unitsHealthReport.GetHealthReport()
 	s.assert.Equal(hr.Array, []healthResponseValues{
 		{
@@ -534,7 +538,7 @@ func (s *HandlersTestSuit) TestStartUpdateHealthReportFunc() {
 	s.assert.Equal(hr.DcosVersion, "")
 	s.assert.Equal(hr.Role, "master")
 	s.assert.Equal(hr.MesosID, "node-id-123")
-	s.assert.Equal(hr.TdtVersion, "0.0.14")
+	s.assert.Equal(hr.TdtVersion, "0.1.0")
 }
 
 func TestHandlersTestSuit(t *testing.T) {

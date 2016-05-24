@@ -37,10 +37,10 @@ func (uh *unitsHealth) UpdateHealthReport(healthReport UnitsHealthResponseJSONSt
 }
 
 // StartUpdateHealthReport should be started in a separate goroutine to update global health report periodically.
-func StartUpdateHealthReport(config Config, readyChan chan struct{}, runOnce bool) {
+func StartUpdateHealthReport(dt Dt, readyChan chan struct{}, runOnce bool) {
 	var closedReadyChan bool
 	for {
-		healthReport, err := GetUnitsProperties(&config)
+		healthReport, err := GetUnitsProperties(dt)
 		if err == nil {
 			if !closedReadyChan {
 				close(readyChan)
@@ -55,7 +55,7 @@ func StartUpdateHealthReport(config Config, readyChan chan struct{}, runOnce boo
 			log.Debug("Run startUpdateHealthReport only once")
 			return
 		}
-		time.Sleep(time.Duration(config.FlagUpdateHealthReportInterval) * time.Second)
+		time.Sleep(time.Duration(dt.Cfg.FlagUpdateHealthReportInterval) * time.Second)
 	}
 }
 
@@ -130,7 +130,7 @@ func logError(err error) {
 }
 
 // GetUnitsProperties return a structured units health response of UnitsHealthResponseJsonStruct type.
-func GetUnitsProperties(config *Config) (healthReport UnitsHealthResponseJSONStruct, err error) {
+func GetUnitsProperties(dt Dt) (healthReport UnitsHealthResponseJSONStruct, err error) {
 	// update system metrics first to make sure we always return them.
 	sysMetrics, err := updateSystemMetrics()
 	if err != nil {
@@ -139,13 +139,13 @@ func GetUnitsProperties(config *Config) (healthReport UnitsHealthResponseJSONStr
 	healthReport.System = sysMetrics
 
 	// detect DC/OS systemd units
-	foundUnits, err := config.DCOSTools.GetUnitNames()
+	foundUnits, err := dt.DtDCOSTools.GetUnitNames()
 	if err != nil {
 		log.Error(err)
 	}
 	var allUnitsProperties []healthResponseValues
 	// open dbus connection
-	if err = config.DCOSTools.InitializeDbusConnection(); err != nil {
+	if err = dt.DtDCOSTools.InitializeDbusConnection(); err != nil {
 		return healthReport, err
 	}
 	log.Debug("Opened dbus connection")
@@ -153,40 +153,40 @@ func GetUnitsProperties(config *Config) (healthReport UnitsHealthResponseJSONStr
 	// DCOS-5862 blacklist systemd units
 	excludeUnits := []string{"dcos-setup.service", "dcos-link-env.service", "dcos-download.service"}
 
-	units := append(config.SystemdUnits, foundUnits...)
+	units := append(dt.Cfg.SystemdUnits, foundUnits...)
 	for _, unit := range units {
 		if isInList(unit, excludeUnits) {
 			log.Debugf("Skipping blacklisted systemd unit %s", unit)
 			continue
 		}
-		currentProperty, err := config.DCOSTools.GetUnitProperties(unit)
+		currentProperty, err := dt.DtDCOSTools.GetUnitProperties(unit)
 		if err != nil {
 			log.Errorf("Could not get properties for unit: %s", unit)
 			continue
 		}
-		allUnitsProperties = append(allUnitsProperties, normalizeProperty(unit, currentProperty, config.DCOSTools))
+		allUnitsProperties = append(allUnitsProperties, normalizeProperty(unit, currentProperty, dt.DtDCOSTools))
 	}
 	// after we finished querying systemd units, close dbus connection
-	if err = config.DCOSTools.CloseDbusConnection(); err != nil {
+	if err = dt.DtDCOSTools.CloseDbusConnection(); err != nil {
 		// we should probably return here, since we cannot guarantee that all units have been queried.
 		return healthReport, err
 	}
 
 	// update the rest of healthReport fields
 	healthReport.Array = allUnitsProperties
-	healthReport.Hostname, err = config.DCOSTools.GetHostname()
+	healthReport.Hostname, err = dt.DtDCOSTools.GetHostname()
 	logError(err)
 
-	healthReport.IPAddress, err = config.DCOSTools.DetectIP()
+	healthReport.IPAddress, err = dt.DtDCOSTools.DetectIP()
 	logError(err)
 
-	healthReport.DcosVersion = config.DCOSVersion
-	healthReport.Role, err = config.DCOSTools.GetNodeRole()
+	healthReport.DcosVersion = dt.Cfg.DCOSVersion
+	healthReport.Role, err = dt.DtDCOSTools.GetNodeRole()
 	logError(err)
 
-	healthReport.MesosID, err = config.DCOSTools.GetMesosNodeID(config.DCOSTools.GetNodeRole)
+	healthReport.MesosID, err = dt.DtDCOSTools.GetMesosNodeID(dt.DtDCOSTools.GetNodeRole)
 	logError(err)
-	healthReport.TdtVersion = config.Version
+	healthReport.TdtVersion = dt.Cfg.Version
 
 	return healthReport, nil
 }

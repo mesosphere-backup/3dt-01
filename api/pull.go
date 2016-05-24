@@ -456,17 +456,17 @@ func (mr *monitoringResponse) GetNodeUnitByNodeIDUnitID(nodeIP string, unitID st
 }
 
 // StartPullWithInterval will start to pull a DC/OS cluster health status
-func StartPullWithInterval(config Config, pi Puller, ready chan struct{}) {
+func StartPullWithInterval(dt Dt, ready chan struct{}) {
 	select {
 	case <-ready:
-		log.Infof("Start pulling with interval %d", config.FlagPullInterval)
+		log.Infof("Start pulling with interval %d", dt.Cfg.FlagPullInterval)
 	case <-time.After(time.Second * 10):
 		log.Error("Not ready to pull from localhost after 10 seconds")
 	}
 
 	// Start infinite loop
 	for {
-		runPull(config.FlagPullInterval, config.FlagPort, pi)
+		runPull(dt.Cfg.FlagPullInterval, dt.Cfg.FlagPort, dt.DtPuller)
 	}
 }
 

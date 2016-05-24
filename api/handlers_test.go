@@ -64,6 +64,21 @@ func (st *fakeDCOSTools) GetMesosNodeID(getRole func() (string, error)) (string,
 	return "node-id-123", nil
 }
 
+// Make HTTP GET request with a timeout.
+func (st *fakeDCOSTools) Get(url string, timeout time.Duration) (body []byte, statusCode int, err error) {
+	return body, statusCode, nil
+}
+
+// Post make HTTP POST request with a timeout.
+func (st *fakeDCOSTools) Post(url string, timeout time.Duration) (body []byte, statusCode int, err error) {
+	return body, statusCode, nil
+}
+
+// MakeRequest makes a HTTP request
+func (st *fakeDCOSTools) HTTPRequest(req *http.Request, timeout time.Duration) (resp *http.Response, err error) {
+	return resp, nil
+}
+
 type HandlersTestSuit struct {
 	suite.Suite
 	assert                              *assertPackage.Assertions
@@ -459,7 +474,7 @@ func (s *HandlersTestSuit) TestIsInListFunc() {
 func (s *HandlersTestSuit) TestStartUpdateHealthReportActualImplementationFunc() {
 	// clear any health report
 	unitsHealthReport.UpdateHealthReport(UnitsHealthResponseJSONStruct{})
-	s.cfg.DCOSTools = &dcosTools{}
+	s.cfg.DCOSTools = &DCOSTools{}
 
 	readyChan := make(chan struct{}, 1)
 	StartUpdateHealthReport(s.cfg, readyChan, true)

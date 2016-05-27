@@ -13,7 +13,7 @@ var (
 	Version = "0.2.0"
 
 	// APIVer is an API version.
-	ApiVer int = 1
+	APIVer = 1
 
 	// Revision injected by LDFLAGS a git commit reference.
 	Revision string

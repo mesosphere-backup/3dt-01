@@ -126,4 +126,5 @@ type exhibitorNodeResponse struct {
 type Dt struct {
 	Cfg         *Config
 	DtDCOSTools DCOSHelper
+	DtSnapshotJob *SnapshotJob
 }

@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 	"flag"
+	"sync"
+
 )
 
 var testCfg Config
@@ -23,8 +25,34 @@ func init() {
 
 // fakeDCOSTools is a DCOSHelper interface implementation used for testing.
 type fakeDCOSTools struct {
+	sync.Mutex
 	units             []string
 	fakeHTTPResponses []*httpResponse
+
+	// HTTP GET, POST
+	mockedRequest map[string]FakeHTTPContainer
+	getRequestsMade []string
+	postRequestsMade []string
+	rawRequestsMade []*http.Request
+}
+
+type FakeHTTPContainer struct {
+	mockResponse   []byte
+	mockStatusCode int
+	mockErr        error
+}
+
+func (st *fakeDCOSTools) makeMockedResponse(url string, response []byte, statusCode int, e error) error {
+	if _, ok := st.mockedRequest[url]; ok {
+		return errors.New(url+" is already added")
+	}
+	st.mockedRequest = make(map[string]FakeHTTPContainer)
+	st.mockedRequest[url] = FakeHTTPContainer{
+		mockResponse: response,
+		mockStatusCode: statusCode,
+		mockErr: e,
+	}
+	return nil
 }
 
 func (st *fakeDCOSTools) GetHostname() (string, error) {
@@ -74,8 +102,15 @@ func (st *fakeDCOSTools) GetMesosNodeID() (string, error) {
 
 // Make HTTP GET request with a timeout.
 func (st *fakeDCOSTools) Get(url string, timeout time.Duration) (body []byte, statusCode int, err error) {
-	var response string
+	st.Lock()
+	defer st.Unlock()
+	// add made GET request.
+	st.getRequestsMade = append(st.getRequestsMade, url)
 
+	if _, ok := st.mockedRequest[url]; ok {
+		return st.mockedRequest[url].mockResponse, st.mockedRequest[url].mockStatusCode, st.mockedRequest[url].mockErr
+	}
+	var response string
 	// master
 	if url == fmt.Sprintf("http://127.0.0.1:1050%s", BaseRoute) {
 		response = `
@@ -142,11 +177,17 @@ func (st *fakeDCOSTools) Get(url string, timeout time.Duration) (body []byte, st
 
 // Post make HTTP POST request with a timeout.
 func (st *fakeDCOSTools) Post(url string, timeout time.Duration) (body []byte, statusCode int, err error) {
+	st.Lock()
+	defer st.Unlock()
+	st.postRequestsMade = append(st.postRequestsMade, url)
 	return body, statusCode, nil
 }
 
 // MakeRequest makes a HTTP request
 func (st *fakeDCOSTools) HTTPRequest(req *http.Request, timeout time.Duration) (resp *http.Response, err error) {
+	st.Lock()
+	defer st.Unlock()
+	st.rawRequestsMade = append(st.rawRequestsMade, req)
 	return resp, nil
 }
 
@@ -634,7 +675,7 @@ func (s *HandlersTestSuit) TestStartUpdateHealthReportFunc() {
 	s.assert.Equal(hr.DcosVersion, "")
 	s.assert.Equal(hr.Role, "master")
 	s.assert.Equal(hr.MesosID, "node-id-123")
-	s.assert.Equal(hr.TdtVersion, "0.1.3")
+	s.assert.Equal(hr.TdtVersion, "0.2.0")
 }
 
 func TestHandlersTestSuit(t *testing.T) {

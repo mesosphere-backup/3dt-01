@@ -1,22 +1,22 @@
 package api
 
 import (
-	"time"
-	"sync"
-	"fmt"
-	"encoding/json"
-	log "github.com/Sirupsen/logrus"
-	"github.com/shirou/gopsutil/disk"
 	"archive/zip"
 	"bytes"
-	"path/filepath"
-	"io"
-	"net/http"
+	"encoding/json"
 	"errors"
-	"strings"
-	"path"
-	"os"
+	"fmt"
+	log "github.com/Sirupsen/logrus"
+	"github.com/shirou/gopsutil/disk"
+	"io"
 	"io/ioutil"
+	"net/http"
+	"os"
+	"path"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
 )
 
 // SnapshotJob a main structure for a logs collection job.
@@ -45,12 +45,12 @@ type snapshotReportResponse struct {
 type snapshotReportStatus struct {
 	// job related fields
 	Running          bool     `json:"is_running"`
-	Status                                string   `json:"status"`
-	Errors                                []string `json:"errors"`
-	LastSnapshotPath                      string   `json:"last_snapshot_dir"`
-	JobStarted                            string   `json:"job_started"`
-	JobEnded                              string   `json:"job_ended"`
-	JobDuration                           string   `json:"job_duration"`
+	Status           string   `json:"status"`
+	Errors           []string `json:"errors"`
+	LastSnapshotPath string   `json:"last_snapshot_dir"`
+	JobStarted       string   `json:"job_started"`
+	JobEnded         string   `json:"job_ended"`
+	JobDuration      string   `json:"job_duration"`
 
 	// config related fields
 	SnapshotBaseDir                       string `json:"snapshot_dir"`
@@ -60,7 +60,7 @@ type snapshotReportStatus struct {
 	CommandExecTimeoutSec                 int    `json:"command_exec_timeout_sec"`
 
 	// metrics related
-	DiskUsedPercent                       float64 `json:"snapshot_partition_disk_usage_percent"`
+	DiskUsedPercent float64 `json:"snapshot_partition_disk_usage_percent"`
 }
 
 // Create snapshot request structure, example:   {"nodes": ["all"]}
@@ -76,7 +76,7 @@ func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, DCOSTools D
 		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 	}
 
-	if  role == "agent" {
+	if role == "agent" {
 		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Running snapshot job on agent node is not implemented."))
 	}
 
@@ -388,7 +388,7 @@ func (j *SnapshotJob) getHTTPAddToZip(node Node, endpoints map[string]string, fo
 			continue
 		}
 		request.Header.Add("Accept-Encoding", "gzip")
-		resp, err := DCOSTools.HTTPRequest(request, timeout)
+		resp, err := Requester.Do(request, timeout)
 		if err != nil {
 			j.Errors = append(j.Errors, err.Error())
 			log.Errorf("Could not fetch url: %s", fullURL)
@@ -438,7 +438,7 @@ func (j *SnapshotJob) cancel(config *Config, DCOSTools DCOSHelper) (response sna
 		// Just log the error. We can still try to cancel the job.
 		log.Error(err)
 	}
-	if  role == "agent" {
+	if role == "agent" {
 		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Canceling snapshot job on agent node is not implemented."))
 	}
 
@@ -477,7 +477,6 @@ func (j *SnapshotJob) cancel(config *Config, DCOSTools DCOSHelper) (response sna
 func (j *SnapshotJob) start() {
 	j.Running = true
 }
-
 
 func (j *SnapshotJob) stop() {
 	j.Running = false

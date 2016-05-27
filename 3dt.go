@@ -48,7 +48,6 @@ func main() {
 	// Inject dependencies used for running 3dt.
 	dt := api.Dt{
 		Cfg: &config,
-		DtPuller: &api.DcosPuller{},
 		DtDCOSTools: &api.DCOSTools{},
 	}
 

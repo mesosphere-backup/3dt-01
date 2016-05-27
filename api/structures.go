@@ -122,6 +122,5 @@ type exhibitorNodeResponse struct {
 // the one used for testing.
 type Dt struct {
 	Cfg         *Config
-	DtPuller    Puller
 	DtDCOSTools DCOSHelper
 }

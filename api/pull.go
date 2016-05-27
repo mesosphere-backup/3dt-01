@@ -25,88 +25,30 @@ const (
 // globalMonitoringResponse a global variable updated by a puller every 60 seconds.
 var globalMonitoringResponse monitoringResponse
 
-// DcosPuller implements Puller interface.
-type DcosPuller struct{}
-
-// GetTimestamp return time.Now()
-func (pt *DcosPuller) GetTimestamp() time.Time {
-	return time.Now()
-}
-
-// GetUnitsPropertiesViaHTTP make a GET request.
-func (pt *DcosPuller) GetUnitsPropertiesViaHTTP(url string) ([]byte, int, error) {
-	var body []byte
-
-	// a timeout of 1 seconds should be good enough
-	client := http.Client{
-		Timeout: time.Duration(time.Second),
-	}
-
-	resp, err := client.Get(url)
-	if err != nil {
-		return body, http.StatusServiceUnavailable, err
-	}
-
-	// http://devs.cloudimmunity.com/gotchas-and-common-mistakes-in-go-golang/index.html#close_http_resp_body
-	defer resp.Body.Close()
-	body, err = ioutil.ReadAll(resp.Body)
-	return body, resp.StatusCode, nil
-}
-
-// LookupMaster looks for DC/OS master ip.
-func (pt *DcosPuller) LookupMaster() (nodesResponse []Node, err error) {
-	finder := &findMastersInExhibitor{
-		url: "http://127.0.0.1:8181/exhibitor/v1/cluster/status",
-		next: &findNodesInDNS{
-			dnsRecord: "master.mesos",
-			role:      MasterRole,
-			next:      nil,
-		},
-	}
-	return finder.find()
-}
-
-// GetAgentsFromMaster returns a list of DC/OS agent nodes.
-func (pt *DcosPuller) GetAgentsFromMaster() (nodes []Node, err error) {
-	finder := &findNodesInDNS{
-		dnsRecord: "leader.mesos",
-		role:      AgentRole,
-		next: &findAgentsInHistoryService{
-			pastTime: "/minute/",
-			next: &findAgentsInHistoryService{
-				pastTime: "/hour/",
-				next:     nil,
-			},
-		},
-	}
-	return finder.find()
-}
-
-// WaitBetweenPulls sleep.
-func (pt *DcosPuller) WaitBetweenPulls(interval int) {
-	time.Sleep(time.Duration(interval) * time.Second)
-}
-
 // find masters via dns. Used to find master nodes from agents.
 type findMastersInExhibitor struct {
 	url  string
 	next nodeFinder
+
+	// getFn takes url and timeout and returns a read body, HTTP status code and error.
+	getFn func(string, time.Duration) ([]byte, int, error)
 }
 
 func (f *findMastersInExhibitor) findMesosMasters() (nodes []Node, err error) {
-	client := http.Client{Timeout: time.Duration(time.Second)}
-	resp, err := client.Get(f.url)
+	if f.getFn == nil {
+		return nodes, errors.New("Could not initialize HTTP GET function. Make sure you set getFn in constractor")
+	}
+	timeout := time.Duration(time.Second)
+	body, statusCode, err := f.getFn(f.url, timeout)
 	if err != nil {
 		return nodes, err
 	}
-	defer resp.Body.Close()
-	nodesResponseString, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nodes, err
+	if statusCode != http.StatusOK {
+		return nodes, fmt.Errorf("GET %s failed, status code: %d", f.url, statusCode)
 	}
 
 	var exhibitorNodesResponse []exhibitorNodeResponse
-	if err := json.Unmarshal([]byte(nodesResponseString), &exhibitorNodesResponse); err != nil {
+	if err := json.Unmarshal([]byte(body), &exhibitorNodesResponse); err != nil {
 		return nodes, err
 	}
 	if len(exhibitorNodesResponse) == 0 {
@@ -126,6 +68,7 @@ func (f *findMastersInExhibitor) findMesosMasters() (nodes []Node, err error) {
 func (f *findMastersInExhibitor) find() (nodes []Node, err error) {
 	nodes, err = f.findMesosMasters()
 	if err == nil {
+		log.Debug("Found masters in exhibitor")
 		return nodes, nil
 	}
 	// try next provider if it is available
@@ -193,6 +136,7 @@ func (f *findAgentsInHistoryService) getMesosAgents() (nodes []Node, err error) 
 func (f *findAgentsInHistoryService) find() (nodes []Node, err error) {
 	nodes, err = f.getMesosAgents()
 	if err == nil {
+		log.Debugf("Found agents in the hisotry service for past %s", f.pastTime)
 		return nodes, nil
 	}
 	// try next provider if it is available
@@ -208,6 +152,9 @@ type findNodesInDNS struct {
 	dnsRecord string
 	role      string
 	next      nodeFinder
+
+	// getFn takes url and timeout and returns a read body, HTTP status code and error.
+	getFn func(string, time.Duration) ([]byte, int, error)
 }
 
 func (f *findNodesInDNS) resolveDomain() (ips []string, err error) {
@@ -233,6 +180,9 @@ func (f *findNodesInDNS) getMesosMasters() (nodes []Node, err error) {
 }
 
 func (f *findNodesInDNS) getMesosAgents() (nodes []Node, err error) {
+	if f.getFn == nil {
+		return nodes, errors.New("Could not initialize HTTP GET function. Make sure you set getFn in constractor")
+	}
 	leaderIps, err := f.resolveDomain()
 	if err != nil {
 		return nodes, err
@@ -241,21 +191,18 @@ func (f *findNodesInDNS) getMesosAgents() (nodes []Node, err error) {
 		return nodes, errors.New("Could not resolve " + f.dnsRecord)
 	}
 
-	agentRequest := fmt.Sprintf("http://%s:5050/slaves", leaderIps[0])
+	url := fmt.Sprintf("http://%s:5050/slaves", leaderIps[0])
 	timeout := time.Duration(time.Second)
-	client := http.Client{Timeout: timeout}
-	getAgents, err := client.Get(agentRequest)
+	body, statusCode, err := f.getFn(url, timeout)
 	if err != nil {
 		return nodes, err
 	}
-	defer getAgents.Body.Close()
-	agents, err := ioutil.ReadAll(getAgents.Body)
-	if err != nil {
-		return nodes, err
+	if statusCode != http.StatusOK {
+		return nodes, fmt.Errorf("GET %s failed, status code %d", url, statusCode)
 	}
 
 	var sr agentsResponse
-	if err := json.Unmarshal([]byte(agents), &sr); err != nil {
+	if err := json.Unmarshal(body, &sr); err != nil {
 		return nodes, err
 	}
 
@@ -270,19 +217,18 @@ func (f *findNodesInDNS) getMesosAgents() (nodes []Node, err error) {
 
 func (f *findNodesInDNS) dispatchGetNodesByRole() (nodes []Node, err error) {
 	if f.role == MasterRole {
-		nodes, err = f.getMesosMasters()
-	} else {
-		if f.role != AgentRole {
-			return nodes, errors.New("Unknown role " + f.role)
-		}
-		nodes, err = f.getMesosAgents()
+		return f.getMesosMasters()
 	}
-	return nodes, nil
+	if f.role != AgentRole {
+		return nodes, fmt.Errorf("%s role is incorrect, must be %s or %s", f.role, MasterRole, AgentRole)
+	}
+	return f.getMesosAgents()
 }
 
 func (f *findNodesInDNS) find() (nodes []Node, err error) {
 	nodes, err = f.dispatchGetNodesByRole()
 	if err == nil {
+		log.Debugf("Found %s nodes by resolving %s", f.role, f.dnsRecord)
 		return nodes, err
 	}
 	if f.next != nil {
@@ -466,30 +412,32 @@ func StartPullWithInterval(dt Dt, ready chan struct{}) {
 
 	// Start infinite loop
 	for {
-		runPull(dt.Cfg.FlagPullInterval, dt.Cfg.FlagPort, dt.DtPuller)
+		runPull(dt.Cfg.FlagPort, dt)
+		log.Debugf("Waiting %d seconds before next pull", dt.Cfg.FlagPullInterval)
+		dt.DtDCOSTools.WaitBetweenPulls(dt.Cfg.FlagPullInterval)
 	}
 }
 
-func runPull(sec int, port int, pi Puller) {
+func runPull(port int, dt Dt) {
 	var clusterHosts []Node
-	masterNodes, err := pi.LookupMaster()
+	masterNodes, err := dt.DtDCOSTools.GetMasterNodes()
 	if err != nil {
 		log.Error(err)
-		log.Warningf("Could not get a list of master nodes, waiting %d sec", sec)
-		pi.WaitBetweenPulls(sec)
-		return
 	}
 
-	agentNodes, err := pi.GetAgentsFromMaster()
+	agentNodes, err := dt.DtDCOSTools.GetAgentNodes()
 	if err != nil {
 		log.Error(err)
-		log.Warningf("Could not get a list of agent nodes, waiting %d sec", sec)
-		pi.WaitBetweenPulls(sec)
-		return
 	}
 
 	clusterHosts = append(clusterHosts, masterNodes...)
 	clusterHosts = append(clusterHosts, agentNodes...)
+
+	// If not nodes found we should wait for a timeout between trying the next pull.
+	if len(clusterHosts) == 0 {
+		log.Error("Could not find master or agent nodes")
+		return
+	}
 
 	respChan := make(chan *httpResponse, len(clusterHosts))
 	hostsChan := make(chan Node, len(clusterHosts))
@@ -497,21 +445,18 @@ func runPull(sec int, port int, pi Puller) {
 
 	// Pull data from each host
 	for i := 1; i <= len(clusterHosts); i++ {
-		go pullHostStatus(hostsChan, respChan, port, pi)
+		go pullHostStatus(hostsChan, respChan, port, dt)
 	}
 
 	// blocking here got get all responses from hosts
 	clusterHTTPResponses := collectResponses(respChan, len(clusterHosts))
 
 	// update collected units/nodes health statuses
-	updateHealthStatus(clusterHTTPResponses, pi)
-
-	log.Debugf("Waiting %d seconds before next pull", sec)
-	pi.WaitBetweenPulls(sec)
+	updateHealthStatus(clusterHTTPResponses)
 }
 
 // function builds a map of all unique units with status
-func updateHealthStatus(responses []*httpResponse, pi Puller) {
+func updateHealthStatus(responses []*httpResponse) {
 	units := make(map[string]*unit)
 	nodes := make(map[string]*Node)
 
@@ -574,7 +519,7 @@ func collectResponses(respChan <-chan *httpResponse, totalHosts int) (responses 
 	}
 }
 
-func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, port int, pi Puller) {
+func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, port int, dt Dt) {
 	for host := range hosts {
 		var response httpResponse
 
@@ -583,7 +528,8 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, port int, 
 
 		// Make a request to get node units status
 		// use fake interface implementation for tests
-		body, statusCode, err := pi.GetUnitsPropertiesViaHTTP(url)
+		timeout := time.Duration(3) * time.Second
+		body, statusCode, err := dt.DtDCOSTools.Get(url, timeout)
 		if err != nil {
 			log.Error(err)
 			response.Status = statusCode
@@ -629,7 +575,7 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, port int, 
 				[]Node{host},
 				propertiesMap.UnitHealth,
 				propertiesMap.UnitTitle,
-				pi.GetTimestamp(),
+				dt.DtDCOSTools.GetTimestamp(),
 				propertiesMap.PrettyName,
 			})
 		}
@@ -640,7 +586,7 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, port int, 
 
 func loadJobs(jobChan chan Node, hosts []Node) {
 	for _, u := range hosts {
-		log.Debugf("Adding host to jobs processing channel %+v", u)
+		log.Debugf("Adding %s to jobs processing channel", u.IP)
 		jobChan <- u
 	}
 	// we should close the channel, since we will recreate a list every 60 sec

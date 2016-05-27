@@ -5,31 +5,13 @@ import (
 	"time"
 )
 
-// Puller interface
-type Puller interface {
-	// function to get a list of masters uses dns lookup of master.mesos, append to *[]Host
-	LookupMaster() ([]Node, error)
-
-	// function gets a list of agents from master.mesos:5050/slaves, append to *[]Host
-	GetAgentsFromMaster() ([]Node, error)
-
-	// functions make a GET request to a remote node, return an array of response, response status and error
-	GetUnitsPropertiesViaHTTP(string) ([]byte, int, error)
-
-	// function to wait between pulls
-	WaitBetweenPulls(int)
-
-	// Get timestamp
-	GetTimestamp() time.Time
-}
-
 // DCOSHelper DC/OS specific tools interface.
 type DCOSHelper interface {
 	// open dbus connection
-	InitializeDbusConnection() error
+	InitializeDBUSConnection() error
 
 	// close dbus connection
-	CloseDbusConnection() error
+	CloseDBUSConnection() error
 
 	// function to get Connection.GetUnitProperties(pname)
 	// returns a maps of properties https://github.com/coreos/go-systemd/blob/master/dbus/methods.go#L176
@@ -52,7 +34,7 @@ type DCOSHelper interface {
 	GetJournalOutput(string) (string, error)
 
 	// Get mesos node id, first argument is a function to determine a role.
-	GetMesosNodeID(func() (string, error)) (string, error)
+	GetMesosNodeID() (string, error)
 
 	// Get makes HTTP GET request, return read arrays of bytes
 	Get(string, time.Duration) ([]byte, int, error)
@@ -63,6 +45,21 @@ type DCOSHelper interface {
 	// MakeRequest makes an HTTP request with predefined http.Request object.
 	// Caller is responsible for calling http.Response.Body().Close()
 	HTTPRequest(*http.Request, time.Duration) (*http.Response, error)
+
+	// LookupMaster will lookup a masters in DC/OS cluster.
+	// Initial lookup will be done by making HTTP GET request to exhibitor.If GET request fails, the next lookup
+	// will failover to history service for one minute, it this fails or no nodes found, masters will be looked up
+	// in history service for last hour.
+	GetMasterNodes() ([]Node, error)
+	//
+	//// GetAgentsFromMaster will lookup agents in DC/OS cluster.
+	GetAgentNodes() ([]Node, error)
+
+	// function to wait between pulls
+	WaitBetweenPulls(int)
+
+	// Get timestamp
+	GetTimestamp() time.Time
 }
 
 // with the nodeFinder interface we can chain finding methods

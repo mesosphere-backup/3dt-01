@@ -16,7 +16,8 @@ import (
 
 // fakeDCOSTools is a DCOSHelper interface implementation used for testing.
 type fakeDCOSTools struct {
-	units []string
+	units             []string
+	fakeHTTPResponses []*httpResponse
 }
 
 func (st *fakeDCOSTools) GetHostname() (string, error) {
@@ -43,11 +44,11 @@ func (st *fakeDCOSTools) GetUnitProperties(pname string) (map[string]interface{}
 	return result, nil
 }
 
-func (st *fakeDCOSTools) InitializeDbusConnection() error {
+func (st *fakeDCOSTools) InitializeDBUSConnection() error {
 	return nil
 }
 
-func (st *fakeDCOSTools) CloseDbusConnection() error {
+func (st *fakeDCOSTools) CloseDBUSConnection() error {
 	return nil
 }
 
@@ -60,13 +61,76 @@ func (st *fakeDCOSTools) GetJournalOutput(unit string) (string, error) {
 	return "journal output", nil
 }
 
-func (st *fakeDCOSTools) GetMesosNodeID(getRole func() (string, error)) (string, error) {
+func (st *fakeDCOSTools) GetMesosNodeID() (string, error) {
 	return "node-id-123", nil
 }
 
 // Make HTTP GET request with a timeout.
 func (st *fakeDCOSTools) Get(url string, timeout time.Duration) (body []byte, statusCode int, err error) {
-	return body, statusCode, nil
+	var response string
+
+	// master
+	if url == fmt.Sprintf("http://127.0.0.1:1050%s", BaseRoute) {
+		response = `
+			{
+			  "units": [
+			    {
+			      "id":"dcos-setup.service",
+			      "health":0,
+			      "output":"",
+			      "description":"Nice Description.",
+			      "help":"",
+			      "name":"PrettyName"
+			    },
+			    {
+			      "id":"dcos-master.service",
+			      "health":0,
+			      "output":"",
+			      "description":"Nice Master Description.",
+			      "help":"",
+			      "name":"PrettyName"
+			    }
+			  ],
+			  "hostname":"master01",
+			  "ip":"127.0.0.1",
+			  "dcos_version":"1.6",
+			  "node_role":"master",
+			  "mesos_id":"master-123",
+			  "3dt_version": "0.0.7"
+			}`
+	}
+
+	// agent
+	if url == fmt.Sprintf("http://127.0.0.2:1050%s", BaseRoute) {
+		response = `
+			{
+			  "units": [
+			    {
+			      "id":"dcos-setup.service",
+			      "health":0,
+			      "output":"",
+			      "description":"Nice Description.",
+			      "help":"",
+			      "name":"PrettyName"
+			    },
+			    {
+			      "id":"dcos-agent.service",
+			      "health":1,
+			      "output":"",
+			      "description":"Nice Agent Description.",
+			      "help":"",
+			      "name":"PrettyName"
+			    }
+			  ],
+			  "hostname":"agent01",
+			  "ip":"127.0.0.2",
+			  "dcos_version":"1.6",
+			  "node_role":"agent",
+			  "mesos_id":"agent-123",
+			  "3dt_version": "0.0.7"
+			}`
+	}
+	return []byte(response), 200, nil
 }
 
 // Post make HTTP POST request with a timeout.
@@ -77,6 +141,33 @@ func (st *fakeDCOSTools) Post(url string, timeout time.Duration) (body []byte, s
 // MakeRequest makes a HTTP request
 func (st *fakeDCOSTools) HTTPRequest(req *http.Request, timeout time.Duration) (resp *http.Response, err error) {
 	return resp, nil
+}
+
+func (st *fakeDCOSTools) WaitBetweenPulls(interval int) {
+}
+
+func (st *fakeDCOSTools) UpdateHTTPResponses(responses []*httpResponse) {
+	st.fakeHTTPResponses = responses
+}
+
+func (st *fakeDCOSTools) GetTimestamp() time.Time {
+	return time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC)
+}
+
+func (st *fakeDCOSTools) GetMasterNodes() (nodes []Node, err error) {
+	var fakeMasterHost Node
+	fakeMasterHost.IP = "127.0.0.1"
+	fakeMasterHost.Role = "master"
+	nodes = append(nodes, fakeMasterHost)
+	return nodes, nil
+}
+
+func (st *fakeDCOSTools) GetAgentNodes() (nodes []Node, err error) {
+	var fakeAgentHost Node
+	fakeAgentHost.IP = "127.0.0.2"
+	fakeAgentHost.Role = "agent"
+	nodes = append(nodes, fakeAgentHost)
+	return nodes, nil
 }
 
 type HandlersTestSuit struct {
@@ -94,9 +185,8 @@ func (s *HandlersTestSuit) SetupTest() {
 	args := []string{"3dt", "test"}
 	config, _ := LoadDefaultConfig(args)
 	s.dt = Dt{
-		Cfg: &config,
+		Cfg:         &config,
 		DtDCOSTools: &fakeDCOSTools{},
-		DtPuller: &fakePuller{},
 	}
 	s.router = NewRouter(s.dt)
 	s.assert = assertPackage.New(s.T())

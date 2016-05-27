@@ -145,7 +145,7 @@ func GetUnitsProperties(dt Dt) (healthReport UnitsHealthResponseJSONStruct, err 
 	}
 	var allUnitsProperties []healthResponseValues
 	// open dbus connection
-	if err = dt.DtDCOSTools.InitializeDbusConnection(); err != nil {
+	if err = dt.DtDCOSTools.InitializeDBUSConnection(); err != nil {
 		return healthReport, err
 	}
 	log.Debug("Opened dbus connection")
@@ -167,7 +167,7 @@ func GetUnitsProperties(dt Dt) (healthReport UnitsHealthResponseJSONStruct, err 
 		allUnitsProperties = append(allUnitsProperties, normalizeProperty(unit, currentProperty, dt.DtDCOSTools))
 	}
 	// after we finished querying systemd units, close dbus connection
-	if err = dt.DtDCOSTools.CloseDbusConnection(); err != nil {
+	if err = dt.DtDCOSTools.CloseDBUSConnection(); err != nil {
 		// we should probably return here, since we cannot guarantee that all units have been queried.
 		return healthReport, err
 	}
@@ -184,7 +184,7 @@ func GetUnitsProperties(dt Dt) (healthReport UnitsHealthResponseJSONStruct, err 
 	healthReport.Role, err = dt.DtDCOSTools.GetNodeRole()
 	logError(err)
 
-	healthReport.MesosID, err = dt.DtDCOSTools.GetMesosNodeID(dt.DtDCOSTools.GetNodeRole)
+	healthReport.MesosID, err = dt.DtDCOSTools.GetMesosNodeID()
 	logError(err)
 	healthReport.TdtVersion = dt.Cfg.Version
 

@@ -11,6 +11,8 @@ import (
 var (
 	// Version of 3dt code.
 	Version = "0.2.0"
+
+	// APIVer is an API version.
 	ApiVer int = 1
 
 	// Revision injected by LDFLAGS a git commit reference.
@@ -22,11 +24,11 @@ var (
 
 // Config structure is a main config object
 type Config struct {
-	Version                        string
-	Revision                       string
-	MesosIPDiscoveryCommand        string
-	DCOSVersion                    string
-	SystemdUnits                   []string
+	Version                 string
+	Revision                string
+	MesosIPDiscoveryCommand string
+	DCOSVersion             string
+	SystemdUnits            []string
 
 	// 3dt flags
 	FlagCACertFile                 string
@@ -45,7 +47,7 @@ type Config struct {
 	FlagSnapshotEndpointsConfigFile           string
 	FlagSnapshotUnitsLogsSinceHours           string
 	FlagSnapshotJobTimeoutMinutes             int
-	FlagSnapshotJobGetSingleUrlTimeoutMinutes int
+	FlagSnapshotJobGetSingleURLTimeoutMinutes int
 	FlagCommandExecTimeoutSec                 int
 }
 
@@ -77,7 +79,7 @@ func (c *Config) setFlags(fs *flag.FlagSet) {
 		"Collect systemd units logs since")
 	fs.IntVar(&c.FlagSnapshotJobTimeoutMinutes, "snapshot-job-timeout", c.FlagSnapshotJobTimeoutMinutes,
 		"Set a global snapshot job timeout")
-	fs.IntVar(&c.FlagSnapshotJobGetSingleUrlTimeoutMinutes, "snapshot-url-timeout", c.FlagSnapshotJobGetSingleUrlTimeoutMinutes,
+	fs.IntVar(&c.FlagSnapshotJobGetSingleURLTimeoutMinutes, "snapshot-url-timeout", c.FlagSnapshotJobGetSingleURLTimeoutMinutes,
 		"Set a local timeout for every single GET request to a log endpoint")
 }
 
@@ -102,7 +104,7 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	// snapshot job default flag values
 	config.FlagSnapshotDir = "/opt/mesosphere/snapshots"
 	config.FlagSnapshotJobTimeoutMinutes = 720 //12 hours
-	config.FlagSnapshotJobGetSingleUrlTimeoutMinutes = 5
+	config.FlagSnapshotJobGetSingleURLTimeoutMinutes = 5
 	config.FlagCommandExecTimeoutSec = 10
 
 	config.FlagSnapshotEndpointsConfigFile = "/opt/mesosphere/endpoints_config.json"

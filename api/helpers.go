@@ -80,8 +80,8 @@ func (st *DCOSTools) GetNodeRole() (string, error) {
 	return "", errors.New("Could not determine a role, no /etc/mesosphere/roles/{master,slave} file found")
 }
 
-// InitializeDbusConnection opens a dbus connection. The connection is available via st.dcon
-func (st *DCOSTools) InitializeDbusConnection() (err error) {
+// InitializeDBUSConnection opens a dbus connection. The connection is available via st.dcon
+func (st *DCOSTools) InitializeDBUSConnection() (err error) {
 	// we need to lock the dbus connection for each request
 	st.Lock()
 	if st.dcon == nil {
@@ -96,8 +96,8 @@ func (st *DCOSTools) InitializeDbusConnection() (err error) {
 	return errors.New("dbus connection is already opened")
 }
 
-// CloseDbusConnection closes a dbus connection.
-func (st *DCOSTools) CloseDbusConnection() error {
+// CloseDBUSConnection closes a dbus connection.
+func (st *DCOSTools) CloseDBUSConnection() error {
 	// unlock the dbus connection no matter what
 	defer st.Unlock()
 	if st.dcon != nil {
@@ -143,12 +143,12 @@ func (st *DCOSTools) GetJournalOutput(unit string) (string, error) {
 }
 
 // GetMesosNodeID return a mesos node id.
-func (st *DCOSTools) GetMesosNodeID(getRole func() (string, error)) (string, error) {
+func (st *DCOSTools) GetMesosNodeID() (string, error) {
 	if st.mesosID != "" {
 		log.Debugf("Found in memory mesos node id: %s", st.mesosID)
 		return st.mesosID, nil
 	}
-	role, err := getRole()
+	role, err := st.GetNodeRole()
 	if err != nil {
 		return "", err
 	}
@@ -165,14 +165,14 @@ func (st *DCOSTools) GetMesosNodeID(getRole func() (string, error)) (string, err
 
 	url := fmt.Sprintf("http://%s:%d/state", st.ip, port)
 
-	log.Debugf("GET %s", url)
-	resp, err := http.Get(url)
+	timeout := time.Duration(3) * time.Second
+	body, statusCode, err := st.Get(url, timeout)
 	if err != nil {
-		log.Errorf("Could not connect to %s", url)
-		return "", err
+		return "", nil
 	}
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	if statusCode != http.StatusOK {
+		return "", fmt.Errorf("Url: %s response code: %d", url, statusCode)
+	}
 
 	var respJSON map[string]interface{}
 	json.Unmarshal(body, &respJSON)
@@ -214,7 +214,6 @@ func (st *DCOSTools) doRequest(method, url string, timeout time.Duration, body i
 func (st *DCOSTools) Get(url string, timeout time.Duration) (body []byte, httpResponseCode int, err error) {
 	log.Debugf("GET %s, timeout: %s", url, timeout.String())
 	return st.doRequest("GET", url, timeout, nil)
-
 }
 
 // Post HTTP request.
@@ -232,10 +231,50 @@ func (st *DCOSTools) HTTPRequest(req *http.Request, timeout time.Duration) (resp
 	if err != nil {
 		return resp, err
 	}
-	defer req.Body.Close()
 
 	// the user of this function is responsible to close the response body.
 	return resp, nil
+}
+
+// GetTimestamp return time.Now()
+func (st *DCOSTools) GetTimestamp() time.Time {
+	return time.Now()
+}
+
+// GetMasterNodes finds DC/OS masters.
+func (st *DCOSTools) GetMasterNodes() (nodesResponse []Node, err error) {
+	finder := &findMastersInExhibitor{
+		url: "http://127.0.0.1:8181/exhibitor/v1/cluster/status",
+		getFn: st.Get,
+		next: &findNodesInDNS{
+			dnsRecord: "master.mesos",
+			role:      MasterRole,
+			next:      nil,
+		},
+	}
+	return finder.find()
+}
+
+// GetAgentNodes finds DC/OS agents.
+func (st *DCOSTools) GetAgentNodes() (nodes []Node, err error) {
+	finder := &findNodesInDNS{
+		dnsRecord: "leader.mesos",
+		role:      AgentRole,
+		getFn: st.Get,
+		next: &findAgentsInHistoryService{
+			pastTime: "/minute/",
+			next: &findAgentsInHistoryService{
+				pastTime: "/hour/",
+				next:     nil,
+			},
+		},
+	}
+	return finder.find()
+}
+
+// WaitBetweenPulls sleep.
+func (st *DCOSTools) WaitBetweenPulls(interval int) {
+	time.Sleep(time.Duration(interval) * time.Second)
 }
 
 func normalizeProperty(unitName string, p map[string]interface{}, d DCOSHelper) healthResponseValues {

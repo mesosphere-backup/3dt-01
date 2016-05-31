@@ -16,7 +16,8 @@ import (
 
 // fakeDCOSTools is a DCOSHelper interface implementation used for testing.
 type fakeDCOSTools struct {
-	units []string
+	units             []string
+	fakeHTTPResponses []*httpResponse
 }
 
 func (st *fakeDCOSTools) GetHostname() (string, error) {
@@ -43,11 +44,11 @@ func (st *fakeDCOSTools) GetUnitProperties(pname string) (map[string]interface{}
 	return result, nil
 }
 
-func (st *fakeDCOSTools) InitializeDbusConnection() error {
+func (st *fakeDCOSTools) InitializeDBUSConnection() error {
 	return nil
 }
 
-func (st *fakeDCOSTools) CloseDbusConnection() error {
+func (st *fakeDCOSTools) CloseDBUSConnection() error {
 	return nil
 }
 
@@ -60,13 +61,76 @@ func (st *fakeDCOSTools) GetJournalOutput(unit string) (string, error) {
 	return "journal output", nil
 }
 
-func (st *fakeDCOSTools) GetMesosNodeID(getRole func() (string, error)) (string, error) {
+func (st *fakeDCOSTools) GetMesosNodeID() (string, error) {
 	return "node-id-123", nil
 }
 
 // Make HTTP GET request with a timeout.
 func (st *fakeDCOSTools) Get(url string, timeout time.Duration) (body []byte, statusCode int, err error) {
-	return body, statusCode, nil
+	var response string
+
+	// master
+	if url == fmt.Sprintf("http://127.0.0.1:1050%s", BaseRoute) {
+		response = `
+			{
+			  "units": [
+			    {
+			      "id":"dcos-setup.service",
+			      "health":0,
+			      "output":"",
+			      "description":"Nice Description.",
+			      "help":"",
+			      "name":"PrettyName"
+			    },
+			    {
+			      "id":"dcos-master.service",
+			      "health":0,
+			      "output":"",
+			      "description":"Nice Master Description.",
+			      "help":"",
+			      "name":"PrettyName"
+			    }
+			  ],
+			  "hostname":"master01",
+			  "ip":"127.0.0.1",
+			  "dcos_version":"1.6",
+			  "node_role":"master",
+			  "mesos_id":"master-123",
+			  "3dt_version": "0.0.7"
+			}`
+	}
+
+	// agent
+	if url == fmt.Sprintf("http://127.0.0.2:1050%s", BaseRoute) {
+		response = `
+			{
+			  "units": [
+			    {
+			      "id":"dcos-setup.service",
+			      "health":0,
+			      "output":"",
+			      "description":"Nice Description.",
+			      "help":"",
+			      "name":"PrettyName"
+			    },
+			    {
+			      "id":"dcos-agent.service",
+			      "health":1,
+			      "output":"",
+			      "description":"Nice Agent Description.",
+			      "help":"",
+			      "name":"PrettyName"
+			    }
+			  ],
+			  "hostname":"agent01",
+			  "ip":"127.0.0.2",
+			  "dcos_version":"1.6",
+			  "node_role":"agent",
+			  "mesos_id":"agent-123",
+			  "3dt_version": "0.0.7"
+			}`
+	}
+	return []byte(response), 200, nil
 }
 
 // Post make HTTP POST request with a timeout.
@@ -79,11 +143,38 @@ func (st *fakeDCOSTools) HTTPRequest(req *http.Request, timeout time.Duration) (
 	return resp, nil
 }
 
+func (st *fakeDCOSTools) WaitBetweenPulls(interval int) {
+}
+
+func (st *fakeDCOSTools) UpdateHTTPResponses(responses []*httpResponse) {
+	st.fakeHTTPResponses = responses
+}
+
+func (st *fakeDCOSTools) GetTimestamp() time.Time {
+	return time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC)
+}
+
+func (st *fakeDCOSTools) GetMasterNodes() (nodes []Node, err error) {
+	var fakeMasterHost Node
+	fakeMasterHost.IP = "127.0.0.1"
+	fakeMasterHost.Role = "master"
+	nodes = append(nodes, fakeMasterHost)
+	return nodes, nil
+}
+
+func (st *fakeDCOSTools) GetAgentNodes() (nodes []Node, err error) {
+	var fakeAgentHost Node
+	fakeAgentHost.IP = "127.0.0.2"
+	fakeAgentHost.Role = "agent"
+	nodes = append(nodes, fakeAgentHost)
+	return nodes, nil
+}
+
 type HandlersTestSuit struct {
 	suite.Suite
 	assert                              *assertPackage.Assertions
 	router                              *mux.Router
-	cfg                                 Config
+	dt                                  Dt
 	mockedUnitsHealthResponseJSONStruct UnitsHealthResponseJSONStruct
 	mockedMonitoringResponse            monitoringResponse
 }
@@ -92,9 +183,12 @@ type HandlersTestSuit struct {
 func (s *HandlersTestSuit) SetupTest() {
 	// setup variables
 	args := []string{"3dt", "test"}
-	s.cfg, _ = LoadDefaultConfig(args)
-	s.cfg.DCOSTools = &fakeDCOSTools{}
-	s.router = NewRouter(&s.cfg)
+	config, _ := LoadDefaultConfig(args)
+	s.dt = Dt{
+		Cfg:         &config,
+		DtDCOSTools: &fakeDCOSTools{},
+	}
+	s.router = NewRouter(s.dt)
 	s.assert = assertPackage.New(s.T())
 
 	// mock the response
@@ -474,10 +568,10 @@ func (s *HandlersTestSuit) TestIsInListFunc() {
 func (s *HandlersTestSuit) TestStartUpdateHealthReportActualImplementationFunc() {
 	// clear any health report
 	unitsHealthReport.UpdateHealthReport(UnitsHealthResponseJSONStruct{})
-	s.cfg.DCOSTools = &DCOSTools{}
+	s.dt.DtDCOSTools = &DCOSTools{}
 
 	readyChan := make(chan struct{}, 1)
-	StartUpdateHealthReport(s.cfg, readyChan, true)
+	StartUpdateHealthReport(s.dt, readyChan, true)
 	hr := unitsHealthReport.GetHealthReport()
 	s.assert.Empty(hr.Array)
 }
@@ -502,7 +596,7 @@ func (s *HandlersTestSuit) TestCheckHealthReportRace() {
 
 func (s *HandlersTestSuit) TestStartUpdateHealthReportFunc() {
 	readyChan := make(chan struct{}, 1)
-	StartUpdateHealthReport(s.cfg, readyChan, true)
+	StartUpdateHealthReport(s.dt, readyChan, true)
 	hr := unitsHealthReport.GetHealthReport()
 	s.assert.Equal(hr.Array, []healthResponseValues{
 		{
@@ -534,7 +628,7 @@ func (s *HandlersTestSuit) TestStartUpdateHealthReportFunc() {
 	s.assert.Equal(hr.DcosVersion, "")
 	s.assert.Equal(hr.Role, "master")
 	s.assert.Equal(hr.MesosID, "node-id-123")
-	s.assert.Equal(hr.TdtVersion, "0.0.14")
+	s.assert.Equal(hr.TdtVersion, "0.1.0")
 }
 
 func TestHandlersTestSuit(t *testing.T) {

@@ -40,13 +40,13 @@ func headerMiddleware(next http.Handler, headers []header) http.Handler {
 	})
 }
 
-func getRoutes(config *Config) []routeHandler {
+func getRoutes(dt Dt) []routeHandler {
 	return []routeHandler{
 		{
 			// /system/health/v1
 			url: BaseRoute,
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				unitsHealthStatus(w, r, config)
+				unitsHealthStatus(w, r, dt.Cfg)
 			},
 		},
 		{
@@ -116,8 +116,8 @@ func wrapHandler(handler http.Handler, route routeHandler) http.Handler {
 	return handlerWithHeader
 }
 
-func loadRoutes(router *mux.Router, config *Config) *mux.Router {
-	for _, route := range getRoutes(config) {
+func loadRoutes(router *mux.Router, dt Dt) *mux.Router {
+	for _, route := range getRoutes(dt) {
 		if len(route.methods) == 0 {
 			route.methods = []string{"GET"}
 		}
@@ -128,7 +128,7 @@ func loadRoutes(router *mux.Router, config *Config) *mux.Router {
 }
 
 // NewRouter returns a new *mux.Router with loaded routes.
-func NewRouter(config *Config) *mux.Router {
+func NewRouter(dt Dt) *mux.Router {
 	router := mux.NewRouter().StrictSlash(true)
-	return loadRoutes(router, config)
+	return loadRoutes(router, dt)
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/coreos/go-systemd/activation"
 	"github.com/dcos/3dt/api"
 	"net/http"
 )
@@ -47,7 +48,7 @@ func main() {
 
 	// Inject dependencies used for running 3dt.
 	dt := api.Dt{
-		Cfg: &config,
+		Cfg:         &config,
 		DtDCOSTools: &api.DCOSTools{},
 	}
 
@@ -70,6 +71,18 @@ func main() {
 	log.Info("Start 3DT")
 	go api.StartUpdateHealthReport(dt, readyChan, false)
 	router := api.NewRouter(dt)
-	log.Infof("Exposing 3DT API on 0.0.0.0:%d", config.FlagPort)
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.FlagPort), router))
+
+	// try using systemd socket
+	listeners, err := activation.Listeners(true)
+	if err != nil {
+		log.Error(err)
+	}
+
+	if len(listeners) == 0 || listeners[0] == nil {
+		log.Error("Could not find listen socket")
+		log.Infof("Exposing 3DT API on 0.0.0.0:%d", config.FlagPort)
+		log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.FlagPort), router))
+	}
+	log.Infof("Using socket: %s", listeners[0].Addr().String())
+	log.Fatal(http.Serve(listeners[0], router))
 }

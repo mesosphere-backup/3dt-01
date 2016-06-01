@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+// HTTPRequester is an inteface to make HTTP requests
+type HTTPRequester interface {
+	Init() error
+	Do(*http.Request, time.Duration) (*http.Response, error)
+}
+
 // DCOSHelper DC/OS specific tools interface.
 type DCOSHelper interface {
 	// open dbus connection
@@ -41,10 +47,6 @@ type DCOSHelper interface {
 
 	// Post makes HTTP GET request, return read arrays of bytes
 	Post(string, time.Duration) ([]byte, int, error)
-
-	// MakeRequest makes an HTTP request with predefined http.Request object.
-	// Caller is responsible for calling http.Response.Body().Close()
-	HTTPRequest(*http.Request, time.Duration) (*http.Response, error)
 
 	// LookupMaster will lookup a masters in DC/OS cluster.
 	// Initial lookup will be done by making HTTP GET request to exhibitor.If GET request fails, the next lookup

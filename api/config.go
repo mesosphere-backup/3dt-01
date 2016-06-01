@@ -8,11 +8,16 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
-// Version of 3dt code.
-const Version string = "0.1.0"
+var (
+	// Version of 3dt code.
+	Version = "0.1.1"
 
-// Revision injected by LDFLAGS a git commit reference.
-var Revision string
+	// Revision injected by LDFLAGS a git commit reference.
+	Revision string
+
+	// flagSet
+	flagSet = flag.NewFlagSet("3dt", flag.ContinueOnError)
+)
 
 // Config structure is a main config object
 type Config struct {
@@ -71,7 +76,6 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	config.DCOSVersion = os.Getenv("DCOS_VERSION")
 	config.SystemdUnits = []string{"dcos-setup.service", "dcos-link-env.service", "dcos-download.service"}
 
-	flagSet := flag.NewFlagSet("3dt", flag.ContinueOnError)
 	config.setFlags(flagSet)
 
 	// override with user provided arguments

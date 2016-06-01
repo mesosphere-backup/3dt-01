@@ -46,6 +46,11 @@ func main() {
 		os.Exit(0)
 	}
 
+	// init requester
+	if err := api.Requester.Init(); err != nil {
+		log.Fatal(err)
+	}
+
 	// Inject dependencies used for running 3dt.
 	dt := api.Dt{
 		Cfg:         &config,

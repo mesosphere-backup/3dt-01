@@ -16,6 +16,9 @@ import (
 	"time"
 )
 
+// Requester is an implementation of HTTPRequester interface.
+var Requester HTTPRequester = &HTTPReq{}
+
 // DCOSTools is implementation of DCOSHelper interface.
 type DCOSTools struct {
 	sync.Mutex
@@ -200,7 +203,7 @@ func (st *DCOSTools) doRequest(method, url string, timeout time.Duration, body i
 		return responseBody, http.StatusBadRequest, err
 	}
 
-	resp, err := st.HTTPRequest(request, timeout)
+	resp, err := Requester.Do(request, timeout)
 	if err != nil {
 		return responseBody, http.StatusBadRequest, err
 	}
@@ -222,20 +225,6 @@ func (st *DCOSTools) Post(url string, timeout time.Duration) (body []byte, httpR
 	return st.doRequest("POST", url, timeout, nil)
 }
 
-// HTTPRequest custom HTTP request with predefined *http.Request
-func (st *DCOSTools) HTTPRequest(req *http.Request, timeout time.Duration) (resp *http.Response, err error) {
-	client := http.Client{
-		Timeout: timeout,
-	}
-	resp, err = client.Do(req)
-	if err != nil {
-		return resp, err
-	}
-
-	// the user of this function is responsible to close the response body.
-	return resp, nil
-}
-
 // GetTimestamp return time.Now()
 func (st *DCOSTools) GetTimestamp() time.Time {
 	return time.Now()
@@ -244,7 +233,7 @@ func (st *DCOSTools) GetTimestamp() time.Time {
 // GetMasterNodes finds DC/OS masters.
 func (st *DCOSTools) GetMasterNodes() (nodesResponse []Node, err error) {
 	finder := &findMastersInExhibitor{
-		url: "http://127.0.0.1:8181/exhibitor/v1/cluster/status",
+		url:   "http://127.0.0.1:8181/exhibitor/v1/cluster/status",
 		getFn: st.Get,
 		next: &findNodesInDNS{
 			dnsRecord: "master.mesos",
@@ -260,7 +249,7 @@ func (st *DCOSTools) GetAgentNodes() (nodes []Node, err error) {
 	finder := &findNodesInDNS{
 		dnsRecord: "leader.mesos",
 		role:      AgentRole,
-		getFn: st.Get,
+		getFn:     st.Get,
 		next: &findAgentsInHistoryService{
 			pastTime: "/minute/",
 			next: &findAgentsInHistoryService{
@@ -275,6 +264,29 @@ func (st *DCOSTools) GetAgentNodes() (nodes []Node, err error) {
 // WaitBetweenPulls sleep.
 func (st *DCOSTools) WaitBetweenPulls(interval int) {
 	time.Sleep(time.Duration(interval) * time.Second)
+}
+
+// HTTPReq is an implementation of HTTPRequester interface
+type HTTPReq struct{}
+
+// Init should initialize the HTTP request. Make a placeholder for now.
+func (h *HTTPReq) Init() error {
+	return nil
+}
+
+// Do makes an HTTP request with predefined http.Request object.
+// Caller is responsible for calling http.Response.Body().Close()
+func (h *HTTPReq) Do(req *http.Request, timeout time.Duration) (resp *http.Response, err error) {
+	client := http.Client{
+		Timeout: timeout,
+	}
+	resp, err = client.Do(req)
+	if err != nil {
+		return resp, err
+	}
+
+	// the user of this function is responsible to close the response body.
+	return resp, nil
 }
 
 func normalizeProperty(unitName string, p map[string]interface{}, d DCOSHelper) healthResponseValues {

@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+	"flag"
 )
 
 // fakeDCOSTools is a DCOSHelper interface implementation used for testing.
@@ -182,6 +183,7 @@ type HandlersTestSuit struct {
 // SetUp/Teardown
 func (s *HandlersTestSuit) SetupTest() {
 	// setup variables
+	flagSet = flag.NewFlagSet("3dt", flag.ContinueOnError)
 	args := []string{"3dt", "test"}
 	config, _ := LoadDefaultConfig(args)
 	s.dt = Dt{
@@ -628,7 +630,7 @@ func (s *HandlersTestSuit) TestStartUpdateHealthReportFunc() {
 	s.assert.Equal(hr.DcosVersion, "")
 	s.assert.Equal(hr.Role, "master")
 	s.assert.Equal(hr.MesosID, "node-id-123")
-	s.assert.Equal(hr.TdtVersion, "0.1.0")
+	s.assert.Equal(hr.TdtVersion, "0.1.1")
 }
 
 func TestHandlersTestSuit(t *testing.T) {

@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -267,19 +269,80 @@ func (st *DCOSTools) WaitBetweenPulls(interval int) {
 }
 
 // HTTPReq is an implementation of HTTPRequester interface
-type HTTPReq struct{}
+type HTTPReq struct {
+	caPool *x509.CertPool
+}
 
-// Init should initialize the HTTP request. Make a placeholder for now.
-func (h *HTTPReq) Init() error {
+// Init HTTPReq, prepare CA Pool if file was passed.
+func (h *HTTPReq) Init(config *Config) error {
+	caPool, err := loadCAPool(config)
+	if err != nil {
+		return err
+	}
+	h.caPool = caPool
 	return nil
 }
 
-// Do makes an HTTP request with predefined http.Request object.
-// Caller is responsible for calling http.Response.Body().Close()
+// Do will do an HTTP/HTTPS request.
 func (h *HTTPReq) Do(req *http.Request, timeout time.Duration) (resp *http.Response, err error) {
+	headers := make(map[string]string)
+	return Do(req, timeout, h.caPool, headers)
+}
+
+func loadCAPool(config *Config) (*x509.CertPool, error) {
+	// If no ca found, return nil.
+	if config.FlagCACertFile == "" {
+		return nil, nil
+	}
+
+	caPool := x509.NewCertPool()
+	f, err := os.Open(config.FlagCACertFile)
+	if err != nil {
+		return caPool, err
+	}
+	defer f.Close()
+
+	b, err := ioutil.ReadAll(f)
+	if err != nil {
+		return caPool, err
+	}
+
+	if !caPool.AppendCertsFromPEM(b) {
+		return caPool, errors.New("CACertFile parsing failed")
+	}
+	return caPool, nil
+}
+
+// Do makes an HTTP(S) request with predefined http.Request object.
+// Caller is responsible for calling http.Response.Body().Close()
+func Do(req *http.Request, timeout time.Duration, caPool *x509.CertPool, headers map[string]string) (resp *http.Response, err error) {
 	client := http.Client{
 		Timeout: timeout,
 	}
+
+	if req.URL.Scheme == "https" {
+		var tlsClientConfig *tls.Config
+		if caPool == nil {
+			// do HTTPS without certificate verification.
+			tlsClientConfig = &tls.Config{
+				InsecureSkipVerify: true,
+			}
+		} else {
+			tlsClientConfig = &tls.Config{
+				RootCAs: caPool,
+			}
+		}
+
+		client.Transport = &http.Transport{
+			TLSClientConfig: tlsClientConfig,
+		}
+	}
+
+	// Add headers if available
+	for headerKey, headerValue := range headers {
+		req.Header.Add(headerKey, headerValue)
+	}
+
 	resp, err = client.Do(req)
 	if err != nil {
 		return resp, err

@@ -15,6 +15,12 @@ import (
 	"flag"
 )
 
+var testCfg Config
+
+func init() {
+	testCfg, _ = LoadDefaultConfig([]string{"3dt"})
+}
+
 // fakeDCOSTools is a DCOSHelper interface implementation used for testing.
 type fakeDCOSTools struct {
 	units             []string
@@ -184,10 +190,8 @@ type HandlersTestSuit struct {
 func (s *HandlersTestSuit) SetupTest() {
 	// setup variables
 	flagSet = flag.NewFlagSet("3dt", flag.ContinueOnError)
-	args := []string{"3dt", "test"}
-	config, _ := LoadDefaultConfig(args)
 	s.dt = Dt{
-		Cfg:         &config,
+		Cfg:         &testCfg,
 		DtDCOSTools: &fakeDCOSTools{},
 	}
 	s.router = NewRouter(s.dt)

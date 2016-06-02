@@ -27,6 +27,7 @@ type Config struct {
 	DCOSVersion             string
 	SystemdUnits            []string
 
+	FlagCACertFile                 string
 	FlagPull                       bool
 	FlagDiag                       bool
 	FlagVerbose                    bool
@@ -37,6 +38,7 @@ type Config struct {
 }
 
 func (c *Config) setFlags(fs *flag.FlagSet) {
+	fs.StringVar(&c.FlagCACertFile, "ca-cert", c.FlagCACertFile, "Use certificate authority.")
 	fs.BoolVar(&c.FlagPull, "pull", c.FlagPull, "Try to pull checks from DC/OS hosts.")
 	fs.BoolVar(&c.FlagDiag, "diag", c.FlagDiag, "Get diagnostics output once on the CLI. Does not expose API.")
 	fs.BoolVar(&c.FlagVerbose, "verbose", c.FlagVerbose, "Use verbose debug output.")

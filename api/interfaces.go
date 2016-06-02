@@ -7,7 +7,7 @@ import (
 
 // HTTPRequester is an inteface to make HTTP requests
 type HTTPRequester interface {
-	Init() error
+	Init(*Config) error
 	Do(*http.Request, time.Duration) (*http.Response, error)
 }
 

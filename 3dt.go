@@ -47,7 +47,7 @@ func main() {
 	}
 
 	// init requester
-	if err := api.Requester.Init(); err != nil {
+	if err := api.Requester.Init(&config); err != nil {
 		log.Fatal(err)
 	}
 
@@ -56,7 +56,6 @@ func main() {
 		Cfg:         &config,
 		DtDCOSTools: &api.DCOSTools{},
 	}
-
 	// run local diagnostics, verify all systemd units are healthy.
 	if config.FlagDiag {
 		os.Exit(runDiag(dt))

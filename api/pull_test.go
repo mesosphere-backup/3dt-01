@@ -105,6 +105,12 @@ func (s *PullerTestSuit) TestPullerNotFindUnit() {
 	s.assert.Equal(unit, unitResponseFieldsStruct{})
 }
 
+func (s *PullerTestSuit) TestHTTPReqLoadCA() {
+	h := HTTPReq{}
+	h.Init(&testCfg)
+	s.assert.Nil(h.caPool)
+}
+
 func TestPullerTestSuit(t *testing.T) {
 	suite.Run(t, new(PullerTestSuit))
 }

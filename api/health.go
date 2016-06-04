@@ -137,6 +137,9 @@ func GetUnitsProperties(dt Dt) (healthReport UnitsHealthResponseJSONStruct, err 
 		log.Error(err)
 	}
 	healthReport.System = sysMetrics
+	healthReport.TdtVersion = dt.Cfg.Version
+	healthReport.Hostname, err = dt.DtDCOSTools.GetHostname()
+	logError(err)
 
 	// detect DC/OS systemd units
 	foundUnits, err := dt.DtDCOSTools.GetUnitNames()
@@ -174,8 +177,6 @@ func GetUnitsProperties(dt Dt) (healthReport UnitsHealthResponseJSONStruct, err 
 
 	// update the rest of healthReport fields
 	healthReport.Array = allUnitsProperties
-	healthReport.Hostname, err = dt.DtDCOSTools.GetHostname()
-	logError(err)
 
 	healthReport.IPAddress, err = dt.DtDCOSTools.DetectIP()
 	logError(err)
@@ -186,7 +187,6 @@ func GetUnitsProperties(dt Dt) (healthReport UnitsHealthResponseJSONStruct, err 
 
 	healthReport.MesosID, err = dt.DtDCOSTools.GetMesosNodeID()
 	logError(err)
-	healthReport.TdtVersion = dt.Cfg.Version
 
 	return healthReport, nil
 }

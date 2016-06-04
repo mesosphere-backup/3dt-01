@@ -45,7 +45,7 @@ type Config struct {
 	// snapshot job flags
 	FlagSnapshotDir                           string
 	FlagSnapshotEndpointsConfigFile           string
-	FlagSnapshotUnitsLogsSinceHours           string
+	FlagSnapshotUnitsLogsSinceString          string
 	FlagSnapshotJobTimeoutMinutes             int
 	FlagSnapshotJobGetSingleURLTimeoutMinutes int
 	FlagCommandExecTimeoutSec                 int
@@ -75,7 +75,7 @@ func (c *Config) setFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.FlagSnapshotDir, "snapshot-dir", c.FlagSnapshotDir, "Set a path to store snapshots")
 	fs.StringVar(&c.FlagSnapshotEndpointsConfigFile, "endpoint-config", c.FlagSnapshotEndpointsConfigFile,
 		"Use endpoints_config.json")
-	fs.StringVar(&c.FlagSnapshotUnitsLogsSinceHours, "snapshot-units-since", c.FlagSnapshotUnitsLogsSinceHours,
+	fs.StringVar(&c.FlagSnapshotUnitsLogsSinceString, "snapshot-units-since", c.FlagSnapshotUnitsLogsSinceString,
 		"Collect systemd units logs since")
 	fs.IntVar(&c.FlagSnapshotJobTimeoutMinutes, "snapshot-job-timeout", c.FlagSnapshotJobTimeoutMinutes,
 		"Set a global snapshot job timeout")
@@ -108,7 +108,7 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	config.FlagCommandExecTimeoutSec = 10
 
 	config.FlagSnapshotEndpointsConfigFile = "/opt/mesosphere/endpoints_config.json"
-	config.FlagSnapshotUnitsLogsSinceHours = "24"
+	config.FlagSnapshotUnitsLogsSinceString = "24 hours ago"
 
 	detectIPCmd := os.Getenv("MESOS_IP_DISCOVERY_COMMAND")
 	if detectIPCmd == "" {

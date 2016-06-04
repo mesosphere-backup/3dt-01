@@ -365,7 +365,7 @@ func (j *SnapshotJob) getStatus(config *Config) snapshotReportStatus {
 		SnapshotBaseDir:                       config.FlagSnapshotDir,
 		SnapshotJobTimeoutMin:                 config.FlagSnapshotJobTimeoutMinutes,
 		SnapshotJobGetSingleURLTimeoutMinutes: config.FlagSnapshotJobGetSingleURLTimeoutMinutes,
-		SnapshotUnitsLogsSinceHours:           config.FlagSnapshotUnitsLogsSinceHours,
+		SnapshotUnitsLogsSinceHours:           config.FlagSnapshotUnitsLogsSinceString,
 		CommandExecTimeoutSec:                 config.FlagCommandExecTimeoutSec,
 
 		DiskUsedPercent: used,
@@ -692,7 +692,7 @@ func dispatchLogs(provider string, entity string, config *Config, DCOSTools DCOS
 	}
 	if provider == "units" {
 		log.Debugf("dispatching a unit %s", entity)
-		r, err = readJournalOutputSince(entity, config.FlagSnapshotUnitsLogsSinceHours, config.FlagCommandExecTimeoutSec)
+		r, err = readJournalOutputSince(entity, config.FlagSnapshotUnitsLogsSinceString, config.FlagCommandExecTimeoutSec)
 		return r, err
 	}
 	intProviders, err := loadInternalProviders(config, DCOSTools)

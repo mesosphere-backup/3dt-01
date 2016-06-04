@@ -684,6 +684,45 @@ func getLogsEndpointList(config *Config, DCOSTools DCOSHelper) (endpoints map[st
 	return endpoints, nil
 }
 
+func dispatchLogs(provider string, entity string, config *Config, DCOSTools DCOSHelper) (r io.ReadCloser, err error) {
+	// make a buffered doneChan to communicate back to process.
+	extProviders, err := loadExternalProviders(config)
+	if err != nil {
+		log.Error(err)
+	}
+	if provider == "units" {
+		log.Debugf("dispatching a unit %s", entity)
+		r, err = readJournalOutputSince(entity, config.FlagSnapshotUnitsLogsSinceHours, config.FlagCommandExecTimeoutSec)
+		return r, err
+	}
+	intProviders, err := loadInternalProviders(config, DCOSTools)
+	if provider == "files" {
+		log.Debugf("dispatching a file %s", entity)
+		for _, fileProvider := range append(intProviders.LocalFiles, extProviders.LocalFiles...) {
+			if filepath.Base(fileProvider.Location) == entity {
+				log.Debugf("Found a file %s", fileProvider.Location)
+				r, err = readFile(fileProvider.Location)
+				return r, err
+			}
+		}
+		return r, errors.New("Not found " + entity)
+	}
+	if provider == "cmds" {
+		log.Debugf("dispatching a command %s", entity)
+		for _, cmdProvider := range append(intProviders.LocalCommands, extProviders.LocalCommands...) {
+			if len(cmdProvider.Command) > 0 {
+				// Make sure command does not have "/"
+				if entity == filepath.Base(cmdProvider.Command[0]) {
+					r, err = runCmd(cmdProvider.Command, config.FlagCommandExecTimeoutSec)
+					return r, err
+				}
+			}
+		}
+		return r, errors.New("Not found " + entity)
+	}
+	return r, errors.New("Unknown provider " + provider)
+}
+
 // the summary report is a file added to a zip snapshot file to track any errors occured while collection logs.
 func updateSummaryReport(preflix string, node Node, error string, r *bytes.Buffer) {
 	r.WriteString(fmt.Sprintf("%s [%s] %s %s %s\n", time.Now().String(), preflix, node.IP, node.Role, error))

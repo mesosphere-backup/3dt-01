@@ -1,12 +1,12 @@
 package api
 
 import (
+	"fmt"
+	"github.com/gorilla/mux"
 	assertPackage "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
-	"testing"
-	"github.com/gorilla/mux"
-	"fmt"
 	"net/http"
+	"testing"
 )
 
 type SnapshotTestSuit struct {
@@ -29,8 +29,8 @@ type SnapshotTestSuit struct {
 func (s *SnapshotTestSuit) SetupTest() {
 	s.assert = assertPackage.New(s.T())
 	s.dt = Dt{
-		Cfg: &testCfg,
-		DtDCOSTools: &fakeDCOSTools{},
+		Cfg:           &testCfg,
+		DtDCOSTools:   &fakeDCOSTools{},
 		DtSnapshotJob: &SnapshotJob{},
 	}
 	s.router = NewRouter(s.dt)
@@ -132,18 +132,18 @@ func (s *SnapshotTestSuit) TestGetAllStatus() {
 	s.assert.Nil(err)
 	s.assert.Contains(status, "127.0.0.1")
 	s.assert.Equal(status["127.0.0.1"], snapshotReportStatus{
-		Running: true,
-		Status: "MyStatus",
-		LastSnapshotPath: "/path/to/snapshot",
-		JobStarted: "0001-01-01 00:00:00 +0000 UTC",
-		JobEnded: "0001-01-01 00:00:00 +0000 UTC",
-		JobDuration: "2s",
-		SnapshotBaseDir: "/home/core/1",
-		SnapshotJobTimeoutMin: 720,
-		DiskUsedPercent: 28.0,
-		SnapshotUnitsLogsSinceHours: "24",
+		Running:                               true,
+		Status:                                "MyStatus",
+		LastSnapshotPath:                      "/path/to/snapshot",
+		JobStarted:                            "0001-01-01 00:00:00 +0000 UTC",
+		JobEnded:                              "0001-01-01 00:00:00 +0000 UTC",
+		JobDuration:                           "2s",
+		SnapshotBaseDir:                       "/home/core/1",
+		SnapshotJobTimeoutMin:                 720,
+		DiskUsedPercent:                       28.0,
+		SnapshotUnitsLogsSinceHours:           "24",
 		SnapshotJobGetSingleURLTimeoutMinutes: 5,
-		CommandExecTimeoutSec: 10,
+		CommandExecTimeoutSec:                 10,
 	})
 }
 

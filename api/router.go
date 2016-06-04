@@ -105,6 +105,91 @@ func getRoutes(dt Dt) []routeHandler {
 			url:     fmt.Sprintf("%s/nodes/{nodeid}/units/{unitid}", BaseRoute),
 			handler: getNodeUnitByNodeIDUnitIDHandler,
 		},
+
+		// snapshot routes
+		{
+			// /system/health/v1/logs
+			url: BaseRoute + "/logs",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				logsListHandler(w, r, dt)
+			},
+		},
+		{
+			// /system/health/v1/logs/<unitid/<hours>
+			url:     BaseRoute + "/logs/{provider}/{entity}",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				getUnitLogHandler(w, r, dt)
+			},
+			headers: []header{
+				{
+					name:  "Content-type",
+					value: "text/html",
+				},
+			},
+			gzip: true,
+		},
+		{
+			// /system/health/v1/report/snapshot
+			url: BaseRoute + "/report/snapshot/create",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				createSnapshotHandler(w, r, dt)
+			},
+			methods: []string{"POST"},
+		},
+		{
+			url: BaseRoute + "/report/snapshot/cancel",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				cancelSnapshotReportHandler(w, r, dt)
+			},
+			methods: []string{"POST"},
+		},
+		{
+			url: BaseRoute + "/report/snapshot/status",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				statusSnapshotReporthandler(w, r, dt)
+			},
+		},
+		{
+			url: BaseRoute + "/report/snapshot/status/all",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				statusAllSnapshotReporthandler(w, r, dt)
+			},
+		},
+		{
+			// /system/health/v1/report/snapshot/list
+			url: BaseRoute + "/report/snapshot/list",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				listAvailableLocalSnapshotFilesHandler(w, r, dt)
+			},
+		},
+		{
+			// /system/health/v1/report/snapshot/list/all
+			url: BaseRoute + "/report/snapshot/list/all",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				listAvailableGLobalSnapshotFilesHandler(w, r, dt)
+			},
+		},
+		{
+			// /system/health/v1/report/snapshot/serve/<file>
+			url: BaseRoute + "/report/snapshot/serve/{file}",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				downloadSnapshotHandler(w, r, dt)
+			},
+			headers: []header{
+				{
+					name:  "Content-type",
+					value: "application/octet-stream",
+				},
+			},
+		},
+		{
+			// /system/health/v1/report/snapshot/delete/<file>
+			url: BaseRoute + "/report/snapshot/delete/{file}",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				deleteSnapshotHandler(w, r, dt)
+			},
+			methods: []string{"POST"},
+		},
 	}
 }
 

@@ -506,7 +506,7 @@ func readFile(fileLocation string) (r io.ReadCloser, err error) {
 	return file, nil
 }
 
-func readJournalOutputSince(unit, sinceString string, timeout int, doneChan chan bool) (io.ReadCloser, error) {
+func readJournalOutputSince(unit, sinceString string, timeout int) (io.ReadCloser, error) {
 	stdout := &stdoutTimeoutPipe{}
 	if !strings.HasPrefix(unit, "dcos-") {
 		return stdout, errors.New("Unit should start with dcos-, got: " + unit)

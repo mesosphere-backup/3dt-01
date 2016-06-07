@@ -15,12 +15,13 @@ import (
 	"flag"
 	"sync"
 
+	"io"
 )
 
 var testCfg Config
 
 func init() {
-	testCfg, _ = LoadDefaultConfig([]string{"3dt"})
+	testCfg, _ = LoadDefaultConfig([]string{"3dt", "-verbose", "-snapshot-dir", "/tmp/snapshot-test"})
 }
 
 // fakeDCOSTools is a DCOSHelper interface implementation used for testing.
@@ -28,6 +29,7 @@ type fakeDCOSTools struct {
 	sync.Mutex
 	units             []string
 	fakeHTTPResponses []*httpResponse
+	fakeMasters       []Node
 
 	// HTTP GET, POST
 	mockedRequest map[string]FakeHTTPContainer
@@ -203,6 +205,9 @@ func (st *fakeDCOSTools) GetTimestamp() time.Time {
 }
 
 func (st *fakeDCOSTools) GetMasterNodes() (nodes []Node, err error) {
+	if len(st.fakeMasters) > 0 {
+		return st.fakeMasters, nil
+	}
 	var fakeMasterHost Node
 	fakeMasterHost.IP = "127.0.0.1"
 	fakeMasterHost.Role = "master"
@@ -385,21 +390,15 @@ func (s *HandlersTestSuit) TearDownTest() {
 }
 
 // Helper functions
-func MakeHTTPRequest(t *testing.T, router *mux.Router, url string) (response []byte, err error) {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return response, err
-	}
+func MakeHTTPRequest(t *testing.T, router *mux.Router, url, method string, body io.Reader) (response []byte, statusCode int, err error) {
+	req, err := http.NewRequest(method, url, body)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	if w.Code != 200 {
-		return response, fmt.Errorf("wrong HTTP response: %d", w.Code)
-	}
-	return w.Body.Bytes(), nil
+	return w.Body.Bytes(), w.Code, err
 }
 
 func (s *HandlersTestSuit) get(url string) []byte {
-	response, err := MakeHTTPRequest(s.T(), s.router, url)
+	response, _, err := MakeHTTPRequest(s.T(), s.router, url, "GET", nil)
 	s.assert.Nil(err, "Error makeing GET request")
 	return response
 }

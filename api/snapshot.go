@@ -19,6 +19,17 @@ import (
 	"time"
 )
 
+const (
+	// All stands for collecting logs from all discovered nodes.
+	All = "all"
+
+	// Masters stand for collecting from discovered master nodes.
+	Masters = "masters"
+
+	// Agents stand for collecting from discovered agent/agent_public nodes.
+	Agents = "agents"
+)
+
 // SnapshotJob a main structure for a logs collection job.
 type SnapshotJob struct {
 	sync.Mutex
@@ -77,7 +88,7 @@ func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, DCOSTools D
 		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 	}
 
-	if role == "agent" {
+	if role == AgentRole || role == AgentPublicRole {
 		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Running snapshot job on agent node is not implemented."))
 	}
 
@@ -89,6 +100,24 @@ func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, DCOSTools D
 		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Job is already running"))
 	}
 
+	// first discover all nodes in a cluster, then try to find requested nodes.
+	masterNodes, err := DCOSTools.GetMasterNodes()
+	if err != nil {
+		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
+	}
+
+	agentNodes, err := DCOSTools.GetAgentNodes()
+	if err != nil {
+		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
+	}
+
+	foundNodes, err := findRequestedNodes(masterNodes, agentNodes, req.Nodes)
+	if err != nil {
+		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
+	}
+	log.Debugf("Found requested nodes: %s", foundNodes)
+
+	// try to create snapshot directory
 	_, err = os.Stat(config.FlagSnapshotDir)
 	if os.IsNotExist(err) {
 		log.Infof("snapshot dir: %s not found, attempting to create one", config.FlagSnapshotDir)
@@ -106,21 +135,6 @@ func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, DCOSTools D
 		t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond())
 	j.Status = "Snapshot job started, archive will be available: " + j.LastSnapshotPath
 
-	// first discover all nodes in a cluster, then try to find requested nodes.
-	masterNodes, err := DCOSTools.GetMasterNodes()
-	if err != nil {
-		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
-	}
-	agentNodes, err := DCOSTools.GetAgentNodes()
-	if err != nil {
-		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
-	}
-	foundNodes, err := findRequestedNodes(masterNodes, agentNodes, req.Nodes)
-	if err != nil {
-		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
-	}
-	log.Debugf("Found requested nodes: %s", foundNodes)
-
 	j.cancelChan = make(chan bool)
 	go j.runBackgroundJob(foundNodes, config, DCOSTools)
 	return prepareResponseOk(http.StatusOK, "Snapshot job started: "+filepath.Base(j.LastSnapshotPath))
@@ -129,6 +143,7 @@ func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, DCOSTools D
 //
 func (j *SnapshotJob) runBackgroundJob(nodes []Node, config *Config, DCOSTools DCOSHelper) {
 	log.Info("Started background job")
+
 	// log a start time
 	j.JobStarted = time.Now()
 
@@ -339,6 +354,7 @@ func (j *SnapshotJob) getStatusAll(config *Config, DCOSTools DCOSHelper) (map[st
 		body, _, err := DCOSTools.Get(url, time.Duration(time.Second*3))
 		if err = json.Unmarshal(body, &status); err != nil {
 			log.Error(err)
+			log.Errorf("Could not determine job status for node: %s", master.IP)
 			continue
 		}
 		statuses[master.IP] = status
@@ -457,7 +473,7 @@ func (j *SnapshotJob) cancel(config *Config, DCOSTools DCOSHelper) (response sna
 		// Just log the error. We can still try to cancel the job.
 		log.Error(err)
 	}
-	if role == "agent" {
+	if role == AgentRole || role == AgentPublicRole {
 		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Canceling snapshot job on agent node is not implemented."))
 	}
 
@@ -567,13 +583,13 @@ func (j *SnapshotJob) findLocalSnapshot(config *Config) (snapshots []string, err
 func findRequestedNodes(masterNodes []Node, agentNodes []Node, requestedNodes []string) (matchedNodes []Node, err error) {
 	clusterNodes := append(masterNodes, agentNodes...)
 	for _, requestedNode := range requestedNodes {
-		if requestedNode == "all" {
+		if requestedNode == All {
 			return clusterNodes, nil
 		}
-		if requestedNode == "masters" {
+		if requestedNode == Masters {
 			matchedNodes = append(matchedNodes, masterNodes...)
 		}
-		if requestedNode == "agents" {
+		if requestedNode == Agents {
 			matchedNodes = append(matchedNodes, agentNodes...)
 		}
 		// try to find nodes by ip / mesos id

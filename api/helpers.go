@@ -82,7 +82,11 @@ func (st *DCOSTools) GetNodeRole() (string, error) {
 		st.role = AgentRole
 		return st.role, nil
 	}
-	return "", errors.New("Could not determine a role, no /etc/mesosphere/roles/{master,slave} file found")
+	if _, err := os.Stat("/etc/mesosphere/roles/slave_public"); err == nil {
+		st.role = AgentPublicRole
+		return st.role, nil
+	}
+	return "", errors.New("Could not determine a role, no /etc/mesosphere/roles/{master,slave,slave_public} file found")
 }
 
 // InitializeDBUSConnection opens a dbus connection. The connection is available via st.dcon
@@ -161,6 +165,7 @@ func (st *DCOSTools) GetMesosNodeID() (string, error) {
 	roleMesosPort := make(map[string]int)
 	roleMesosPort[MasterRole] = 5050
 	roleMesosPort[AgentRole] = 5051
+	roleMesosPort[AgentPublicRole] = 5051
 
 	port, ok := roleMesosPort[role]
 	if !ok {

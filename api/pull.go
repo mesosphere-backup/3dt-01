@@ -20,6 +20,9 @@ const (
 
 	// AgentRole DC/OS role for an agent.
 	AgentRole = "agent"
+
+	// AgentPublicRole DC/OS role for a public agent.
+	AgentPublicRole = "agent_public"
 )
 
 // globalMonitoringResponse a global variable updated by a puller every 60 seconds.
@@ -207,8 +210,14 @@ func (f *findNodesInDNS) getMesosAgents() (nodes []Node, err error) {
 	}
 
 	for _, agent := range sr.Agents {
+		role := AgentRole
+
+		// if a node has "attributes": {"public_ip": "true"} we consider it to be a public agent
+		if agent.Attributes.PublicIP == "true" {
+			role = AgentPublicRole
+		}
 		nodes = append(nodes, Node{
-			Role: AgentRole,
+			Role: role,
 			IP:   agent.Hostname,
 		})
 	}

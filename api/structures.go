@@ -108,6 +108,9 @@ type nodeResponseFieldsWithErrorStruct struct {
 type agentsResponse struct {
 	Agents []struct {
 		Hostname string `json:"hostname"`
+		Attributes struct {
+			PublicIP string `json:"public_ip"`
+			   } `json:"attributes"`
 	} `json:"slaves"`
 }
 

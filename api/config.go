@@ -10,7 +10,7 @@ import (
 
 var (
 	// Version of 3dt code.
-	Version = "0.1.1"
+	Version = "0.1.2"
 
 	// Revision injected by LDFLAGS a git commit reference.
 	Revision string

@@ -178,25 +178,40 @@ func (j *SnapshotJob) runBackgroundJob(nodes []Node, config *Config, DCOSTools D
 	zipWriter := zip.NewWriter(zipfile)
 	defer zipWriter.Close()
 
+	// summaryReport is a log of a snapshot job
+	summaryReport := new(bytes.Buffer)
+
 	// place a summaryErrorsReport.txt in a zip archive which should provide info what failed during the logs collection.
 	summaryErrorsReport := new(bytes.Buffer)
-	defer func(zipWriter *zip.Writer, summaryReport *bytes.Buffer) {
+	defer func() {
 		zipFile, err := zipWriter.Create("summaryErrorsReport.txt")
 		if err != nil {
-			j.Status = "Could not append a summaryErrorsReport.txt to a zip file, node"
+			j.Status = "Could not append a summaryErrorsReport.txt to a zip file"
+			log.Error(j.Status)
+			log.Error(err)
+			j.Errors = append(j.Errors, err.Error())
+			return
+		}
+		io.Copy(zipFile, summaryErrorsReport)
+
+		// flush the summary report
+		zipFile, err = zipWriter.Create("summaryReport.txt")
+		if err != nil {
+			j.Status = "Could not append a summaryReport.txt to a zip file"
 			log.Error(j.Status)
 			log.Error(err)
 			j.Errors = append(j.Errors, err.Error())
 			return
 		}
 		io.Copy(zipFile, summaryReport)
-	}(zipWriter, summaryErrorsReport)
+	}()
 
 	// lock out reportJob staructure
 	j.Lock()
 	defer j.Unlock()
 
 	for _, node := range nodes {
+		updateSummaryReport("START collecting logs", node, "", summaryReport)
 		url := fmt.Sprintf("http://%s:%d%s/logs", node.IP, config.FlagPort, BaseRoute)
 		endpoints := make(map[string]string)
 		body, statusCode, err := DCOSTools.Get(url, time.Duration(time.Second*3))
@@ -216,7 +231,7 @@ func (j *SnapshotJob) runBackgroundJob(nodes []Node, config *Config, DCOSTools D
 		}
 
 		// add http endpoints
-		err = j.getHTTPAddToZip(node, endpoints, j.LastSnapshotPath, zipWriter, summaryErrorsReport, config, DCOSTools)
+		err = j.getHTTPAddToZip(node, endpoints, j.LastSnapshotPath, zipWriter, summaryErrorsReport, summaryReport, config, DCOSTools)
 		if err != nil {
 			log.Error(err)
 			j.Errors = append(j.Errors, err.Error())
@@ -231,6 +246,7 @@ func (j *SnapshotJob) runBackgroundJob(nodes []Node, config *Config, DCOSTools D
 				return
 			}
 		}
+		updateSummaryReport("STOP collecting logs", node, "", summaryReport)
 	}
 	if len(j.Errors) == 0 {
 		j.Status = "Snapshot job sucessfully finished"
@@ -364,12 +380,14 @@ func (j *SnapshotJob) getStatus(config *Config) snapshotReportStatus {
 
 // fetch an HTTP endpoint and append the output to a zip file.
 func (j *SnapshotJob) getHTTPAddToZip(node Node, endpoints map[string]string, folder string, zipWriter *zip.Writer,
-	summaryReport *bytes.Buffer, config *Config, DCOSTools DCOSHelper) error {
+	summaryErrorsReport, summaryReport *bytes.Buffer, config *Config, DCOSTools DCOSHelper) error {
 	for fileName, httpEndpoint := range endpoints {
 		fullURL := "http://" + node.IP + httpEndpoint
 		select {
 		case _, ok := <-j.cancelChan:
 			if ok {
+				updateSummaryReport("Job canceled", node, "", summaryErrorsReport)
+				updateSummaryReport("Job canceled", node, "", summaryReport)
 				return errors.New("Job canceled")
 			}
 
@@ -378,12 +396,13 @@ func (j *SnapshotJob) getHTTPAddToZip(node Node, endpoints map[string]string, fo
 		}
 
 		j.Status = "GET " + fullURL
+		updateSummaryReport("START "+j.Status, node, "", summaryReport)
 		timeout := time.Duration(time.Minute * time.Duration(config.FlagSnapshotJobGetSingleURLTimeoutMinutes))
 		request, err := http.NewRequest("GET", fullURL, nil)
 		if err != nil {
 			j.Errors = append(j.Errors, err.Error())
 			log.Error(err)
-			updateSummaryReport(fmt.Sprintf("could not create request for url: %s", fullURL), node, err.Error(), summaryReport)
+			updateSummaryReport(fmt.Sprintf("could not create request for url: %s", fullURL), node, err.Error(), summaryErrorsReport)
 			continue
 		}
 		request.Header.Add("Accept-Encoding", "gzip")
@@ -392,7 +411,7 @@ func (j *SnapshotJob) getHTTPAddToZip(node Node, endpoints map[string]string, fo
 			j.Errors = append(j.Errors, err.Error())
 			log.Errorf("Could not fetch url: %s", fullURL)
 			log.Error(err)
-			updateSummaryReport(fmt.Sprintf("could not fetch url: %s", fullURL), node, err.Error(), summaryReport)
+			updateSummaryReport(fmt.Sprintf("could not fetch url: %s", fullURL), node, err.Error(), summaryErrorsReport)
 			continue
 		}
 		if resp.Header.Get("Content-Encoding") == "gzip" {
@@ -406,11 +425,12 @@ func (j *SnapshotJob) getHTTPAddToZip(node Node, endpoints map[string]string, fo
 			j.Errors = append(j.Errors, err.Error())
 			log.Errorf("Could not add %s to a zip archive", fileName)
 			log.Error(err)
-			updateSummaryReport(fmt.Sprintf("could not add a file %s to a zip", fileName), node, err.Error(), summaryReport)
+			updateSummaryReport(fmt.Sprintf("could not add a file %s to a zip", fileName), node, err.Error(), summaryErrorsReport)
 			continue
 		}
 		io.Copy(zipFile, resp.Body)
 		resp.Body.Close()
+		updateSummaryReport("STOP "+j.Status, node, "", summaryReport)
 	}
 	return nil
 }

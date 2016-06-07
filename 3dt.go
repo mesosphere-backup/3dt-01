@@ -45,14 +45,29 @@ func main() {
 		fmt.Println(getVersion())
 		os.Exit(0)
 	}
+	
+	// init requester
+	if err := api.Requester.Init(&config); err != nil {
+		log.Fatal(err)
+	}
+
+	DCOSTools := &api.DCOSTools{
+		ExhibitorURL: config.FlagExhibitorClusterStatusURL,
+		ForceTLS: config.FlagForceTLS,
+	}
+
+	// Create and init snapshot job
+	snapshotJob := &api.SnapshotJob{}
+	if err := snapshotJob.Init(&config, DCOSTools); err != nil {
+		log.Error(err)
+		log.Error("Could not init snapshot job properly")
+	}
 
 	// Inject dependencies used for running 3dt.
 	dt := api.Dt{
 		Cfg:         &config,
-		DtDCOSTools: &api.DCOSTools{
-			ExhibitorURL: config.FlagExhibitorClusterStatusURL,
-			ForceTLS: config.FlagForceTLS,
-		},
+		DtDCOSTools: DCOSTools,
+		DtSnapshotJob: snapshotJob,
 	}
 
 	// init requester

@@ -260,13 +260,13 @@ func createSnapshotHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 
 // A handler function to to get a list of available logs on a node.
 func logsListHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
-	report, err := getLogsEndpointList(dt.Cfg, dt.DtDCOSTools)
+	endspoints, err := dt.DtSnapshotJob.getLogsEndpoints(dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		response, _ := prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		writeResponse(w, response)
 		return
 	}
-	if err := json.NewEncoder(w).Encode(report); err != nil {
+	if err := json.NewEncoder(w).Encode(endspoints); err != nil {
 		log.Error("Failed to encode responses to json")
 	}
 }
@@ -274,12 +274,14 @@ func logsListHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 // return a log for past N hours for a specific systemd unit
 func getUnitLogHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	vars := mux.Vars(r)
-	unitLogOut, err := dispatchLogs(vars["provider"], vars["entity"], dt.Cfg, dt.DtDCOSTools)
+	unitLogOut, err := dt.DtSnapshotJob.dispatchLogs(vars["provider"], vars["entity"], dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		response, _ := prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		writeResponse(w, response)
 		return
 	}
+	log.Infof("Start read %s", vars["entity"])
 	io.Copy(w, unitLogOut)
+	log.Infof("Done read %s", vars["entity"])
 	unitLogOut.Close()
 }

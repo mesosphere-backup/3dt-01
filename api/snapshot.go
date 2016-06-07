@@ -22,7 +22,8 @@ import (
 // SnapshotJob a main structure for a logs collection job.
 type SnapshotJob struct {
 	sync.Mutex
-	cancelChan chan bool
+	cancelChan   chan bool
+	logProviders *LogProviders
 
 	Running          bool          `json:"is_running"`
 	Status           string        `json:"status"`
@@ -197,25 +198,6 @@ func (j *SnapshotJob) runBackgroundJob(nodes []Node, config *Config, DCOSTools D
 
 	for _, node := range nodes {
 		url := fmt.Sprintf("http://%s:%d%s/logs", node.IP, config.FlagPort, BaseRoute)
-		select {
-		case _, ok := <-j.cancelChan:
-			if ok {
-				j.Status = "Job has been canceled"
-				j.Errors = append(j.Errors, j.Status)
-				log.Debug(j.Status)
-				os.Remove(zipfile.Name())
-				j.LastSnapshotPath = ""
-				return
-			}
-			errMsg := "cancelChan is closed!"
-			j.Errors = append(j.Errors, errMsg)
-			return
-
-		default:
-			j.Status = fmt.Sprintf("Collecting from a node: %s, url: %s", node.IP, url)
-			log.Debug(j.Status)
-		}
-
 		endpoints := make(map[string]string)
 		body, statusCode, err := DCOSTools.Get(url, time.Duration(time.Second*3))
 		if err != nil {
@@ -236,10 +218,18 @@ func (j *SnapshotJob) runBackgroundJob(nodes []Node, config *Config, DCOSTools D
 		// add http endpoints
 		err = j.getHTTPAddToZip(node, endpoints, j.LastSnapshotPath, zipWriter, summaryErrorsReport, config, DCOSTools)
 		if err != nil {
-			errMsg := "could not add logs for a node, url: " + url
-			j.Errors = append(j.Errors, errMsg)
 			log.Error(err)
-			updateSummaryReport(errMsg, node, err.Error(), summaryErrorsReport)
+			j.Errors = append(j.Errors, err.Error())
+			updateSummaryReport(err.Error(), node, err.Error(), summaryErrorsReport)
+			if err.Error() == "Job canceled" {
+				log.Error("Job canceled, do not proceed")
+				j.LastSnapshotPath = ""
+				if removeErr := os.Remove(zipfile.Name()); removeErr != nil {
+					log.Error(removeErr)
+					j.Errors = append(j.Errors, removeErr.Error())
+				}
+				return
+			}
 		}
 	}
 	if len(j.Errors) == 0 {
@@ -377,8 +367,17 @@ func (j *SnapshotJob) getHTTPAddToZip(node Node, endpoints map[string]string, fo
 	summaryReport *bytes.Buffer, config *Config, DCOSTools DCOSHelper) error {
 	for fileName, httpEndpoint := range endpoints {
 		fullURL := "http://" + node.IP + httpEndpoint
+		select {
+		case _, ok := <-j.cancelChan:
+			if ok {
+				return errors.New("Job canceled")
+			}
+
+		default:
+			log.Debugf("GET %s", fullURL)
+		}
+
 		j.Status = "GET " + fullURL
-		log.Debug(j.Status)
 		timeout := time.Duration(time.Minute * time.Duration(config.FlagSnapshotJobGetSingleURLTimeoutMinutes))
 		request, err := http.NewRequest("GET", fullURL, nil)
 		if err != nil {
@@ -459,7 +458,7 @@ func (j *SnapshotJob) cancel(config *Config, DCOSTools DCOSHelper) (response sna
 		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/cancel", node, config.FlagPort, BaseRoute)
 		j.Status = "Attempting to cancel a job on a remote host. POST " + url
 		log.Debug(j.Status)
-		response, _, err := DCOSTools.Post(url, time.Duration(time.Second*3))
+		response, _, err := DCOSTools.Post(url, time.Duration(config.FlagSnapshotJobGetSingleURLTimeoutMinutes)*time.Minute)
 		if err != nil {
 			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
@@ -587,18 +586,27 @@ type HTTPProvider struct {
 
 // FileProvider is a local file provider.
 type FileProvider struct {
-	Location string
-	Role     string
+	Location          string
+	Role              string
+	sanitizedLocation string
 }
 
 // CommandProvider is a local command to execute.
 type CommandProvider struct {
-	Command []string
-	Role    string
+	Command        []string
+	Role           string
+	indexedCommand string
 }
 
-func loadExternalProviders(config *Config) (LogProviders, error) {
-	var externalProviders LogProviders
+func loadExternalProviders(config *Config) (externalProviders LogProviders, err error) {
+	// return if config file not found.
+	if _, err = os.Stat(config.FlagSnapshotEndpointsConfigFile); err != nil {
+		if os.IsNotExist(err) {
+			log.Infof("%s not found", config.FlagSnapshotEndpointsConfigFile)
+			return externalProviders, nil
+		}
+	}
+
 	endpointsConfig, err := ioutil.ReadFile(config.FlagSnapshotEndpointsConfigFile)
 	if err != nil {
 		return externalProviders, err
@@ -612,7 +620,7 @@ func loadExternalProviders(config *Config) (LogProviders, error) {
 func loadInternalProviders(config *Config, DCOSTools DCOSHelper) (internalConfigProviders LogProviders, err error) {
 	units, err := DCOSTools.GetUnitNames()
 	if err != nil {
-		return
+		return internalConfigProviders, err
 	}
 
 	// load default HTTP
@@ -621,13 +629,15 @@ func loadInternalProviders(config *Config, DCOSTools DCOSHelper) (internalConfig
 		httpEndpoints = append(httpEndpoints, HTTPProvider{
 			Port:     config.FlagPort,
 			URI:      fmt.Sprintf("%s/logs/units/%s", BaseRoute, unit),
-			FileName: unit + ".log",
+			FileName: unit,
 		})
 	}
+
+	// add 3dt health report.
 	httpEndpoints = append(httpEndpoints, HTTPProvider{
 		Port:     1050,
 		URI:      BaseRoute,
-		FileName: "3dt-health.log",
+		FileName: "3dt-health.json",
 	})
 
 	return LogProviders{
@@ -635,71 +645,149 @@ func loadInternalProviders(config *Config, DCOSTools DCOSHelper) (internalConfig
 	}, nil
 }
 
-// get a list of all available endpoints
-func getLogsEndpointList(config *Config, DCOSTools DCOSHelper) (endpoints map[string]string, err error) {
-	internalProviders, err := loadInternalProviders(config, DCOSTools)
-	if err != nil {
-		log.Error(err)
-	}
-	externalProviders, err := loadExternalProviders(config)
-	if err != nil {
-		log.Error(err)
-	}
-
+func (j *SnapshotJob) getLogsEndpoints(config *Config, DCOSTools DCOSHelper) (endpoints map[string]string, err error) {
 	endpoints = make(map[string]string)
+	if j.logProviders == nil {
+		return endpoints, errors.New("log provders have not been initialized")
+	}
 
-	role, err := DCOSTools.GetNodeRole()
+	currentRole, err := DCOSTools.GetNodeRole()
 	if err != nil {
-		return endpoints, err
+		log.Error(err)
+		log.Error("Failed to get a current role for a config")
 	}
 
-	// Load HTTP endpoints
-	for _, endpoint := range append(internalProviders.HTTPEndpoints, externalProviders.HTTPEndpoints...) {
-		// if role is set and does not equal current role, skip.
-		if endpoint.Role != "" && endpoint.Role != role {
+	// http endpoints
+	for _, httpEndpoint := range j.logProviders.HTTPEndpoints {
+		// if a role wasn't detected, consider to load all endpoints from a config file.
+		// if the role could not be detected or it is not set in a config file use the log endpoint.
+		// do not use the role only if it is set, detected and does not match the role form a config.
+		if currentRole != "" && httpEndpoint.Role != "" && httpEndpoint.Role != currentRole {
 			continue
 		}
-		endpoints[endpoint.FileName] = fmt.Sprintf(":%d%s", endpoint.Port, endpoint.URI)
+		endpoints[httpEndpoint.FileName] = fmt.Sprintf(":%d%s", httpEndpoint.Port, httpEndpoint.URI)
 	}
 
-	// Load file endpoints
-	for _, file := range append(internalProviders.LocalFiles, externalProviders.LocalFiles...) {
-		// if role is set and does not equal current role, skip.
-		if file.Role != "" && file.Role != role {
+	// file endpoints
+	for _, file := range j.logProviders.LocalFiles {
+		if currentRole != "" && file.Role != "" && file.Role != currentRole {
 			continue
 		}
-		endpoints[file.Location] = fmt.Sprintf(":%d%s/logs/files/%s", config.FlagPort, BaseRoute, filepath.Base(file.Location))
+		endpoints[file.Location] = fmt.Sprintf(":%d%s/logs/files/%s", config.FlagPort, BaseRoute, file.sanitizedLocation)
 	}
 
-	// Load command endpoints
-	for _, c := range append(internalProviders.LocalCommands, externalProviders.LocalCommands...) {
-		// if role is set and does not equal current role, skip.
-		if c.Role != "" && c.Role != role {
+	// command endpoints
+	for _, c := range j.logProviders.LocalCommands {
+		if currentRole != "" && c.Role != "" && c.Role != currentRole {
 			continue
 		}
-		if len(c.Command) > 0 {
-			endpoints[filepath.Base(c.Command[0])+".output"] = fmt.Sprintf(":%d%s/logs/cmds/%s", config.FlagPort, BaseRoute, filepath.Base(c.Command[0]))
+		if c.indexedCommand != "" {
+			endpoints[c.indexedCommand] = fmt.Sprintf(":%d%s/logs/cmds/%s", config.FlagPort, BaseRoute, c.indexedCommand)
 		}
 	}
 	return endpoints, nil
 }
 
-func dispatchLogs(provider string, entity string, config *Config, DCOSTools DCOSHelper) (r io.ReadCloser, err error) {
-	// make a buffered doneChan to communicate back to process.
-	extProviders, err := loadExternalProviders(config)
+// Init will prepare snapshot job, read config files etc.
+func (j *SnapshotJob) Init(config *Config, DCOSTools DCOSHelper) error {
+	j.logProviders = &LogProviders{}
+
+	// load the internal providers
+	internalProviders, err := loadInternalProviders(config, DCOSTools)
 	if err != nil {
 		log.Error(err)
+		log.Error("Could not initialize internal log provders")
 	}
+
+	// load the external providers from a config file
+	externalProviders, err := loadExternalProviders(config)
+	if err != nil {
+		log.Error(err)
+		log.Error("Could not initialize external log provders")
+	}
+
+	j.logProviders.HTTPEndpoints = append(internalProviders.HTTPEndpoints, externalProviders.HTTPEndpoints...)
+	j.logProviders.LocalFiles = append(internalProviders.LocalFiles, externalProviders.LocalFiles...)
+	j.logProviders.LocalCommands = append(internalProviders.LocalCommands, externalProviders.LocalCommands...)
+
+	// set filename if not set
+	for index, endpoint := range j.logProviders.HTTPEndpoints {
+		if endpoint.FileName == "" {
+			// if an endpoint is 1050:/system/health/v1
+			// filename will be role:1050:system_health_v1
+			var role string
+			if endpoint.Role == "" {
+				role = "any"
+			} else {
+				role = endpoint.Role
+			}
+			sanitizedPath := strings.Replace(strings.TrimLeft(endpoint.URI, "/"), "/", "_", -1)
+			j.logProviders.HTTPEndpoints[index].FileName = fmt.Sprintf("%s-%d:%s.json", role, endpoint.Port, sanitizedPath)
+		}
+	}
+
+	// trim left "/" and replace all slashes with underscores.
+	for index, fileProvider := range j.logProviders.LocalFiles {
+		j.logProviders.LocalFiles[index].sanitizedLocation = strings.Replace(strings.TrimLeft(fileProvider.Location, "/"), "/", "_", -1)
+	}
+
+	// update command with index.
+	for index, commandProvider := range j.logProviders.LocalCommands {
+		if len(commandProvider.Command) > 0 {
+			cmdWithArgs := strings.Join(commandProvider.Command, "_")
+			trimmedCmdWithArgs := strings.Replace(cmdWithArgs, "/", "", -1)
+			j.logProviders.LocalCommands[index].indexedCommand = fmt.Sprintf("%s-%d.output", trimmedCmdWithArgs, index)
+		}
+	}
+	return nil
+}
+
+func roleMatched(role string, DCOSTools DCOSHelper) (bool, error) {
+	// if a role is empty, that means it does not matter master or agent, always return true.
+	if role == "" {
+		return true, nil
+	}
+	myRole, err := DCOSTools.GetNodeRole()
+	if err != nil {
+		log.Error(err)
+		return false, err
+	}
+	log.Debugf("Roles requested: %s, detected: %s", role, myRole)
+	return role == myRole, nil
+}
+
+func (j *SnapshotJob) dispatchLogs(provider string, entity string, config *Config, DCOSTools DCOSHelper) (r io.ReadCloser, err error) {
+	// make a buffered doneChan to communicate back to process.
+
 	if provider == "units" {
-		log.Debugf("dispatching a unit %s", entity)
-		r, err = readJournalOutputSince(entity, config.FlagSnapshotUnitsLogsSinceString, config.FlagCommandExecTimeoutSec)
-		return r, err
+		for _, endpoint := range j.logProviders.HTTPEndpoints {
+			if endpoint.FileName == entity {
+				canExecute, err := roleMatched(endpoint.Role, DCOSTools)
+				if err != nil {
+					return r, err
+				}
+				if !canExecute {
+					return r, errors.New("Only DC/OS systemd units are available")
+				}
+				log.Debugf("dispatching a unit %s", entity)
+				r, err = readJournalOutputSince(entity, config.FlagSnapshotUnitsLogsSinceString, config.FlagCommandExecTimeoutSec)
+				return r, err
+			}
+		}
+		return r, fmt.Errorf("%s not found", entity)
 	}
-	intProviders, err := loadInternalProviders(config, DCOSTools)
+
 	if provider == "files" {
 		log.Debugf("dispatching a file %s", entity)
-		for _, fileProvider := range append(intProviders.LocalFiles, extProviders.LocalFiles...) {
-			if filepath.Base(fileProvider.Location) == entity {
+		for _, fileProvider := range j.logProviders.LocalFiles {
+			if fileProvider.sanitizedLocation == entity {
+				canExecute, err := roleMatched(fileProvider.Role, DCOSTools)
+				if err != nil {
+					return r, err
+				}
+				if !canExecute {
+					return r, errors.New("Not allowed to read a file")
+				}
 				log.Debugf("Found a file %s", fileProvider.Location)
 				r, err = readFile(fileProvider.Location)
 				return r, err
@@ -709,13 +797,17 @@ func dispatchLogs(provider string, entity string, config *Config, DCOSTools DCOS
 	}
 	if provider == "cmds" {
 		log.Debugf("dispatching a command %s", entity)
-		for _, cmdProvider := range append(intProviders.LocalCommands, extProviders.LocalCommands...) {
-			if len(cmdProvider.Command) > 0 {
-				// Make sure command does not have "/"
-				if entity == filepath.Base(cmdProvider.Command[0]) {
-					r, err = runCmd(cmdProvider.Command, config.FlagCommandExecTimeoutSec)
+		for _, cmdProvider := range j.logProviders.LocalCommands {
+			if entity == cmdProvider.indexedCommand {
+				canExecute, err := roleMatched(cmdProvider.Role, DCOSTools)
+				if err != nil {
 					return r, err
 				}
+				if !canExecute {
+					return r, errors.New("Not allowed to execute a command")
+				}
+				r, err = runCmd(cmdProvider.Command, config.FlagCommandExecTimeoutSec)
+				return r, err
 			}
 		}
 		return r, errors.New("Not found " + entity)

@@ -104,8 +104,12 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	// snapshot job default flag values
 	config.FlagSnapshotDir = "/opt/mesosphere/snapshots"
 	config.FlagSnapshotJobTimeoutMinutes = 720 //12 hours
-	config.FlagSnapshotJobGetSingleURLTimeoutMinutes = 5
-	config.FlagCommandExecTimeoutSec = 10
+
+	// 2 minutes for a URL GET timeout.
+	config.FlagSnapshotJobGetSingleURLTimeoutMinutes = 2
+
+	// 2 minutes for a command to run
+	config.FlagCommandExecTimeoutSec = 120
 
 	config.FlagSnapshotEndpointsConfigFile = "/opt/mesosphere/endpoints_config.json"
 	config.FlagSnapshotUnitsLogsSinceString = "24 hours ago"

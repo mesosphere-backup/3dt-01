@@ -158,7 +158,7 @@ type findNodesInDNS struct {
 	next      nodeFinder
 
 	// getFn takes url and timeout and returns a read body, HTTP status code and error.
-	getFn     func(string, time.Duration) ([]byte, int, error)
+	getFn func(string, time.Duration) ([]byte, int, error)
 }
 
 func (f *findNodesInDNS) resolveDomain() (ips []string, err error) {

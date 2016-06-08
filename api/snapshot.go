@@ -133,7 +133,7 @@ func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, DCOSTools D
 	t := time.Now()
 	j.LastSnapshotPath = fmt.Sprintf("%s/snapshot-%d-%02d-%02dT%02d:%02d:%02d-%d.zip", config.FlagSnapshotDir, t.Year(),
 		t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond())
-	j.Status = "Snapshot job started, archive will be available: " + j.LastSnapshotPath
+	j.Status = "Snapshot job started, archive will be available at: " + j.LastSnapshotPath
 
 	j.cancelChan = make(chan bool)
 	go j.runBackgroundJob(foundNodes, config, DCOSTools)
@@ -170,7 +170,7 @@ func (j *SnapshotJob) runBackgroundJob(nodes []Node, config *Config, DCOSTools D
 		}
 	}(jobIsDone, j)
 
-	// makesure we always cancel a timeout goroutine when the report is finished.
+	// make sure we always cancel a timeout goroutine when the report is finished.
 	defer func(jobIsDone chan bool) {
 		jobIsDone <- true
 	}(jobIsDone)

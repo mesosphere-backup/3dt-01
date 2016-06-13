@@ -279,7 +279,7 @@ type HTTPReq struct {
 }
 
 // Init HTTPReq, prepare CA Pool if file was passed.
-func (h *HTTPReq) Init(config *Config) error {
+func (h *HTTPReq) Init(config *Config, DCOSTools DCOSHelper) error {
 	caPool, err := loadCAPool(config)
 	if err != nil {
 		return err

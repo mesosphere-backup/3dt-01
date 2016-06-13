@@ -107,7 +107,7 @@ func (s *PullerTestSuit) TestPullerNotFindUnit() {
 
 func (s *PullerTestSuit) TestHTTPReqLoadCA() {
 	h := HTTPReq{}
-	h.Init(&testCfg)
+	h.Init(&testCfg, &fakeDCOSTools{})
 	s.assert.Nil(h.caPool)
 }
 

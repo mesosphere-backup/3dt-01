@@ -46,16 +46,17 @@ func main() {
 		os.Exit(0)
 	}
 
-	// init requester
-	if err := api.Requester.Init(&config); err != nil {
-		log.Fatal(err)
-	}
-
 	// Inject dependencies used for running 3dt.
 	dt := api.Dt{
 		Cfg:         &config,
 		DtDCOSTools: &api.DCOSTools{},
 	}
+
+	// init requester
+	if err := api.Requester.Init(&config, dt.DtDCOSTools); err != nil {
+		log.Error(err)
+	}
+
 	// run local diagnostics, verify all systemd units are healthy.
 	if config.FlagDiag {
 		os.Exit(runDiag(dt))

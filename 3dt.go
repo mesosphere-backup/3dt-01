@@ -49,12 +49,15 @@ func main() {
 	// Inject dependencies used for running 3dt.
 	dt := api.Dt{
 		Cfg:         &config,
-		DtDCOSTools: &api.DCOSTools{},
+		DtDCOSTools: &api.DCOSTools{
+			ExhibitorURL: config.FlagExhibitorClusterStatusURL,
+			ForceTLS: config.FlagForceTLS,
+		},
 	}
 
 	// init requester
 	if err := api.Requester.Init(&config, dt.DtDCOSTools); err != nil {
-		log.Error(err)
+		log.Fatal(err)
 	}
 
 	// run local diagnostics, verify all systemd units are healthy.

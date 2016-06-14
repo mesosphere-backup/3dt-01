@@ -10,7 +10,7 @@ import (
 
 var (
 	// Version of 3dt code.
-	Version = "0.1.2"
+	Version = "0.1.3"
 
 	// Revision injected by LDFLAGS a git commit reference.
 	Revision string
@@ -21,11 +21,11 @@ var (
 
 // Config structure is a main config object
 type Config struct {
-	Version                 string
-	Revision                string
-	MesosIPDiscoveryCommand string
-	DCOSVersion             string
-	SystemdUnits            []string
+	Version                        string
+	Revision                       string
+	MesosIPDiscoveryCommand        string
+	DCOSVersion                    string
+	SystemdUnits                   []string
 
 	FlagCACertFile                 string
 	FlagPull                       bool
@@ -35,6 +35,8 @@ type Config struct {
 	FlagPort                       int
 	FlagPullInterval               int
 	FlagUpdateHealthReportInterval int
+	FlagExhibitorClusterStatusURL  string
+	FlagForceTLS                   bool
 }
 
 func (c *Config) setFlags(fs *flag.FlagSet) {
@@ -47,6 +49,9 @@ func (c *Config) setFlags(fs *flag.FlagSet) {
 	fs.IntVar(&c.FlagPullInterval, "pull-interval", c.FlagPullInterval, "Set pull interval in seconds.")
 	fs.IntVar(&c.FlagUpdateHealthReportInterval, "health-update-interval", c.FlagUpdateHealthReportInterval,
 		"Set update health interval in seconds.")
+	fs.StringVar(&c.FlagExhibitorClusterStatusURL, "exhibitor-ip", c.FlagExhibitorClusterStatusURL,
+		"Use Exhibitor IP address to discover master nodes.")
+	fs.BoolVar(&c.FlagForceTLS, "force-tls", c.FlagForceTLS, "Use HTTPS to do all requests.")
 }
 
 // LoadDefaultConfig sets default config values or sets the values from a command line.
@@ -64,6 +69,8 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 
 	config.Version = Version
 	config.Revision = Revision
+
+	config.FlagExhibitorClusterStatusURL = "http://127.0.0.1:8181/exhibitor/v1/cluster/status"
 
 	detectIPCmd := os.Getenv("MESOS_IP_DISCOVERY_COMMAND")
 	if detectIPCmd == "" {

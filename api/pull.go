@@ -152,12 +152,13 @@ func (f *findAgentsInHistoryService) find() (nodes []Node, err error) {
 
 // find agents by resolving dns entry
 type findNodesInDNS struct {
+	forceTLS  bool
 	dnsRecord string
 	role      string
 	next      nodeFinder
 
 	// getFn takes url and timeout and returns a read body, HTTP status code and error.
-	getFn func(string, time.Duration) ([]byte, int, error)
+	getFn     func(string, time.Duration) ([]byte, int, error)
 }
 
 func (f *findNodesInDNS) resolveDomain() (ips []string, err error) {
@@ -194,7 +195,11 @@ func (f *findNodesInDNS) getMesosAgents() (nodes []Node, err error) {
 		return nodes, errors.New("Could not resolve " + f.dnsRecord)
 	}
 
-	url := fmt.Sprintf("http://%s:5050/slaves", leaderIps[0])
+	url, err := useTLSScheme(fmt.Sprintf("http://%s:5050/slaves", leaderIps[0]), f.forceTLS)
+	if err != nil {
+		return nodes, err
+	}
+
 	timeout := time.Duration(time.Second)
 	body, statusCode, err := f.getFn(url, timeout)
 	if err != nil {
@@ -533,7 +538,15 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, port int, 
 		var response httpResponse
 
 		// UnitsRoute available in router.go
-		url := fmt.Sprintf("http://%s:%d%s", host.IP, port, BaseRoute)
+		url, err := useTLSScheme(fmt.Sprintf("http://%s:%d%s", host.IP, port, BaseRoute), dt.Cfg.FlagForceTLS)
+		if err != nil {
+			log.Error(err)
+			response.Status = http.StatusServiceUnavailable
+			host.Health = 3
+			response.Node = host
+			respChan <- &response
+			continue
+		}
 
 		// Make a request to get node units status
 		// use fake interface implementation for tests

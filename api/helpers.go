@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	netUrl "net/url"
 )
 
 // Requester is an implementation of HTTPRequester interface.
@@ -24,11 +25,13 @@ var Requester HTTPRequester = &HTTPReq{}
 // DCOSTools is implementation of DCOSHelper interface.
 type DCOSTools struct {
 	sync.Mutex
-	dcon     *dbus.Conn
-	hostname string
-	role     string
-	ip       string
-	mesosID  string
+	ExhibitorURL string
+	ForceTLS     bool
+	dcon         *dbus.Conn
+	hostname     string
+	role         string
+	ip           string
+	mesosID      string
 }
 
 // GetHostname return a localhost hostname.
@@ -151,6 +154,18 @@ func (st *DCOSTools) GetJournalOutput(unit string) (string, error) {
 	return string(out), nil
 }
 
+func useTLSScheme(url string, use bool) (string, error) {
+	if use {
+		urlObject, err := netUrl.Parse(url)
+		if err != nil {
+			return "", err
+		}
+		urlObject.Scheme = "https"
+		return urlObject.String(), nil
+	}
+	return url, nil
+}
+
 // GetMesosNodeID return a mesos node id.
 func (st *DCOSTools) GetMesosNodeID() (string, error) {
 	if st.mesosID != "" {
@@ -173,7 +188,10 @@ func (st *DCOSTools) GetMesosNodeID() (string, error) {
 	}
 	log.Debugf("using role %s, port %d to get node id", role, port)
 
-	url := fmt.Sprintf("http://%s:%d/state", st.ip, port)
+	url, err := useTLSScheme(fmt.Sprintf("http://%s:%d/state", st.ip, port), st.ForceTLS)
+	if err != nil {
+		return "", err
+	}
 
 	timeout := time.Duration(3) * time.Second
 	body, statusCode, err := st.Get(url, timeout)
@@ -181,7 +199,7 @@ func (st *DCOSTools) GetMesosNodeID() (string, error) {
 		return "", nil
 	}
 	if statusCode != http.StatusOK {
-		return "", fmt.Errorf("Url: %s response code: %d", url, statusCode)
+		return "", fmt.Errorf("response code: %d", statusCode)
 	}
 
 	var respJSON map[string]interface{}
@@ -205,6 +223,7 @@ func isInList(item string, l []string) bool {
 }
 
 func (st *DCOSTools) doRequest(method, url string, timeout time.Duration, body io.Reader) (responseBody []byte, httpResponseCode int, err error) {
+	log.Debugf("[%s] %s, timeout: %s", method, url, timeout.String())
 	request, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return responseBody, http.StatusBadRequest, err
@@ -222,13 +241,11 @@ func (st *DCOSTools) doRequest(method, url string, timeout time.Duration, body i
 
 // Get HTTP request.
 func (st *DCOSTools) Get(url string, timeout time.Duration) (body []byte, httpResponseCode int, err error) {
-	log.Debugf("GET %s, timeout: %s", url, timeout.String())
 	return st.doRequest("GET", url, timeout, nil)
 }
 
 // Post HTTP request.
 func (st *DCOSTools) Post(url string, timeout time.Duration) (body []byte, httpResponseCode int, err error) {
-	log.Debugf("POST %s, timeout: %s", url, timeout.String())
 	return st.doRequest("POST", url, timeout, nil)
 }
 
@@ -240,9 +257,10 @@ func (st *DCOSTools) GetTimestamp() time.Time {
 // GetMasterNodes finds DC/OS masters.
 func (st *DCOSTools) GetMasterNodes() (nodesResponse []Node, err error) {
 	finder := &findMastersInExhibitor{
-		url:   "http://127.0.0.1:8181/exhibitor/v1/cluster/status",
+		url:   st.ExhibitorURL,
 		getFn: st.Get,
 		next: &findNodesInDNS{
+			forceTLS: st.ForceTLS,
 			dnsRecord: "master.mesos",
 			role:      MasterRole,
 			next:      nil,
@@ -254,6 +272,7 @@ func (st *DCOSTools) GetMasterNodes() (nodesResponse []Node, err error) {
 // GetAgentNodes finds DC/OS agents.
 func (st *DCOSTools) GetAgentNodes() (nodes []Node, err error) {
 	finder := &findNodesInDNS{
+		forceTLS: st.ForceTLS,
 		dnsRecord: "leader.mesos",
 		role:      AgentRole,
 		getFn:     st.Get,

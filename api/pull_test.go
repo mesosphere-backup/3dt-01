@@ -37,7 +37,7 @@ func (s *PullerTestSuit) TestMonitoringResponseRace() {
 		defer wg.Done()
 		globalMonitoringResponse.updateMonitoringResponse(monitoringResponse{})
 	}()
-	// We call UpdateMonitoringResponse twice to ensure the RWMutex's write lock
+	// We call globalMonitoringResponse twice to ensure the RWMutex's write lock
 	// is held, not just a read lock.
 	wg.Add(1)
 	go func() {

@@ -426,32 +426,38 @@ func normalizeProperty(unitName string, p map[string]interface{}, d DCOSHelper) 
 
 type stdoutTimeoutPipe struct {
 	stdoutPipe io.ReadCloser
+	stderrPipe io.ReadCloser
 	cmd        *exec.Cmd
 	done       chan struct{}
 }
 
 func (cm *stdoutTimeoutPipe) Read(p []byte) (n int, err error) {
 	n, err = cm.stdoutPipe.Read(p)
+	if n == 0 {
+		log.Error("Coult not read stdout, trying to read stderr")
+		n, err = cm.stderrPipe.Read(p)
+	}
 	return
 }
 
 func (cm *stdoutTimeoutPipe) Close() error {
-	return cm.kill(true)
-}
-
-func (cm *stdoutTimeoutPipe) kill(callWait bool) error {
 	select {
 	case <-cm.done:
-		return errors.New("Already closed")
+		return nil
 	default:
 		close(cm.done)
 		if cm.cmd != nil {
-			if callWait {
-				cm.cmd.Wait()
-				return nil
+			if err := cm.cmd.Wait(); err != nil {
+				return err
 			}
-			cm.cmd.Process.Kill()
 		}
+	}
+	return nil
+}
+
+func (cm *stdoutTimeoutPipe) kill() error {
+	if cm.cmd != nil {
+		cm.cmd.Process.Kill()
 	}
 	return nil
 }
@@ -473,12 +479,17 @@ func runCmd(command []string, timeout int) (io.ReadCloser, error) {
 	// get stdout pipe
 	stdout.stdoutPipe, err = cmd.StdoutPipe()
 	if err != nil {
-		stdout.Close()
 		return stdout, err
 	}
+
+	// ignore and log error if stderr failed, but do not fail
+	stdout.stderrPipe, err = cmd.StderrPipe()
+	if err != nil {
+		log.Error(err)
+	}
+
 	// Execute a command
 	if err := cmd.Start(); err != nil {
-		stdout.Close()
 		return stdout, err
 	}
 	stdout.cmd = cmd
@@ -491,7 +502,7 @@ func runCmd(command []string, timeout int) (io.ReadCloser, error) {
 			log.Infof("Command %s executed successfully, PID %d", fullCommand, stdout.cmd.Process.Pid)
 		case <-time.After(time.Duration(timeout) * time.Second):
 			log.Errorf("Timeout occured, command %s, killing PID %d", fullCommand, cmd.Process.Pid)
-			stdout.kill(false)
+			stdout.kill()
 		}
 	}()
 	return stdout, nil
@@ -506,7 +517,7 @@ func readFile(fileLocation string) (r io.ReadCloser, err error) {
 	return file, nil
 }
 
-func readJournalOutputSince(unit, sinceString string, timeout int, doneChan chan bool) (io.ReadCloser, error) {
+func readJournalOutputSince(unit, sinceString string, timeout int) (io.ReadCloser, error) {
 	stdout := &stdoutTimeoutPipe{}
 	if !strings.HasPrefix(unit, "dcos-") {
 		return stdout, errors.New("Unit should start with dcos-, got: " + unit)

@@ -10,7 +10,10 @@ import (
 
 var (
 	// Version of 3dt code.
-	Version = "0.1.3"
+	Version = "0.2.0"
+
+	// APIVer is an API version.
+	APIVer = 1
 
 	// Revision injected by LDFLAGS a git commit reference.
 	Revision string
@@ -21,12 +24,13 @@ var (
 
 // Config structure is a main config object
 type Config struct {
-	Version                        string
-	Revision                       string
-	MesosIPDiscoveryCommand        string
-	DCOSVersion                    string
-	SystemdUnits                   []string
+	Version                 string
+	Revision                string
+	MesosIPDiscoveryCommand string
+	DCOSVersion             string
+	SystemdUnits            []string
 
+	// 3dt flags
 	FlagCACertFile                 string
 	FlagPull                       bool
 	FlagDiag                       bool
@@ -37,21 +41,45 @@ type Config struct {
 	FlagUpdateHealthReportInterval int
 	FlagExhibitorClusterStatusURL  string
 	FlagForceTLS                   bool
+
+	// snapshot job flags
+	FlagSnapshotDir                           string
+	FlagSnapshotEndpointsConfigFile           string
+	FlagSnapshotUnitsLogsSinceString          string
+	FlagSnapshotJobTimeoutMinutes             int
+	FlagSnapshotJobGetSingleURLTimeoutMinutes int
+	FlagCommandExecTimeoutSec                 int
 }
 
 func (c *Config) setFlags(fs *flag.FlagSet) {
+	//common flags
 	fs.StringVar(&c.FlagCACertFile, "ca-cert", c.FlagCACertFile, "Use certificate authority.")
-	fs.BoolVar(&c.FlagPull, "pull", c.FlagPull, "Try to pull checks from DC/OS hosts.")
 	fs.BoolVar(&c.FlagDiag, "diag", c.FlagDiag, "Get diagnostics output once on the CLI. Does not expose API.")
 	fs.BoolVar(&c.FlagVerbose, "verbose", c.FlagVerbose, "Use verbose debug output.")
 	fs.BoolVar(&c.FlagVersion, "version", c.FlagVersion, "Print version.")
 	fs.IntVar(&c.FlagPort, "port", c.FlagPort, "Web server TCP port.")
+	fs.IntVar(&c.FlagCommandExecTimeoutSec, "command-exec-timeout", c.FlagCommandExecTimeoutSec,
+		"Set command executing timeout")
+
+	// 3dt flags
+	fs.BoolVar(&c.FlagPull, "pull", c.FlagPull, "Try to pull checks from DC/OS hosts.")
 	fs.IntVar(&c.FlagPullInterval, "pull-interval", c.FlagPullInterval, "Set pull interval in seconds.")
 	fs.IntVar(&c.FlagUpdateHealthReportInterval, "health-update-interval", c.FlagUpdateHealthReportInterval,
 		"Set update health interval in seconds.")
 	fs.StringVar(&c.FlagExhibitorClusterStatusURL, "exhibitor-ip", c.FlagExhibitorClusterStatusURL,
 		"Use Exhibitor IP address to discover master nodes.")
 	fs.BoolVar(&c.FlagForceTLS, "force-tls", c.FlagForceTLS, "Use HTTPS to do all requests.")
+
+	// snapshot job flags
+	fs.StringVar(&c.FlagSnapshotDir, "snapshot-dir", c.FlagSnapshotDir, "Set a path to store snapshots")
+	fs.StringVar(&c.FlagSnapshotEndpointsConfigFile, "endpoint-config", c.FlagSnapshotEndpointsConfigFile,
+		"Use endpoints_config.json")
+	fs.StringVar(&c.FlagSnapshotUnitsLogsSinceString, "snapshot-units-since", c.FlagSnapshotUnitsLogsSinceString,
+		"Collect systemd units logs since")
+	fs.IntVar(&c.FlagSnapshotJobTimeoutMinutes, "snapshot-job-timeout", c.FlagSnapshotJobTimeoutMinutes,
+		"Set a global snapshot job timeout")
+	fs.IntVar(&c.FlagSnapshotJobGetSingleURLTimeoutMinutes, "snapshot-url-timeout", c.FlagSnapshotJobGetSingleURLTimeoutMinutes,
+		"Set a local timeout for every single GET request to a log endpoint")
 }
 
 // LoadDefaultConfig sets default config values or sets the values from a command line.
@@ -71,6 +99,19 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	config.Revision = Revision
 
 	config.FlagExhibitorClusterStatusURL = "http://127.0.0.1:8181/exhibitor/v1/cluster/status"
+
+	// snapshot job default flag values
+	config.FlagSnapshotDir = "/opt/mesosphere/snapshots"
+	config.FlagSnapshotJobTimeoutMinutes = 720 //12 hours
+
+	// 2 minutes for a URL GET timeout.
+	config.FlagSnapshotJobGetSingleURLTimeoutMinutes = 2
+
+	// 2 minutes for a command to run
+	config.FlagCommandExecTimeoutSec = 120
+
+	config.FlagSnapshotEndpointsConfigFile = "/opt/mesosphere/endpoints_config.json"
+	config.FlagSnapshotUnitsLogsSinceString = "24 hours ago"
 
 	detectIPCmd := os.Getenv("MESOS_IP_DISCOVERY_COMMAND")
 	if detectIPCmd == "" {

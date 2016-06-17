@@ -70,11 +70,6 @@ func main() {
 		DtSnapshotJob: snapshotJob,
 	}
 
-	// init requester
-	if err := api.Requester.Init(&config, dt.DtDCOSTools); err != nil {
-		log.Fatal(err)
-	}
-
 	// run local diagnostics, verify all systemd units are healthy.
 	if config.FlagDiag {
 		os.Exit(runDiag(dt))

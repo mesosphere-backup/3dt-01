@@ -358,6 +358,29 @@ func (mr *monitoringResponse) GetNodes() nodesResponseJSONStruct {
 	}
 }
 
+func (mr *monitoringResponse) getMasterAgentNodes() ([]Node, []Node, error) {
+	mr.RLock()
+	defer mr.RUnlock()
+
+	var masterNodes, agentNodes []Node
+	for _, node := range mr.Nodes {
+		if node.Role == MasterRole {
+			masterNodes = append(masterNodes, *node)
+			continue
+		}
+
+		if node.Role == AgentRole || node.Role == AgentPublicRole {
+			agentNodes = append(agentNodes, *node)
+		}
+	}
+
+	if len(masterNodes) == 0 && len(agentNodes) == 0 {
+		return masterNodes, agentNodes, errors.New("No nodes found in memory, perhaps 3dt was started without -pull flag")
+	}
+
+	return masterNodes, agentNodes, nil
+}
+
 func (mr *monitoringResponse) GetNodeByID(nodeIP string) (nodeResponseFieldsStruct, error) {
 	mr.RLock()
 	defer mr.RUnlock()
@@ -574,7 +597,7 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, port int, 
 		response.Status = statusCode
 
 		// Update Response and send it back to respChan
-		response.Host = jsonBody.Hostname
+		host.Host = jsonBody.Hostname
 
 		// update mesos node id
 		host.MesosID = jsonBody.MesosID

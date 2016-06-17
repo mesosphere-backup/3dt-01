@@ -40,7 +40,6 @@ type Node struct {
 // HttpResponse a structure of http response from a remote host.
 type httpResponse struct {
 	Status int
-	Host   string
 	Units  []unit
 	Node   Node
 }

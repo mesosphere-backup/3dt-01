@@ -100,18 +100,7 @@ func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, DCOSTools D
 		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Job is already running"))
 	}
 
-	// first discover all nodes in a cluster, then try to find requested nodes.
-	masterNodes, err := DCOSTools.GetMasterNodes()
-	if err != nil {
-		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
-	}
-
-	agentNodes, err := DCOSTools.GetAgentNodes()
-	if err != nil {
-		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
-	}
-
-	foundNodes, err := findRequestedNodes(masterNodes, agentNodes, req.Nodes)
+	foundNodes, err := findRequestedNodes(req.Nodes, DCOSTools)
 	if err != nil {
 		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 	}
@@ -580,9 +569,18 @@ func (j *SnapshotJob) findLocalSnapshot(config *Config) (snapshots []string, err
 	return snapshots, nil
 }
 
-func findRequestedNodes(masterNodes []Node, agentNodes []Node, requestedNodes []string) (matchedNodes []Node, err error) {
+func matchRequestedNodes(requestedNodes []string, masterNodes []Node, agentNodes []Node) ([]Node, error) {
+	var matchedNodes []Node
 	clusterNodes := append(masterNodes, agentNodes...)
+	if len(requestedNodes) == 0 || len(clusterNodes) == 0 {
+		return matchedNodes, errors.New("Cannot match requested nodes to clusterNodes")
+	}
+
 	for _, requestedNode := range requestedNodes {
+		if requestedNode == "" {
+			continue
+		}
+
 		if requestedNode == All {
 			return clusterNodes, nil
 		}
@@ -605,6 +603,25 @@ func findRequestedNodes(masterNodes []Node, agentNodes []Node, requestedNodes []
 	return matchedNodes, fmt.Errorf("Requested nodes: %s not found", requestedNodes)
 }
 
+func findRequestedNodes(requestedNodes []string, DCOSTools DCOSHelper) ([]Node, error) {
+	var masterNodes, agentNodes []Node
+	masterNodes, agentNodes, err := globalMonitoringResponse.getMasterAgentNodes()
+	if err != nil {
+		// failed to find master and agent nodes in memory. Try to discover
+		log.Error(err)
+		masterNodes, err = DCOSTools.GetMasterNodes()
+		if err != nil {
+			log.Error(err)
+		}
+
+		agentNodes, err = DCOSTools.GetAgentNodes()
+		if err != nil {
+			log.Error(err)
+		}
+	}
+	return matchRequestedNodes(requestedNodes, masterNodes, agentNodes)
+}
+
 // LogProviders a structure defines a list of Providers
 type LogProviders struct {
 	HTTPEndpoints []HTTPProvider
@@ -617,20 +634,20 @@ type HTTPProvider struct {
 	Port     int
 	URI      string
 	FileName string
-	Role     string
+	Role     []string
 }
 
 // FileProvider is a local file provider.
 type FileProvider struct {
 	Location          string
-	Role              string
+	Role              []string
 	sanitizedLocation string
 }
 
 // CommandProvider is a local command to execute.
 type CommandProvider struct {
 	Command        []string
-	Role           string
+	Role           []string
 	indexedCommand string
 }
 
@@ -693,12 +710,26 @@ func (j *SnapshotJob) getLogsEndpoints(config *Config, DCOSTools DCOSHelper) (en
 		log.Error("Failed to get a current role for a config")
 	}
 
+	matchRole := func(currentRole string, roles []string) bool {
+		// if roles is empty, use for all roles.
+		if len(roles) == 0 {
+			return true
+		}
+
+		for _, role := range roles {
+			if role == currentRole {
+				return true
+			}
+		}
+		return false
+	}
+
 	// http endpoints
 	for _, httpEndpoint := range j.logProviders.HTTPEndpoints {
 		// if a role wasn't detected, consider to load all endpoints from a config file.
 		// if the role could not be detected or it is not set in a config file use the log endpoint.
 		// do not use the role only if it is set, detected and does not match the role form a config.
-		if currentRole != "" && httpEndpoint.Role != "" && httpEndpoint.Role != currentRole {
+		if !matchRole(currentRole, httpEndpoint.Role) {
 			continue
 		}
 		endpoints[httpEndpoint.FileName] = fmt.Sprintf(":%d%s", httpEndpoint.Port, httpEndpoint.URI)
@@ -706,7 +737,7 @@ func (j *SnapshotJob) getLogsEndpoints(config *Config, DCOSTools DCOSHelper) (en
 
 	// file endpoints
 	for _, file := range j.logProviders.LocalFiles {
-		if currentRole != "" && file.Role != "" && file.Role != currentRole {
+		if !matchRole(currentRole, file.Role) {
 			continue
 		}
 		endpoints[file.Location] = fmt.Sprintf(":%d%s/logs/files/%s", config.FlagPort, BaseRoute, file.sanitizedLocation)
@@ -714,7 +745,7 @@ func (j *SnapshotJob) getLogsEndpoints(config *Config, DCOSTools DCOSHelper) (en
 
 	// command endpoints
 	for _, c := range j.logProviders.LocalCommands {
-		if currentRole != "" && c.Role != "" && c.Role != currentRole {
+		if !matchRole(currentRole, c.Role) {
 			continue
 		}
 		if c.indexedCommand != "" {
@@ -749,16 +780,8 @@ func (j *SnapshotJob) Init(config *Config, DCOSTools DCOSHelper) error {
 	// set filename if not set
 	for index, endpoint := range j.logProviders.HTTPEndpoints {
 		if endpoint.FileName == "" {
-			// if an endpoint is 1050:/system/health/v1
-			// filename will be role:1050:system_health_v1
-			var role string
-			if endpoint.Role == "" {
-				role = "any"
-			} else {
-				role = endpoint.Role
-			}
 			sanitizedPath := strings.Replace(strings.TrimLeft(endpoint.URI, "/"), "/", "_", -1)
-			j.logProviders.HTTPEndpoints[index].FileName = fmt.Sprintf("%s-%d:%s.json", role, endpoint.Port, sanitizedPath)
+			j.logProviders.HTTPEndpoints[index].FileName = fmt.Sprintf("%d:%s.json", endpoint.Port, sanitizedPath)
 		}
 	}
 
@@ -778,18 +801,19 @@ func (j *SnapshotJob) Init(config *Config, DCOSTools DCOSHelper) error {
 	return nil
 }
 
-func roleMatched(role string, DCOSTools DCOSHelper) (bool, error) {
+func roleMatched(roles []string, DCOSTools DCOSHelper) (bool, error) {
 	// if a role is empty, that means it does not matter master or agent, always return true.
-	if role == "" {
+	if len(roles) == 0 {
 		return true, nil
 	}
+
 	myRole, err := DCOSTools.GetNodeRole()
 	if err != nil {
 		log.Error(err)
 		return false, err
 	}
-	log.Debugf("Roles requested: %s, detected: %s", role, myRole)
-	return role == myRole, nil
+	log.Debugf("Roles requested: %s, detected: %s", roles, myRole)
+	return isInList(myRole, roles), nil
 }
 
 func (j *SnapshotJob) dispatchLogs(provider string, entity string, config *Config, DCOSTools DCOSHelper) (r io.ReadCloser, err error) {

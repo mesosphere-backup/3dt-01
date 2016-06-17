@@ -3,192 +3,192 @@
         {
             "Port": 5050,
             "Uri": "/__processes__",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 5050,
             "Uri": "/master/flags",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 5050,
             "Uri": "/master/frameworks",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 5050,
             "Uri": "/master/maintenance/schedule",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 5050,
             "Uri": "/master/maintenance/status",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 5050,
             "Uri": "/master/roles",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 5050,
             "Uri": "/master/slaves",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 5050,
             "Uri": "/master/state",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 5050,
             "Uri": "/master/state-summary",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 5050,
             "Uri": "/master/tasks",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 5050,
             "Uri": "/metrics/snapshot",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 5050,
             "Uri": "/registrar(1)/registry",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 5050,
             "Uri": "/system/stats.json",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 5050,
             "Uri": "/version",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 8080,
             "Uri": "/metrics",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 8080,
             "Uri": "/v2/apps",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 8080,
             "Uri": "/v2/deployments",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 8080,
             "Uri": "/v2/eventSubscriptions",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 8080,
             "Uri": "/v2/groups",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 8080,
             "Uri": "/v2/info",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 8080,
             "Uri": "/v2/leader",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 8080,
             "Uri": "/v2/queue",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 8080,
             "Uri": "/v2/tasks",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 8181,
             "Uri": "/exhibitor/v1/cluster/list",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 8181,
             "Uri": "/exhibitor/v1/cluster/log",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 8181,
             "Uri": "/exhibitor/v1/cluster/state",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 8181,
             "Uri": "/exhibitor/v1/cluster/status",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 8181,
             "Uri": "/exhibitor/v1/config/get-state",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 5051,
             "Uri": "/__processes__",
-            "Role": "agent"
+            "Role":["agent", "agent_public"]
         },
         {
             "Port": 5051,
             "Uri": "/metrics/snapshot",
-            "Role": "agent"
+            "Role":["agent", "agent_public"]
         },
         {
             "Port": 5051,
             "Uri": "/slave/flags",
-            "Role": "agent"
+            "Role":["agent", "agent_public"]
         },
         {
             "Port": 5051,
             "Uri": "/slave/state",
-            "Role": "agent"
+            "Role":["agent", "agent_public"]
         },
         {
             "Port": 5051,
             "Uri": "/system/stats.json",
-            "Role": "agent"
+            "Role":["agent", "agent_public"]
         },
         {
             "Port": 8123,
             "Uri": "/v1/config",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 8123,
             "Uri": "/v1/version",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 15055,
             "Uri": "/history/last",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 15055,
             "Uri": "/history/minute",
-            "Role": "master"
+            "Role": ["master"]
         },
         {
             "Port": 15055,
             "Uri": "/history/hour",
-            "Role": "master"
+            "Role": ["master"]
         }
     ],
     "LocalFiles": [

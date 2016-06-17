@@ -574,7 +574,7 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, port int, 
 		response.Status = statusCode
 
 		// Update Response and send it back to respChan
-		response.Host = jsonBody.Hostname
+		host.Host = jsonBody.Hostname
 
 		// update mesos node id
 		host.MesosID = jsonBody.MesosID

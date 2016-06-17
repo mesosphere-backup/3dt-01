@@ -45,63 +45,84 @@ func (s *SnapshotTestSuit) TearDownTest() {
 }
 
 func (s *SnapshotTestSuit) TestFindRequestedNodes() {
-	masterNodes := []Node{
-		Node{
-			IP: "10.10.0.1",
-		},
-		Node{
-			Host: "my-host.com",
-		},
-		Node{
-			MesosID: "12345-12345",
+	mockedGlobalMonitoringResponse := monitoringResponse{
+		Nodes: map[string]*Node {
+			"10.10.0.1": {
+				IP: "10.10.0.1",
+				Role: "master",
+			},
+			"10.10.0.2": {
+				IP: "10.10.0.2",
+				Host: "my-host.com",
+				Role: "master",
+			},
+			"10.10.0.3": {
+				IP: "10.10.0.3",
+				MesosID: "12345-12345",
+				Role: "master",
+			},
+			"127.0.0.1": {
+				IP: "127.0.0.1",
+				Role: "agent",
+			},
 		},
 	}
-	agentNodes := []Node{
-		Node{
-			IP: "127.0.0.1",
-		},
-	}
+	globalMonitoringResponse.updateMonitoringResponse(mockedGlobalMonitoringResponse)
+
 	// should return masters + agents
 	requestedNodes := []string{"all"}
-	nodes, err := findRequestedNodes(masterNodes, agentNodes, requestedNodes)
+	nodes, err := findRequestedNodes(requestedNodes, s.dt.DtDCOSTools)
 	s.assert.Nil(err)
-	s.assert.Equal(nodes, append(masterNodes, agentNodes...))
+	s.assert.Len(nodes, 4)
+	s.assert.Contains(nodes, Node{IP: "10.10.0.1", Role: "master"})
+	s.assert.Contains(nodes, Node{IP: "10.10.0.2", Role: "master", Host: "my-host.com"})
+	s.assert.Contains(nodes, Node{IP: "10.10.0.3", Role: "master", MesosID: "12345-12345"})
+	s.assert.Contains(nodes, Node{IP: "127.0.0.1", Role: "agent"})
 
 	// should return only masters
 	requestedNodes = []string{"masters"}
-	nodes, err = findRequestedNodes(masterNodes, agentNodes, requestedNodes)
+	nodes, err = findRequestedNodes(requestedNodes, s.dt.DtDCOSTools)
 	s.assert.Nil(err)
-	s.assert.Equal(nodes, masterNodes)
+	s.assert.Len(nodes, 3)
+	s.assert.Contains(nodes, Node{IP: "10.10.0.1", Role: "master"})
+	s.assert.Contains(nodes, Node{IP: "10.10.0.2", Role: "master", Host: "my-host.com"})
+	s.assert.Contains(nodes, Node{IP: "10.10.0.3", Role: "master", MesosID: "12345-12345"})
 
 	// should return only agents
 	requestedNodes = []string{"agents"}
-	nodes, err = findRequestedNodes(masterNodes, agentNodes, requestedNodes)
+	nodes, err = findRequestedNodes(requestedNodes, s.dt.DtDCOSTools)
 	s.assert.Nil(err)
-	s.assert.Equal(nodes, agentNodes)
+	s.assert.Len(nodes, 1)
+	s.assert.Contains(nodes, Node{IP: "127.0.0.1", Role: "agent"})
 
 	// should return host with ip
 	requestedNodes = []string{"10.10.0.1"}
-	nodes, err = findRequestedNodes(masterNodes, agentNodes, requestedNodes)
+	nodes, err = findRequestedNodes(requestedNodes, s.dt.DtDCOSTools)
 	s.assert.Nil(err)
-	s.assert.Equal(nodes, []Node{masterNodes[0]})
+	s.assert.Len(nodes, 1)
+	s.assert.Contains(nodes, Node{IP: "10.10.0.1", Role: "master"})
 
 	// should return host with hostname
 	requestedNodes = []string{"my-host.com"}
-	nodes, err = findRequestedNodes(masterNodes, agentNodes, requestedNodes)
+	nodes, err = findRequestedNodes(requestedNodes, s.dt.DtDCOSTools)
 	s.assert.Nil(err)
-	s.assert.Equal(nodes, []Node{masterNodes[1]})
+	s.assert.Len(nodes, 1)
+	s.assert.Contains(nodes, Node{IP: "10.10.0.2", Role: "master", Host: "my-host.com"})
 
 	// should return host with mesos-id
 	requestedNodes = []string{"12345-12345"}
-	nodes, err = findRequestedNodes(masterNodes, agentNodes, requestedNodes)
+	nodes, err = findRequestedNodes(requestedNodes, s.dt.DtDCOSTools)
 	s.assert.Nil(err)
-	s.assert.Equal(nodes, []Node{masterNodes[2]})
+	s.assert.Len(nodes, 1)
+	s.assert.Contains(nodes, Node{IP: "10.10.0.3", Role: "master", MesosID: "12345-12345"})
 
 	// should return agents and node with ip
 	requestedNodes = []string{"agents", "10.10.0.1"}
-	nodes, err = findRequestedNodes(masterNodes, agentNodes, requestedNodes)
+	nodes, err = findRequestedNodes(requestedNodes, s.dt.DtDCOSTools)
 	s.assert.Nil(err)
-	s.assert.Equal(nodes, append(agentNodes, masterNodes[0]))
+	s.assert.Len(nodes, 2)
+	s.assert.Contains(nodes, Node{IP: "10.10.0.1", Role: "master"})
+	s.assert.Contains(nodes, Node{IP: "127.0.0.1", Role: "agent"})
 }
 
 func (s *SnapshotTestSuit) TestGetStatus() {

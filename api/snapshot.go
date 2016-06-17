@@ -100,18 +100,7 @@ func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, DCOSTools D
 		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Job is already running"))
 	}
 
-	// first discover all nodes in a cluster, then try to find requested nodes.
-	masterNodes, err := DCOSTools.GetMasterNodes()
-	if err != nil {
-		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
-	}
-
-	agentNodes, err := DCOSTools.GetAgentNodes()
-	if err != nil {
-		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
-	}
-
-	foundNodes, err := findRequestedNodes(masterNodes, agentNodes, req.Nodes)
+	foundNodes, err := findRequestedNodes(req.Nodes, DCOSTools)
 	if err != nil {
 		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 	}
@@ -580,9 +569,18 @@ func (j *SnapshotJob) findLocalSnapshot(config *Config) (snapshots []string, err
 	return snapshots, nil
 }
 
-func findRequestedNodes(masterNodes []Node, agentNodes []Node, requestedNodes []string) (matchedNodes []Node, err error) {
+func matchRequestedNodes(requestedNodes []string, masterNodes []Node, agentNodes []Node) ([]Node, error) {
+	var matchedNodes []Node
 	clusterNodes := append(masterNodes, agentNodes...)
+	if len(requestedNodes) == 0 || len(clusterNodes) == 0 {
+		return matchedNodes, errors.New("Cannot match requested nodes to clusterNodes")
+	}
+
 	for _, requestedNode := range requestedNodes {
+		if requestedNode == "" {
+			continue
+		}
+
 		if requestedNode == All {
 			return clusterNodes, nil
 		}
@@ -603,6 +601,25 @@ func findRequestedNodes(masterNodes []Node, agentNodes []Node, requestedNodes []
 		return matchedNodes, nil
 	}
 	return matchedNodes, fmt.Errorf("Requested nodes: %s not found", requestedNodes)
+}
+
+func findRequestedNodes(requestedNodes []string, DCOSTools DCOSHelper) ([]Node, error) {
+	var masterNodes, agentNodes []Node
+	masterNodes, agentNodes, err := globalMonitoringResponse.getMasterAgentNodes()
+	if err != nil {
+		// failed to find master and agent nodes in memory. Try to discover
+		log.Error(err)
+		masterNodes, err = DCOSTools.GetMasterNodes()
+		if err != nil {
+			log.Error(err)
+		}
+
+		agentNodes, err = DCOSTools.GetAgentNodes()
+		if err != nil {
+			log.Error(err)
+		}
+	}
+	return matchRequestedNodes(requestedNodes, masterNodes, agentNodes)
 }
 
 // LogProviders a structure defines a list of Providers

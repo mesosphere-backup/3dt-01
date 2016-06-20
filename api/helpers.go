@@ -344,6 +344,17 @@ func Do(req *http.Request, timeout time.Duration, caPool *x509.CertPool, headers
 		Timeout: timeout,
 	}
 
+	// go http client does not copy the headers when it follows the redirect.
+	// https://github.com/golang/go/issues/4800
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		for attr, val := range via[0].Header {
+			if _, ok := req.Header[attr]; !ok {
+				req.Header[attr] = val
+			}
+		}
+		return nil
+	}
+
 	if req.URL.Scheme == "https" {
 		var tlsClientConfig *tls.Config
 		if caPool == nil {

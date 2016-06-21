@@ -53,6 +53,13 @@ type snapshotReportResponse struct {
 	Errors       []string `json:"errors"`
 }
 
+type createResponse struct {
+	snapshotReportResponse
+	Extra        struct{
+			     LastSnapshotFile string `json:"snapshot_name"`
+		     }        `json:"extra"`
+}
+
 // snapshot job status format
 type snapshotReportStatus struct {
 	// job related fields
@@ -82,27 +89,27 @@ type snapshotCreateRequest struct {
 }
 
 // start a snapshot job
-func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, DCOSTools DCOSHelper) (response snapshotReportResponse, err error) {
+func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, DCOSTools DCOSHelper) (createResponse, error) {
 	role, err := DCOSTools.GetNodeRole()
 	if err != nil {
-		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
+		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, err)
 	}
 
 	if role == AgentRole || role == AgentPublicRole {
-		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Running snapshot job on agent node is not implemented."))
+		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, errors.New("Running snapshot job on agent node is not implemented."))
 	}
 
 	isRunning, _, err := j.isRunning(config, DCOSTools)
 	if err != nil {
-		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
+		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, err)
 	}
 	if isRunning {
-		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Job is already running"))
+		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, errors.New("Job is already running"))
 	}
 
 	foundNodes, err := findRequestedNodes(req.Nodes, DCOSTools)
 	if err != nil {
-		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
+		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, err)
 	}
 	log.Debugf("Found requested nodes: %s", foundNodes)
 
@@ -112,7 +119,7 @@ func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, DCOSTools D
 		log.Infof("snapshot dir: %s not found, attempting to create one", config.FlagSnapshotDir)
 		if err := os.Mkdir(config.FlagSnapshotDir, os.ModePerm); err != nil {
 			j.Status = "Could not create snapshot directory: " + config.FlagSnapshotDir
-			return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New(j.Status))
+			return prepareCreateResponseWithErr(http.StatusServiceUnavailable, errors.New(j.Status))
 		}
 	}
 
@@ -120,13 +127,21 @@ func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, DCOSTools D
 	j.Errors = nil
 
 	t := time.Now()
-	j.LastSnapshotPath = fmt.Sprintf("%s/snapshot-%d-%02d-%02dT%02d:%02d:%02d-%d.zip", config.FlagSnapshotDir, t.Year(),
-		t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond())
+	snapshotName := fmt.Sprintf("snapshot-%d-%02d-%02dT%02d:%02d:%02d-%d.zip", t.Year(), t.Month(), t.Day(),
+		t.Hour(), t.Minute(), t.Second(), t.Nanosecond())
+
+	j.LastSnapshotPath = filepath.Join(config.FlagSnapshotDir, snapshotName)
 	j.Status = "Snapshot job started, archive will be available at: " + j.LastSnapshotPath
 
 	j.cancelChan = make(chan bool)
 	go j.runBackgroundJob(foundNodes, config, DCOSTools)
-	return prepareResponseOk(http.StatusOK, "Snapshot job started: "+filepath.Base(j.LastSnapshotPath))
+
+	var r createResponse
+	r.Extra.LastSnapshotFile = snapshotName
+	r.ResponseCode = http.StatusOK
+	r.Version = APIVer
+	r.Status = "Job has been successfully started"
+	return r, nil
 }
 
 //
@@ -453,6 +468,16 @@ func prepareResponseWithErr(httpStatusCode int, e error) (response snapshotRepor
 		response.Status = e.Error()
 	}
 	return response, e
+}
+
+func prepareCreateResponseWithErr(httpStatusCode int, e error) (createResponse, error) {
+	cr := createResponse{}
+	cr.ResponseCode = httpStatusCode
+	cr.Version = APIVer
+	if e != nil {
+		cr.Status = e.Error()
+	}
+	return cr, e
 }
 
 // cancel a running job

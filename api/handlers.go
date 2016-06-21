@@ -135,6 +135,13 @@ func writeResponse(w http.ResponseWriter, response snapshotReportResponse) {
 	}
 }
 
+func writeCreateResponse(w http.ResponseWriter, response createResponse) {
+	w.WriteHeader(response.ResponseCode)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Error(err)
+	}
+}
+
 // snapshot handlers
 // A handler responsible for removing snapshots. First it will try to find a snapshot locally, if failed
 // it will send a broadcast request to all cluster master members and check if snapshot it available.
@@ -255,7 +262,7 @@ func createSnapshotHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	if err != nil {
 		log.Error(err)
 	}
-	writeResponse(w, response)
+	writeCreateResponse(w, response)
 }
 
 // A handler function to to get a list of available logs on a node.

@@ -10,7 +10,6 @@ import (
 	"io"
 	"encoding/json"
 	"bytes"
-	"strings"
 	"io/ioutil"
 	"time"
 )
@@ -368,11 +367,12 @@ func (s *SnapshotTestSuit) TestRunSnapshot() {
 	body := bytes.NewBuffer([]byte(`{"nodes": ["all"]}`))
 	response, code := s.http("http://127.0.0.1:1050/system/health/v1/report/snapshot/create", "POST", body)
 	s.assert.Equal(code, http.StatusOK)
-	var responseJSON snapshotReportResponse
+	var responseJSON createResponse
 	if err := json.Unmarshal(response, &responseJSON); err != nil {
 		s.Assert()
 	}
-	s.assert.True(strings.HasPrefix(responseJSON.Status, "Snapshot job started"))
+	s.assert.Equal(responseJSON.Status, "Job has been successfully started")
+	s.assert.NotEmpty(responseJSON.Extra.LastSnapshotFile)
 	time.Sleep(2*time.Second)
 	snapshotFiles, err := ioutil.ReadDir("/tmp/snapshot-test")
 	s.assert.NoError(err)

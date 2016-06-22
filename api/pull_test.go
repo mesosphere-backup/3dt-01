@@ -20,7 +20,7 @@ func (s *PullerTestSuit) SetupTest() {
 		DtDCOSTools: &fakeDCOSTools{},
 		Cfg: &testCfg,
 	}
-	runPull(1050, s.dt)
+	runPull(s.dt)
 }
 
 func (s *PullerTestSuit) TearDownTest() {

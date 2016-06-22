@@ -55,9 +55,9 @@ type snapshotReportResponse struct {
 
 type createResponse struct {
 	snapshotReportResponse
-	Extra        struct{
-			     LastSnapshotFile string `json:"snapshot_name"`
-		     }        `json:"extra"`
+	Extra struct {
+		LastSnapshotFile string `json:"snapshot_name"`
+	} `json:"extra"`
 }
 
 // snapshot job status format
@@ -230,8 +230,16 @@ func (j *SnapshotJob) runBackgroundJob(nodes []Node, config *Config, DCOSTools D
 	defer j.Unlock()
 
 	for _, node := range nodes {
+		port, err := getPullPortByRole(config, node.Role)
+		if err != nil {
+			log.Error(err)
+			j.Errors = append(j.Errors, err.Error())
+			updateSummaryReport("Used incorrect role", node, err.Error(), summaryErrorsReport)
+			continue
+		}
+
 		updateSummaryReport("START collecting logs", node, "", summaryReport)
-		url := fmt.Sprintf("http://%s:%d%s/logs", node.IP, config.FlagPort, BaseRoute)
+		url := fmt.Sprintf("http://%s:%d%s/logs", node.IP, port, BaseRoute)
 		endpoints := make(map[string]string)
 		body, statusCode, err := DCOSTools.Get(url, time.Duration(time.Second*3))
 		if err != nil {
@@ -299,7 +307,7 @@ func (j *SnapshotJob) delete(snapshotName string, config *Config, DCOSTools DCOS
 		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 	}
 	if ok {
-		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/delete/%s", node, config.FlagPort, BaseRoute, snapshotName)
+		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/delete/%s", node, config.FlagMasterPort, BaseRoute, snapshotName)
 		j.Status = "Attempting to delete a snapshot on a remote host. POST " + url
 		log.Debug(j.Status)
 		timeout := time.Duration(time.Second * 5)
@@ -354,7 +362,7 @@ func (j *SnapshotJob) getStatusAll(config *Config, DCOSTools DCOSHelper) (map[st
 
 	for _, master := range masterNodes {
 		var status snapshotReportStatus
-		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/status", master.IP, config.FlagPort, BaseRoute)
+		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/status", master.IP, config.FlagMasterPort, BaseRoute)
 		body, _, err := DCOSTools.Get(url, time.Duration(time.Second*3))
 		if err = json.Unmarshal(body, &status); err != nil {
 			log.Error(err)
@@ -505,7 +513,7 @@ func (j *SnapshotJob) cancel(config *Config, DCOSTools DCOSHelper) (response sna
 		j.cancelChan <- true
 		log.Debug("Cancelling a local job")
 	} else {
-		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/cancel", node, config.FlagPort, BaseRoute)
+		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/cancel", node, config.FlagMasterPort, BaseRoute)
 		j.Status = "Attempting to cancel a job on a remote host. POST " + url
 		log.Debug(j.Status)
 		response, _, err := DCOSTools.Post(url, time.Duration(config.FlagSnapshotJobGetSingleURLTimeoutMinutes)*time.Minute)
@@ -540,7 +548,7 @@ func listAllSnapshots(config *Config, DCOSTools DCOSHelper) (map[string][]string
 	}
 	for _, master := range masterNodes {
 		var snapshotUrls []string
-		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/list", master.IP, config.FlagPort, BaseRoute)
+		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/list", master.IP, config.FlagMasterPort, BaseRoute)
 		body, _, err := DCOSTools.Get(url, time.Duration(time.Second*3))
 		if err != nil {
 			log.Error(err)
@@ -550,7 +558,7 @@ func listAllSnapshots(config *Config, DCOSTools DCOSHelper) (map[string][]string
 			log.Error(err)
 			continue
 		}
-		collectedSnapshots[fmt.Sprintf("%s:%d", master.IP, config.FlagPort)] = snapshotUrls
+		collectedSnapshots[fmt.Sprintf("%s:%d", master.IP, config.FlagMasterPort)] = snapshotUrls
 	}
 	return collectedSnapshots, nil
 }
@@ -701,11 +709,21 @@ func loadInternalProviders(config *Config, DCOSTools DCOSHelper) (internalConfig
 		return internalConfigProviders, err
 	}
 
+	role, err := DCOSTools.GetNodeRole()
+	if err != nil {
+		return internalConfigProviders, err
+	}
+
+	port, err := getPullPortByRole(config, role)
+	if err != nil {
+		return internalConfigProviders, err
+	}
+
 	// load default HTTP
 	var httpEndpoints []HTTPProvider
 	for _, unit := range append(units, config.SystemdUnits...) {
 		httpEndpoints = append(httpEndpoints, HTTPProvider{
-			Port:     config.FlagPort,
+			Port:     port,
 			URI:      fmt.Sprintf("%s/logs/units/%s", BaseRoute, unit),
 			FileName: unit,
 		})
@@ -713,7 +731,7 @@ func loadInternalProviders(config *Config, DCOSTools DCOSHelper) (internalConfig
 
 	// add 3dt health report.
 	httpEndpoints = append(httpEndpoints, HTTPProvider{
-		Port:     1050,
+		Port:     port,
 		URI:      BaseRoute,
 		FileName: "3dt-health.json",
 	})
@@ -733,6 +751,11 @@ func (j *SnapshotJob) getLogsEndpoints(config *Config, DCOSTools DCOSHelper) (en
 	if err != nil {
 		log.Error(err)
 		log.Error("Failed to get a current role for a config")
+	}
+
+	port, err := getPullPortByRole(config, currentRole)
+	if err != nil {
+		return endpoints, err
 	}
 
 	matchRole := func(currentRole string, roles []string) bool {
@@ -765,7 +788,7 @@ func (j *SnapshotJob) getLogsEndpoints(config *Config, DCOSTools DCOSHelper) (en
 		if !matchRole(currentRole, file.Role) {
 			continue
 		}
-		endpoints[file.Location] = fmt.Sprintf(":%d%s/logs/files/%s", config.FlagPort, BaseRoute, file.sanitizedLocation)
+		endpoints[file.Location] = fmt.Sprintf(":%d%s/logs/files/%s", port, BaseRoute, file.sanitizedLocation)
 	}
 
 	// command endpoints
@@ -774,7 +797,7 @@ func (j *SnapshotJob) getLogsEndpoints(config *Config, DCOSTools DCOSHelper) (en
 			continue
 		}
 		if c.indexedCommand != "" {
-			endpoints[c.indexedCommand] = fmt.Sprintf(":%d%s/logs/cmds/%s", config.FlagPort, BaseRoute, c.indexedCommand)
+			endpoints[c.indexedCommand] = fmt.Sprintf(":%d%s/logs/cmds/%s", port, BaseRoute, c.indexedCommand)
 		}
 	}
 	return endpoints, nil

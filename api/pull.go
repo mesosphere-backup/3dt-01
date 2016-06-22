@@ -449,13 +449,13 @@ func StartPullWithInterval(dt Dt, ready chan struct{}) {
 
 	// Start infinite loop
 	for {
-		runPull(dt.Cfg.FlagPort, dt)
+		runPull(dt)
 		log.Debugf("Waiting %d seconds before next pull", dt.Cfg.FlagPullInterval)
 		dt.DtDCOSTools.WaitBetweenPulls(dt.Cfg.FlagPullInterval)
 	}
 }
 
-func runPull(port int, dt Dt) {
+func runPull(dt Dt) {
 	var clusterHosts []Node
 	masterNodes, err := dt.DtDCOSTools.GetMasterNodes()
 	if err != nil {
@@ -482,7 +482,7 @@ func runPull(port int, dt Dt) {
 
 	// Pull data from each host
 	for i := 1; i <= len(clusterHosts); i++ {
-		go pullHostStatus(hostsChan, respChan, port, dt)
+		go pullHostStatus(hostsChan, respChan, dt)
 	}
 
 	// blocking here got get all responses from hosts
@@ -556,9 +556,19 @@ func collectResponses(respChan <-chan *httpResponse, totalHosts int) (responses 
 	}
 }
 
-func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, port int, dt Dt) {
+func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, dt Dt) {
 	for host := range hosts {
 		var response httpResponse
+
+		port, err := getPullPortByRole(dt.Cfg, host.Role)
+		if err != nil {
+			log.Error(err)
+			response.Status = http.StatusServiceUnavailable
+			host.Health = 3
+			response.Node = host
+			respChan <- &response
+			continue
+		}
 
 		// UnitsRoute available in router.go
 		url, err := useTLSScheme(fmt.Sprintf("http://%s:%d%s", host.IP, port, BaseRoute), dt.Cfg.FlagForceTLS)
@@ -573,7 +583,7 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, port int, 
 
 		// Make a request to get node units status
 		// use fake interface implementation for tests
-		timeout := time.Duration(3) * time.Second
+		timeout := time.Duration(3 * time.Second)
 		body, statusCode, err := dt.DtDCOSTools.Get(url, timeout)
 		if err != nil {
 			log.Error(err)
@@ -636,4 +646,16 @@ func loadJobs(jobChan chan Node, hosts []Node) {
 	}
 	// we should close the channel, since we will recreate a list every 60 sec
 	close(jobChan)
+}
+
+func getPullPortByRole(config *Config, role string) (int, error) {
+	var port int
+	if role != MasterRole && role != AgentRole && role != AgentPublicRole {
+		return port, fmt.Errorf("Incorrect role %s, must be: %s, %s or %s", role, MasterRole, AgentRole, AgentPublicRole)
+	}
+	port = config.FlagAgentPort
+	if role == MasterRole {
+		port = config.FlagMasterPort
+	}
+	return port, nil
 }

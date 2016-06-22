@@ -37,6 +37,8 @@ type Config struct {
 	FlagVerbose                    bool
 	FlagVersion                    bool
 	FlagPort                       int
+	FlagMasterPort                 int
+	FlagAgentPort                  int
 	FlagPullInterval               int
 	FlagUpdateHealthReportInterval int
 	FlagExhibitorClusterStatusURL  string
@@ -58,6 +60,8 @@ func (c *Config) setFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.FlagVerbose, "verbose", c.FlagVerbose, "Use verbose debug output.")
 	fs.BoolVar(&c.FlagVersion, "version", c.FlagVersion, "Print version.")
 	fs.IntVar(&c.FlagPort, "port", c.FlagPort, "Web server TCP port.")
+	fs.IntVar(&c.FlagMasterPort, "master-port", c.FlagMasterPort, "Use TCP port to connect to masters.")
+	fs.IntVar(&c.FlagAgentPort, "agent-port", c.FlagAgentPort, "Use TCP port to connect to agents.")
 	fs.IntVar(&c.FlagCommandExecTimeoutSec, "command-exec-timeout", c.FlagCommandExecTimeoutSec,
 		"Set command executing timeout")
 
@@ -90,6 +94,12 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 
 	// default tcp port is 1050
 	config.FlagPort = 1050
+
+	// default connect to master port
+	config.FlagMasterPort = 1050
+
+	// default connect to agent port
+	config.FlagAgentPort = 1050
 
 	// default pulling and health update interval is 60 seconds
 	config.FlagPullInterval = 60

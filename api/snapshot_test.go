@@ -173,7 +173,7 @@ func (s *SnapshotTestSuit) TestGetAllStatus() {
 
 func (s *SnapshotTestSuit) TestisSnapshotAvailable() {
 	url := fmt.Sprintf("http://127.0.0.1:1050%s/report/snapshot/list", BaseRoute)
-	mockedResponse := `["/system/health/v1/report/snapshot/serve/snapshot-2016-05-13T22:11:36.zip"]`
+	mockedResponse := `[{"file_name": "/system/health/v1/report/snapshot/serve/snapshot-2016-05-13T22:11:36.zip", "file_size": 123}]`
 
 	st := &fakeDCOSTools{}
 	st.makeMockedResponse(url, []byte(mockedResponse), http.StatusOK, nil)

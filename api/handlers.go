@@ -207,10 +207,19 @@ func listAvailableLocalSnapshotFilesHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	var snapshots []string
+	var snapshots []snapshot
 	for _, file := range matches {
 		baseFile := filepath.Base(file)
-		snapshots = append(snapshots, fmt.Sprintf("%s/report/snapshot/serve/%s", BaseRoute, baseFile))
+		fileInfo, err := os.Stat(file)
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+
+		snapshots = append(snapshots, snapshot{
+			File: fmt.Sprintf("%s/report/snapshot/serve/%s", BaseRoute, baseFile),
+			Size: fileInfo.Size(),
+		})
 	}
 	if err := json.NewEncoder(w).Encode(snapshots); err != nil {
 		log.Error("Failed to encode responses to json")

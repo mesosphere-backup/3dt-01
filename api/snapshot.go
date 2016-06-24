@@ -540,14 +540,14 @@ func (j *SnapshotJob) stop() {
 }
 
 // get a list of all snapshots across the cluster.
-func listAllSnapshots(config *Config, DCOSTools DCOSHelper) (map[string][]string, error) {
-	collectedSnapshots := make(map[string][]string)
+func listAllSnapshots(config *Config, DCOSTools DCOSHelper) (map[string][]snapshot, error) {
+	collectedSnapshots := make(map[string][]snapshot)
 	masterNodes, err := DCOSTools.GetMasterNodes()
 	if err != nil {
 		return collectedSnapshots, err
 	}
 	for _, master := range masterNodes {
-		var snapshotUrls []string
+		var snapshotUrls []snapshot
 		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/list", master.IP, config.FlagMasterPort, BaseRoute)
 		body, _, err := DCOSTools.Get(url, time.Duration(time.Second*3))
 		if err != nil {
@@ -572,11 +572,11 @@ func (j *SnapshotJob) isSnapshotAvailable(snapshotName string, config *Config, D
 	log.Infof("Trying to find a snapshot %s on remote hosts", snapshotName)
 	for host, remoteSnapshots := range snapshots {
 		for _, remoteSnapshot := range remoteSnapshots {
-			if snapshotName == path.Base(remoteSnapshot) {
+			if snapshotName == path.Base(remoteSnapshot.File) {
 				log.Infof("Snapshot %s found on a host: %s", snapshotName, host)
 				hostPort := strings.Split(host, ":")
 				if len(hostPort) > 0 {
-					return hostPort[0], remoteSnapshot, true, nil
+					return hostPort[0], remoteSnapshot.File, true, nil
 				}
 				return "", "", false, errors.New("Node must be ip:port. Got " + host)
 			}

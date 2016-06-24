@@ -127,3 +127,8 @@ type Dt struct {
 	DtDCOSTools DCOSHelper
 	DtSnapshotJob *SnapshotJob
 }
+
+type snapshot struct {
+	File string `json:"file_name"`
+	Size int64  `json:"file_size"`
+}

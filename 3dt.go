@@ -56,18 +56,18 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Create and init snapshot job
-	snapshotJob := &api.SnapshotJob{}
-	if err := snapshotJob.Init(&config, DCOSTools); err != nil {
+	// Create and init diagnostics job
+	diagnosticsJob := &api.DiagnosticsJob{}
+	if err := diagnosticsJob.Init(&config, DCOSTools); err != nil {
 		log.Error(err)
-		log.Error("Could not init snapshot job properly")
+		log.Error("Could not init diagnostics job properly")
 	}
 
 	// Inject dependencies used for running 3dt.
 	dt := api.Dt{
-		Cfg:           &config,
-		DtDCOSTools:   DCOSTools,
-		DtSnapshotJob: snapshotJob,
+		Cfg:              &config,
+		DtDCOSTools:      DCOSTools,
+		DtDiagnosticsJob: diagnosticsJob,
 	}
 
 	// run local diagnostics, verify all systemd units are healthy.

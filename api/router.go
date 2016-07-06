@@ -2,7 +2,6 @@ package api
 
 import (
 	"fmt"
-
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"net/http"
@@ -106,7 +105,7 @@ func getRoutes(dt Dt) []routeHandler {
 			handler: getNodeUnitByNodeIDUnitIDHandler,
 		},
 
-		// snapshot routes
+		// diagnostics routes
 		{
 			// /system/health/v1/logs
 			url: BaseRoute + "/logs",
@@ -116,7 +115,7 @@ func getRoutes(dt Dt) []routeHandler {
 		},
 		{
 			// /system/health/v1/logs/<unitid/<hours>
-			url:     BaseRoute + "/logs/{provider}/{entity}",
+			url: BaseRoute + "/logs/{provider}/{entity}",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				getUnitLogHandler(w, r, dt)
 			},
@@ -129,51 +128,51 @@ func getRoutes(dt Dt) []routeHandler {
 			gzip: true,
 		},
 		{
-			// /system/health/v1/report/snapshot
-			url: BaseRoute + "/report/snapshot/create",
+			// /system/health/v1/report/diagnostics
+			url: BaseRoute + "/report/diagnostics/create",
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				createSnapshotHandler(w, r, dt)
+				createBundleHandler(w, r, dt)
 			},
 			methods: []string{"POST"},
 		},
 		{
-			url: BaseRoute + "/report/snapshot/cancel",
+			url: BaseRoute + "/report/diagnostics/cancel",
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				cancelSnapshotReportHandler(w, r, dt)
+				cancelBundleReportHandler(w, r, dt)
 			},
 			methods: []string{"POST"},
 		},
 		{
-			url: BaseRoute + "/report/snapshot/status",
+			url: BaseRoute + "/report/diagnostics/status",
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				statusSnapshotReporthandler(w, r, dt)
+				diagnosticsJobStatusHandler(w, r, dt)
 			},
 		},
 		{
-			url: BaseRoute + "/report/snapshot/status/all",
+			url: BaseRoute + "/report/diagnostics/status/all",
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				statusAllSnapshotReporthandler(w, r, dt)
+				diagnosticsJobStatusAllHandler(w, r, dt)
 			},
 		},
 		{
-			// /system/health/v1/report/snapshot/list
-			url: BaseRoute + "/report/snapshot/list",
+			// /system/health/v1/report/diagnostics/list
+			url: BaseRoute + "/report/diagnostics/list",
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				listAvailableLocalSnapshotFilesHandler(w, r, dt)
+				listAvailableLocalBundlesFilesHandler(w, r, dt)
 			},
 		},
 		{
-			// /system/health/v1/report/snapshot/list/all
-			url: BaseRoute + "/report/snapshot/list/all",
+			// /system/health/v1/report/diagnostics/list/all
+			url: BaseRoute + "/report/diagnostics/list/all",
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				listAvailableGLobalSnapshotFilesHandler(w, r, dt)
+				listAvailableGLobalBundlesFilesHandler(w, r, dt)
 			},
 		},
 		{
-			// /system/health/v1/report/snapshot/serve/<file>
-			url: BaseRoute + "/report/snapshot/serve/{file}",
+			// /system/health/v1/report/diagnostics/serve/<file>
+			url: BaseRoute + "/report/diagnostics/serve/{file}",
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				downloadSnapshotHandler(w, r, dt)
+				downloadBundleHandler(w, r, dt)
 			},
 			headers: []header{
 				{
@@ -183,10 +182,10 @@ func getRoutes(dt Dt) []routeHandler {
 			},
 		},
 		{
-			// /system/health/v1/report/snapshot/delete/<file>
-			url: BaseRoute + "/report/snapshot/delete/{file}",
+			// /system/health/v1/report/diagnostics/delete/<file>
+			url: BaseRoute + "/report/diagnostics/delete/{file}",
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				deleteSnapshotHandler(w, r, dt)
+				deleteBundleHandler(w, r, dt)
 			},
 			methods: []string{"POST"},
 		},

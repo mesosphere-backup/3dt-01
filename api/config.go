@@ -10,7 +10,7 @@ import (
 
 var (
 	// Version of 3dt code.
-	Version = "0.2.1"
+	Version = "0.2.2"
 
 	// APIVer is an API version.
 	APIVer = 1
@@ -44,13 +44,13 @@ type Config struct {
 	FlagExhibitorClusterStatusURL  string
 	FlagForceTLS                   bool
 
-	// snapshot job flags
-	FlagSnapshotDir                           string
-	FlagSnapshotEndpointsConfigFile           string
-	FlagSnapshotUnitsLogsSinceString          string
-	FlagSnapshotJobTimeoutMinutes             int
-	FlagSnapshotJobGetSingleURLTimeoutMinutes int
-	FlagCommandExecTimeoutSec                 int
+	// diagnostics job flags
+	FlagDiagnosticsBundleDir                     string
+	FlagDiagnosticsBundleEndpointsConfigFile     string
+	FlagDiagnosticsBundleUnitsLogsSinceString    string
+	FlagDiagnosticsJobTimeoutMinutes             int
+	FlagDiagnosticsJobGetSingleURLTimeoutMinutes int
+	FlagCommandExecTimeoutSec                    int
 }
 
 func (c *Config) setFlags(fs *flag.FlagSet) {
@@ -74,15 +74,15 @@ func (c *Config) setFlags(fs *flag.FlagSet) {
 		"Use Exhibitor IP address to discover master nodes.")
 	fs.BoolVar(&c.FlagForceTLS, "force-tls", c.FlagForceTLS, "Use HTTPS to do all requests.")
 
-	// snapshot job flags
-	fs.StringVar(&c.FlagSnapshotDir, "snapshot-dir", c.FlagSnapshotDir, "Set a path to store snapshots")
-	fs.StringVar(&c.FlagSnapshotEndpointsConfigFile, "endpoint-config", c.FlagSnapshotEndpointsConfigFile,
+	// diagnostics job flags
+	fs.StringVar(&c.FlagDiagnosticsBundleDir, "diagnostics-bundle-dir", c.FlagDiagnosticsBundleDir, "Set a path to store diagnostic bundles")
+	fs.StringVar(&c.FlagDiagnosticsBundleEndpointsConfigFile, "endpoint-config", c.FlagDiagnosticsBundleEndpointsConfigFile,
 		"Use endpoints_config.json")
-	fs.StringVar(&c.FlagSnapshotUnitsLogsSinceString, "snapshot-units-since", c.FlagSnapshotUnitsLogsSinceString,
+	fs.StringVar(&c.FlagDiagnosticsBundleUnitsLogsSinceString, "diagnostics-units-since", c.FlagDiagnosticsBundleUnitsLogsSinceString,
 		"Collect systemd units logs since")
-	fs.IntVar(&c.FlagSnapshotJobTimeoutMinutes, "snapshot-job-timeout", c.FlagSnapshotJobTimeoutMinutes,
-		"Set a global snapshot job timeout")
-	fs.IntVar(&c.FlagSnapshotJobGetSingleURLTimeoutMinutes, "snapshot-url-timeout", c.FlagSnapshotJobGetSingleURLTimeoutMinutes,
+	fs.IntVar(&c.FlagDiagnosticsJobTimeoutMinutes, "diagnostics-job-timeout", c.FlagDiagnosticsJobTimeoutMinutes,
+		"Set a global diagnostics job timeout")
+	fs.IntVar(&c.FlagDiagnosticsJobGetSingleURLTimeoutMinutes, "diagnostics-url-timeout", c.FlagDiagnosticsJobGetSingleURLTimeoutMinutes,
 		"Set a local timeout for every single GET request to a log endpoint")
 }
 
@@ -110,18 +110,18 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 
 	config.FlagExhibitorClusterStatusURL = "http://127.0.0.1:8181/exhibitor/v1/cluster/status"
 
-	// snapshot job default flag values
-	config.FlagSnapshotDir = "/opt/mesosphere/snapshots"
-	config.FlagSnapshotJobTimeoutMinutes = 720 //12 hours
+	// diagnostics job default flag values
+	config.FlagDiagnosticsBundleDir = "/var/run/dcos/3dt/diagnostic_bundles"
+	config.FlagDiagnosticsJobTimeoutMinutes = 720 //12 hours
 
 	// 2 minutes for a URL GET timeout.
-	config.FlagSnapshotJobGetSingleURLTimeoutMinutes = 2
+	config.FlagDiagnosticsJobGetSingleURLTimeoutMinutes = 2
 
 	// 2 minutes for a command to run
 	config.FlagCommandExecTimeoutSec = 120
 
-	config.FlagSnapshotEndpointsConfigFile = "/opt/mesosphere/endpoints_config.json"
-	config.FlagSnapshotUnitsLogsSinceString = "24 hours ago"
+	config.FlagDiagnosticsBundleEndpointsConfigFile = "/opt/mesosphere/endpoints_config.json"
+	config.FlagDiagnosticsBundleUnitsLogsSinceString = "24 hours ago"
 
 	detectIPCmd := os.Getenv("MESOS_IP_DISCOVERY_COMMAND")
 	if detectIPCmd == "" {

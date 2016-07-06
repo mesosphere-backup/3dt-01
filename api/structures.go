@@ -123,12 +123,12 @@ type exhibitorNodeResponse struct {
 // Dt is a struct of dependencies used in 3dt code. There are 2 implementations, the one runs on a real system and
 // the one used for testing.
 type Dt struct {
-	Cfg         *Config
-	DtDCOSTools DCOSHelper
-	DtSnapshotJob *SnapshotJob
+	Cfg              *Config
+	DtDCOSTools      DCOSHelper
+	DtDiagnosticsJob *DiagnosticsJob
 }
 
-type snapshot struct {
+type bundle struct {
 	File string `json:"file_name"`
 	Size int64  `json:"file_size"`
 }

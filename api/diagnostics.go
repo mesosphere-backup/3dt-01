@@ -30,23 +30,23 @@ const (
 	Agents = "agents"
 )
 
-// SnapshotJob a main structure for a logs collection job.
-type SnapshotJob struct {
+// DiagnosticsJob a main structure for a logs collection job.
+type DiagnosticsJob struct {
 	sync.Mutex
 	cancelChan   chan bool
 	logProviders *LogProviders
 
-	Running          bool          `json:"is_running"`
-	Status           string        `json:"status"`
-	Errors           []string      `json:"errors"`
-	LastSnapshotPath string        `json:"last_snapshot_dir"`
-	JobStarted       time.Time     `json:"job_started"`
-	JobEnded         time.Time     `json:"job_ended"`
-	JobDuration      time.Duration `json:"job_duration"`
+	Running        bool          `json:"is_running"`
+	Status         string        `json:"status"`
+	Errors         []string      `json:"errors"`
+	LastBundlePath string        `json:"last_bundle_dir"`
+	JobStarted     time.Time     `json:"job_started"`
+	JobEnded       time.Time     `json:"job_ended"`
+	JobDuration    time.Duration `json:"job_duration"`
 }
 
-// snapshot job response format
-type snapshotReportResponse struct {
+// diagnostics job response format
+type diagnosticsReportResponse struct {
 	ResponseCode int      `json:"response_http_code"`
 	Version      int      `json:"version"`
 	Status       string   `json:"status"`
@@ -54,49 +54,49 @@ type snapshotReportResponse struct {
 }
 
 type createResponse struct {
-	snapshotReportResponse
+	diagnosticsReportResponse
 	Extra struct {
-		LastSnapshotFile string `json:"snapshot_name"`
+		LastBundleFile string `json:"bundle_name"`
 	} `json:"extra"`
 }
 
-// snapshot job status format
-type snapshotReportStatus struct {
+// diagnostics job status format
+type bundleReportStatus struct {
 	// job related fields
-	Running          bool     `json:"is_running"`
-	Status           string   `json:"status"`
-	Errors           []string `json:"errors"`
-	LastSnapshotPath string   `json:"last_snapshot_dir"`
-	JobStarted       string   `json:"job_started"`
-	JobEnded         string   `json:"job_ended"`
-	JobDuration      string   `json:"job_duration"`
+	Running        bool     `json:"is_running"`
+	Status         string   `json:"status"`
+	Errors         []string `json:"errors"`
+	LastBundlePath string   `json:"last_bundle_dir"`
+	JobStarted     string   `json:"job_started"`
+	JobEnded       string   `json:"job_ended"`
+	JobDuration    string   `json:"job_duration"`
 
 	// config related fields
-	SnapshotBaseDir                       string `json:"snapshot_dir"`
-	SnapshotJobTimeoutMin                 int    `json:"snapshot_job_timeout_min"`
-	SnapshotUnitsLogsSinceHours           string `json:"journald_logs_since_hours"`
-	SnapshotJobGetSingleURLTimeoutMinutes int    `json:"snapshot_job_get_since_url_timeout_min"`
-	CommandExecTimeoutSec                 int    `json:"command_exec_timeout_sec"`
+	DiagnosticBundlesBaseDir                 string `json:"diagnostics_bundle_dir"`
+	DiagnosticsJobTimeoutMin                 int    `json:"diagnostics_job_timeout_min"`
+	DiagnosticsUnitsLogsSinceHours           string `json:"journald_logs_since_hours"`
+	DiagnosticsJobGetSingleURLTimeoutMinutes int    `json:"diagnostics_job_get_since_url_timeout_min"`
+	CommandExecTimeoutSec                    int    `json:"command_exec_timeout_sec"`
 
 	// metrics related
-	DiskUsedPercent float64 `json:"snapshot_partition_disk_usage_percent"`
+	DiskUsedPercent float64 `json:"diagnostics_partition_disk_usage_percent"`
 }
 
-// Create snapshot request structure, example:   {"nodes": ["all"]}
-type snapshotCreateRequest struct {
+// Create a bundle request structure, example:   {"nodes": ["all"]}
+type bundleCreateRequest struct {
 	Version int
 	Nodes   []string
 }
 
-// start a snapshot job
-func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, DCOSTools DCOSHelper) (createResponse, error) {
+// start a diagnostics job
+func (j *DiagnosticsJob) run(req bundleCreateRequest, config *Config, DCOSTools DCOSHelper) (createResponse, error) {
 	role, err := DCOSTools.GetNodeRole()
 	if err != nil {
 		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, err)
 	}
 
 	if role == AgentRole || role == AgentPublicRole {
-		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, errors.New("Running snapshot job on agent node is not implemented."))
+		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, errors.New("Running diagnostics job on agent node is not implemented."))
 	}
 
 	isRunning, _, err := j.isRunning(config, DCOSTools)
@@ -113,12 +113,12 @@ func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, DCOSTools D
 	}
 	log.Debugf("Found requested nodes: %s", foundNodes)
 
-	// try to create snapshot directory
-	_, err = os.Stat(config.FlagSnapshotDir)
+	// try to create directory for diagnostic bundles
+	_, err = os.Stat(config.FlagDiagnosticsBundleDir)
 	if os.IsNotExist(err) {
-		log.Infof("snapshot dir: %s not found, attempting to create one", config.FlagSnapshotDir)
-		if err := os.Mkdir(config.FlagSnapshotDir, os.ModePerm); err != nil {
-			j.Status = "Could not create snapshot directory: " + config.FlagSnapshotDir
+		log.Infof("Directory: %s not found, attempting to create one", config.FlagDiagnosticsBundleDir)
+		if err := os.Mkdir(config.FlagDiagnosticsBundleDir, os.ModePerm); err != nil {
+			j.Status = "Could not create directory: " + config.FlagDiagnosticsBundleDir
 			return prepareCreateResponseWithErr(http.StatusServiceUnavailable, errors.New(j.Status))
 		}
 	}
@@ -127,17 +127,17 @@ func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, DCOSTools D
 	j.Errors = nil
 
 	t := time.Now()
-	snapshotName := fmt.Sprintf("snapshot-%d-%02d-%02dT%02d:%02d:%02d-%d.zip", t.Year(), t.Month(), t.Day(),
+	bundleName := fmt.Sprintf("bundle-%d-%02d-%02dT%02d:%02d:%02d-%d.zip", t.Year(), t.Month(), t.Day(),
 		t.Hour(), t.Minute(), t.Second(), t.Nanosecond())
 
-	j.LastSnapshotPath = filepath.Join(config.FlagSnapshotDir, snapshotName)
-	j.Status = "Snapshot job started, archive will be available at: " + j.LastSnapshotPath
+	j.LastBundlePath = filepath.Join(config.FlagDiagnosticsBundleDir, bundleName)
+	j.Status = "Diagnostics job started, archive will be available at: " + j.LastBundlePath
 
 	j.cancelChan = make(chan bool)
 	go j.runBackgroundJob(foundNodes, config, DCOSTools)
 
 	var r createResponse
-	r.Extra.LastSnapshotFile = snapshotName
+	r.Extra.LastBundleFile = bundleName
 	r.ResponseCode = http.StatusOK
 	r.Version = APIVer
 	r.Status = "Job has been successfully started"
@@ -145,14 +145,14 @@ func (j *SnapshotJob) run(req snapshotCreateRequest, config *Config, DCOSTools D
 }
 
 //
-func (j *SnapshotJob) runBackgroundJob(nodes []Node, config *Config, DCOSTools DCOSHelper) {
+func (j *DiagnosticsJob) runBackgroundJob(nodes []Node, config *Config, DCOSTools DCOSHelper) {
 	log.Info("Started background job")
 
 	// log a start time
 	j.JobStarted = time.Now()
 
 	// log end time
-	defer func(j *SnapshotJob) {
+	defer func(j *DiagnosticsJob) {
 		j.JobEnded = time.Now()
 		j.JobDuration = time.Since(j.JobStarted)
 		log.Info("Job finished")
@@ -160,13 +160,13 @@ func (j *SnapshotJob) runBackgroundJob(nodes []Node, config *Config, DCOSTools D
 
 	// lets start a goroutine which will timeout background report job after a certain time.
 	jobIsDone := make(chan bool)
-	go func(jobIsDone chan bool, j *SnapshotJob) {
+	go func(jobIsDone chan bool, j *DiagnosticsJob) {
 		select {
 		case <-jobIsDone:
 			return
-		case <-time.After(time.Minute * time.Duration(config.FlagSnapshotJobTimeoutMinutes)):
+		case <-time.After(time.Minute * time.Duration(config.FlagDiagnosticsJobTimeoutMinutes)):
 			j.Status = "Job failed"
-			errMsg := fmt.Sprintf("snapshot job timedout after: %s", time.Since(j.JobStarted))
+			errMsg := fmt.Sprintf("diagnostics job timedout after: %s", time.Since(j.JobStarted))
 			j.Errors = append(j.Errors, errMsg)
 			log.Error(errMsg)
 			j.cancelChan <- true
@@ -184,10 +184,10 @@ func (j *SnapshotJob) runBackgroundJob(nodes []Node, config *Config, DCOSTools D
 	defer j.stop()
 
 	// create a zip file
-	zipfile, err := os.Create(j.LastSnapshotPath)
+	zipfile, err := os.Create(j.LastBundlePath)
 	if err != nil {
 		j.Status = "Job failed"
-		errMsg := fmt.Sprintf("Coult not create zip file: %s", j.LastSnapshotPath)
+		errMsg := fmt.Sprintf("Could not create zip file: %s", j.LastBundlePath)
 		j.Errors = append(j.Errors, errMsg)
 		log.Error(errMsg)
 		return
@@ -197,7 +197,7 @@ func (j *SnapshotJob) runBackgroundJob(nodes []Node, config *Config, DCOSTools D
 	zipWriter := zip.NewWriter(zipfile)
 	defer zipWriter.Close()
 
-	// summaryReport is a log of a snapshot job
+	// summaryReport is a log of a diagnostics job
 	summaryReport := new(bytes.Buffer)
 
 	// place a summaryErrorsReport.txt in a zip archive which should provide info what failed during the logs collection.
@@ -258,14 +258,14 @@ func (j *SnapshotJob) runBackgroundJob(nodes []Node, config *Config, DCOSTools D
 		}
 
 		// add http endpoints
-		err = j.getHTTPAddToZip(node, endpoints, j.LastSnapshotPath, zipWriter, summaryErrorsReport, summaryReport, config, DCOSTools)
+		err = j.getHTTPAddToZip(node, endpoints, j.LastBundlePath, zipWriter, summaryErrorsReport, summaryReport, config, DCOSTools)
 		if err != nil {
 			log.Error(err)
 			j.Errors = append(j.Errors, err.Error())
 			updateSummaryReport(err.Error(), node, err.Error(), summaryErrorsReport)
 			if err.Error() == "Job canceled" {
 				log.Error("Job canceled, do not proceed")
-				j.LastSnapshotPath = ""
+				j.LastBundlePath = ""
 				if removeErr := os.Remove(zipfile.Name()); removeErr != nil {
 					log.Error(removeErr)
 					j.Errors = append(j.Errors, removeErr.Error())
@@ -276,39 +276,39 @@ func (j *SnapshotJob) runBackgroundJob(nodes []Node, config *Config, DCOSTools D
 		updateSummaryReport("STOP collecting logs", node, "", summaryReport)
 	}
 	if len(j.Errors) == 0 {
-		j.Status = "Snapshot job sucessfully finished"
+		j.Status = "Diagnostics job sucessfully finished"
 	}
 }
 
-// delete a snapshot
-func (j *SnapshotJob) delete(snapshotName string, config *Config, DCOSTools DCOSHelper) (response snapshotReportResponse, err error) {
-	if !strings.HasPrefix(snapshotName, "snapshot-") || !strings.HasSuffix(snapshotName, ".zip") {
-		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("format allowed  snapshot-*.zip"))
+// delete a bundle
+func (j *DiagnosticsJob) delete(bundleName string, config *Config, DCOSTools DCOSHelper) (response diagnosticsReportResponse, err error) {
+	if !strings.HasPrefix(bundleName, "bundle-") || !strings.HasSuffix(bundleName, ".zip") {
+		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("format allowed  bundle-*.zip"))
 	}
 
 	j.Lock()
 	defer j.Unlock()
 
-	// first try to locate a snapshot on a local disk.
-	snapshotPath := path.Join(config.FlagSnapshotDir, snapshotName)
-	log.Debugf("Trying remove snapshot: %s", snapshotPath)
-	_, err = os.Stat(snapshotPath)
+	// first try to locate a bundle on a local disk.
+	bundlePath := path.Join(config.FlagDiagnosticsBundleDir, bundleName)
+	log.Debugf("Trying remove a bundle: %s", bundlePath)
+	_, err = os.Stat(bundlePath)
 	if err == nil {
-		if err = os.Remove(snapshotPath); err != nil {
+		if err = os.Remove(bundlePath); err != nil {
 			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
-		msg := "Deleted " + snapshotPath
+		msg := "Deleted " + bundlePath
 		log.Infof(msg)
 		return prepareResponseOk(http.StatusOK, msg)
 	}
 
-	node, _, ok, err := j.isSnapshotAvailable(snapshotName, config, DCOSTools)
+	node, _, ok, err := j.isBundleAvailable(bundleName, config, DCOSTools)
 	if err != nil {
 		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 	}
 	if ok {
-		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/delete/%s", node, config.FlagMasterPort, BaseRoute, snapshotName)
-		j.Status = "Attempting to delete a snapshot on a remote host. POST " + url
+		url := fmt.Sprintf("http://%s:%d%s/report/diagnostics/delete/%s", node, config.FlagMasterPort, BaseRoute, bundleName)
+		j.Status = "Attempting to delete a bundle on a remote host. POST " + url
 		log.Debug(j.Status)
 		timeout := time.Duration(time.Second * 5)
 		response, _, err := DCOSTools.Post(url, timeout)
@@ -316,31 +316,31 @@ func (j *SnapshotJob) delete(snapshotName string, config *Config, DCOSTools DCOS
 			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
 		// unmarshal a response from a remote node and return it back.
-		var remoteResponse snapshotReportResponse
+		var remoteResponse diagnosticsReportResponse
 		if err = json.Unmarshal(response, &remoteResponse); err != nil {
 			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
 		j.Status = remoteResponse.Status
 		return remoteResponse, nil
 	}
-	j.Status = "Snapshot not found " + snapshotName
+	j.Status = "Bundle not found " + bundleName
 	return prepareResponseOk(http.StatusNotFound, j.Status)
 }
 
-// isRunning returns if the snapshot job is running, node the job is running on and error. If the node is empty
+// isRunning returns if the diagnostics job is running, node the job is running on and error. If the node is empty
 // string, then the job is running on a localhost.
-func (j *SnapshotJob) isRunning(config *Config, DCOSTools DCOSHelper) (bool, string, error) {
+func (j *DiagnosticsJob) isRunning(config *Config, DCOSTools DCOSHelper) (bool, string, error) {
 	// first check if the job is running on a localhost.
 	if j.Running {
 		return true, "", nil
 	}
 
 	// try to discover if the job is running on other masters.
-	clusterSnapshotStatus, err := j.getStatusAll(config, DCOSTools)
+	clusterDiagnosticsJobStatus, err := j.getStatusAll(config, DCOSTools)
 	if err != nil {
 		return false, "", err
 	}
-	for node, status := range clusterSnapshotStatus {
+	for node, status := range clusterDiagnosticsJobStatus {
 		if status.Running == true {
 			return true, node, nil
 		}
@@ -350,10 +350,10 @@ func (j *SnapshotJob) isRunning(config *Config, DCOSTools DCOSHelper) (bool, str
 	return false, "", nil
 }
 
-// Collect all status reports from master nodes and return a map[master_ip] snapshotReportStatus
+// Collect all status reports from master nodes and return a map[master_ip] bundleReportStatus
 // The function is used to get a job status on other nodes
-func (j *SnapshotJob) getStatusAll(config *Config, DCOSTools DCOSHelper) (map[string]snapshotReportStatus, error) {
-	statuses := make(map[string]snapshotReportStatus)
+func (j *DiagnosticsJob) getStatusAll(config *Config, DCOSTools DCOSHelper) (map[string]bundleReportStatus, error) {
+	statuses := make(map[string]bundleReportStatus)
 
 	masterNodes, err := DCOSTools.GetMasterNodes()
 	if err != nil {
@@ -361,8 +361,8 @@ func (j *SnapshotJob) getStatusAll(config *Config, DCOSTools DCOSHelper) (map[st
 	}
 
 	for _, master := range masterNodes {
-		var status snapshotReportStatus
-		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/status", master.IP, config.FlagMasterPort, BaseRoute)
+		var status bundleReportStatus
+		url := fmt.Sprintf("http://%s:%d%s/report/diagnostics/status", master.IP, config.FlagMasterPort, BaseRoute)
 		body, _, err := DCOSTools.Get(url, time.Duration(time.Second*3))
 		if err = json.Unmarshal(body, &status); err != nil {
 			log.Error(err)
@@ -372,42 +372,42 @@ func (j *SnapshotJob) getStatusAll(config *Config, DCOSTools DCOSHelper) (map[st
 		statuses[master.IP] = status
 	}
 	if len(statuses) == 0 {
-		return statuses, errors.New("Could not determine wheather the snapshot job is running or not.")
+		return statuses, errors.New("Could not determine wheather the diagnostics job is running or not.")
 	}
 	return statuses, nil
 }
 
 // get a status report for a localhost
-func (j *SnapshotJob) getStatus(config *Config) snapshotReportStatus {
+func (j *DiagnosticsJob) getStatus(config *Config) bundleReportStatus {
 	// use a temp var `used`, since disk.Usage panics if partition does not exist.
 	var used float64
-	usageStat, err := disk.Usage(config.FlagSnapshotDir)
+	usageStat, err := disk.Usage(config.FlagDiagnosticsBundleDir)
 	if err == nil {
 		used = usageStat.UsedPercent
 	} else {
-		log.Errorf("Could not get a disk usage: %s", config.FlagSnapshotDir)
+		log.Errorf("Could not get a disk usage: %s", config.FlagDiagnosticsBundleDir)
 	}
-	return snapshotReportStatus{
-		Running:          j.Running,
-		Status:           j.Status,
-		Errors:           j.Errors,
-		LastSnapshotPath: j.LastSnapshotPath,
-		JobStarted:       j.JobStarted.String(),
-		JobEnded:         j.JobEnded.String(),
-		JobDuration:      j.JobDuration.String(),
+	return bundleReportStatus{
+		Running:        j.Running,
+		Status:         j.Status,
+		Errors:         j.Errors,
+		LastBundlePath: j.LastBundlePath,
+		JobStarted:     j.JobStarted.String(),
+		JobEnded:       j.JobEnded.String(),
+		JobDuration:    j.JobDuration.String(),
 
-		SnapshotBaseDir:                       config.FlagSnapshotDir,
-		SnapshotJobTimeoutMin:                 config.FlagSnapshotJobTimeoutMinutes,
-		SnapshotJobGetSingleURLTimeoutMinutes: config.FlagSnapshotJobGetSingleURLTimeoutMinutes,
-		SnapshotUnitsLogsSinceHours:           config.FlagSnapshotUnitsLogsSinceString,
-		CommandExecTimeoutSec:                 config.FlagCommandExecTimeoutSec,
+		DiagnosticBundlesBaseDir:                 config.FlagDiagnosticsBundleDir,
+		DiagnosticsJobTimeoutMin:                 config.FlagDiagnosticsJobTimeoutMinutes,
+		DiagnosticsJobGetSingleURLTimeoutMinutes: config.FlagDiagnosticsJobGetSingleURLTimeoutMinutes,
+		DiagnosticsUnitsLogsSinceHours:           config.FlagDiagnosticsBundleUnitsLogsSinceString,
+		CommandExecTimeoutSec:                    config.FlagCommandExecTimeoutSec,
 
 		DiskUsedPercent: used,
 	}
 }
 
 // fetch an HTTP endpoint and append the output to a zip file.
-func (j *SnapshotJob) getHTTPAddToZip(node Node, endpoints map[string]string, folder string, zipWriter *zip.Writer,
+func (j *DiagnosticsJob) getHTTPAddToZip(node Node, endpoints map[string]string, folder string, zipWriter *zip.Writer,
 	summaryErrorsReport, summaryReport *bytes.Buffer, config *Config, DCOSTools DCOSHelper) error {
 	for fileName, httpEndpoint := range endpoints {
 		fullURL := "http://" + node.IP + httpEndpoint
@@ -425,7 +425,7 @@ func (j *SnapshotJob) getHTTPAddToZip(node Node, endpoints map[string]string, fo
 
 		j.Status = "GET " + fullURL
 		updateSummaryReport("START "+j.Status, node, "", summaryReport)
-		timeout := time.Duration(time.Minute * time.Duration(config.FlagSnapshotJobGetSingleURLTimeoutMinutes))
+		timeout := time.Duration(time.Minute * time.Duration(config.FlagDiagnosticsJobGetSingleURLTimeoutMinutes))
 		request, err := http.NewRequest("GET", fullURL, nil)
 		if err != nil {
 			j.Errors = append(j.Errors, err.Error())
@@ -463,13 +463,13 @@ func (j *SnapshotJob) getHTTPAddToZip(node Node, endpoints map[string]string, fo
 	return nil
 }
 
-func prepareResponseOk(httpStatusCode int, okMsg string) (response snapshotReportResponse, err error) {
+func prepareResponseOk(httpStatusCode int, okMsg string) (response diagnosticsReportResponse, err error) {
 	response, _ = prepareResponseWithErr(httpStatusCode, nil)
 	response.Status = okMsg
 	return response, nil
 }
 
-func prepareResponseWithErr(httpStatusCode int, e error) (response snapshotReportResponse, err error) {
+func prepareResponseWithErr(httpStatusCode int, e error) (response diagnosticsReportResponse, err error) {
 	response.Version = APIVer
 	response.ResponseCode = httpStatusCode
 	if e != nil {
@@ -489,14 +489,14 @@ func prepareCreateResponseWithErr(httpStatusCode int, e error) (createResponse, 
 }
 
 // cancel a running job
-func (j *SnapshotJob) cancel(config *Config, DCOSTools DCOSHelper) (response snapshotReportResponse, err error) {
+func (j *DiagnosticsJob) cancel(config *Config, DCOSTools DCOSHelper) (response diagnosticsReportResponse, err error) {
 	role, err := DCOSTools.GetNodeRole()
 	if err != nil {
 		// Just log the error. We can still try to cancel the job.
 		log.Error(err)
 	}
 	if role == AgentRole || role == AgentPublicRole {
-		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Canceling snapshot job on agent node is not implemented."))
+		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Canceling diagnostics job on agent node is not implemented."))
 	}
 
 	// return error if we could not find if the job is running or not.
@@ -513,15 +513,15 @@ func (j *SnapshotJob) cancel(config *Config, DCOSTools DCOSHelper) (response sna
 		j.cancelChan <- true
 		log.Debug("Cancelling a local job")
 	} else {
-		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/cancel", node, config.FlagMasterPort, BaseRoute)
+		url := fmt.Sprintf("http://%s:%d%s/report/diagnostics/cancel", node, config.FlagMasterPort, BaseRoute)
 		j.Status = "Attempting to cancel a job on a remote host. POST " + url
 		log.Debug(j.Status)
-		response, _, err := DCOSTools.Post(url, time.Duration(config.FlagSnapshotJobGetSingleURLTimeoutMinutes)*time.Minute)
+		response, _, err := DCOSTools.Post(url, time.Duration(config.FlagDiagnosticsJobGetSingleURLTimeoutMinutes)*time.Minute)
 		if err != nil {
 			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
 		// unmarshal a response from a remote node and return it back.
-		var remoteResponse snapshotReportResponse
+		var remoteResponse diagnosticsReportResponse
 		if err = json.Unmarshal(response, &remoteResponse); err != nil {
 			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
@@ -531,52 +531,52 @@ func (j *SnapshotJob) cancel(config *Config, DCOSTools DCOSHelper) (response sna
 	return prepareResponseOk(http.StatusOK, "Attempting to cancel a job, please check job status.")
 }
 
-func (j *SnapshotJob) start() {
+func (j *DiagnosticsJob) start() {
 	j.Running = true
 }
 
-func (j *SnapshotJob) stop() {
+func (j *DiagnosticsJob) stop() {
 	j.Running = false
 }
 
-// get a list of all snapshots across the cluster.
-func listAllSnapshots(config *Config, DCOSTools DCOSHelper) (map[string][]snapshot, error) {
-	collectedSnapshots := make(map[string][]snapshot)
+// get a list of all bundles across the cluster.
+func listAllBundles(config *Config, DCOSTools DCOSHelper) (map[string][]bundle, error) {
+	collectedBundles := make(map[string][]bundle)
 	masterNodes, err := DCOSTools.GetMasterNodes()
 	if err != nil {
-		return collectedSnapshots, err
+		return collectedBundles, err
 	}
 	for _, master := range masterNodes {
-		var snapshotUrls []snapshot
-		url := fmt.Sprintf("http://%s:%d%s/report/snapshot/list", master.IP, config.FlagMasterPort, BaseRoute)
+		var bundleUrls []bundle
+		url := fmt.Sprintf("http://%s:%d%s/report/diagnostics/list", master.IP, config.FlagMasterPort, BaseRoute)
 		body, _, err := DCOSTools.Get(url, time.Duration(time.Second*3))
 		if err != nil {
 			log.Error(err)
 			continue
 		}
-		if err = json.Unmarshal(body, &snapshotUrls); err != nil {
+		if err = json.Unmarshal(body, &bundleUrls); err != nil {
 			log.Error(err)
 			continue
 		}
-		collectedSnapshots[fmt.Sprintf("%s:%d", master.IP, config.FlagMasterPort)] = snapshotUrls
+		collectedBundles[fmt.Sprintf("%s:%d", master.IP, config.FlagMasterPort)] = bundleUrls
 	}
-	return collectedSnapshots, nil
+	return collectedBundles, nil
 }
 
-// check if the snapshot is available on a cluster.
-func (j *SnapshotJob) isSnapshotAvailable(snapshotName string, config *Config, DCOSTools DCOSHelper) (string, string, bool, error) {
-	snapshots, err := listAllSnapshots(config, DCOSTools)
+// check if a bundle is available on a cluster.
+func (j *DiagnosticsJob) isBundleAvailable(bundleName string, config *Config, DCOSTools DCOSHelper) (string, string, bool, error) {
+	bundles, err := listAllBundles(config, DCOSTools)
 	if err != nil {
 		return "", "", false, err
 	}
-	log.Infof("Trying to find a snapshot %s on remote hosts", snapshotName)
-	for host, remoteSnapshots := range snapshots {
-		for _, remoteSnapshot := range remoteSnapshots {
-			if snapshotName == path.Base(remoteSnapshot.File) {
-				log.Infof("Snapshot %s found on a host: %s", snapshotName, host)
+	log.Infof("Trying to find a bundle %s on remote hosts", bundleName)
+	for host, remoteBundles := range bundles {
+		for _, remoteBundle := range remoteBundles {
+			if bundleName == path.Base(remoteBundle.File) {
+				log.Infof("Bundle %s found on a host: %s", bundleName, host)
 				hostPort := strings.Split(host, ":")
 				if len(hostPort) > 0 {
-					return hostPort[0], remoteSnapshot.File, true, nil
+					return hostPort[0], remoteBundle.File, true, nil
 				}
 				return "", "", false, errors.New("Node must be ip:port. Got " + host)
 			}
@@ -585,21 +585,21 @@ func (j *SnapshotJob) isSnapshotAvailable(snapshotName string, config *Config, D
 	return "", "", false, nil
 }
 
-// return a a list of snapshots available on a localhost.
-func (j *SnapshotJob) findLocalSnapshot(config *Config) (snapshots []string, err error) {
-	matches, err := filepath.Glob(config.FlagSnapshotDir + "/snapshot-*.zip")
-	for _, snapshot := range matches {
-		// skip a snapshot zip file if the job is running
-		if snapshot == j.LastSnapshotPath && j.Running {
-			log.Infof("Skipped listing %s, the job is running", snapshot)
+// return a a list of bundles available on a localhost.
+func (j *DiagnosticsJob) findLocalBundle(config *Config) (bundles []string, err error) {
+	matches, err := filepath.Glob(config.FlagDiagnosticsBundleDir + "/bundle-*.zip")
+	for _, localBundle := range matches {
+		// skip a bundle zip file if the job is running
+		if localBundle == j.LastBundlePath && j.Running {
+			log.Infof("Skipped listing %s, the job is running", localBundle)
 			continue
 		}
-		snapshots = append(snapshots, snapshot)
+		bundles = append(bundles, localBundle)
 	}
 	if err != nil {
-		return snapshots, err
+		return bundles, err
 	}
-	return snapshots, nil
+	return bundles, nil
 }
 
 func matchRequestedNodes(requestedNodes []string, masterNodes []Node, agentNodes []Node) ([]Node, error) {
@@ -686,14 +686,14 @@ type CommandProvider struct {
 
 func loadExternalProviders(config *Config) (externalProviders LogProviders, err error) {
 	// return if config file not found.
-	if _, err = os.Stat(config.FlagSnapshotEndpointsConfigFile); err != nil {
+	if _, err = os.Stat(config.FlagDiagnosticsBundleEndpointsConfigFile); err != nil {
 		if os.IsNotExist(err) {
-			log.Infof("%s not found", config.FlagSnapshotEndpointsConfigFile)
+			log.Infof("%s not found", config.FlagDiagnosticsBundleEndpointsConfigFile)
 			return externalProviders, nil
 		}
 	}
 
-	endpointsConfig, err := ioutil.ReadFile(config.FlagSnapshotEndpointsConfigFile)
+	endpointsConfig, err := ioutil.ReadFile(config.FlagDiagnosticsBundleEndpointsConfigFile)
 	if err != nil {
 		return externalProviders, err
 	}
@@ -741,7 +741,7 @@ func loadInternalProviders(config *Config, DCOSTools DCOSHelper) (internalConfig
 	}, nil
 }
 
-func (j *SnapshotJob) getLogsEndpoints(config *Config, DCOSTools DCOSHelper) (endpoints map[string]string, err error) {
+func (j *DiagnosticsJob) getLogsEndpoints(config *Config, DCOSTools DCOSHelper) (endpoints map[string]string, err error) {
 	endpoints = make(map[string]string)
 	if j.logProviders == nil {
 		return endpoints, errors.New("log provders have not been initialized")
@@ -803,8 +803,8 @@ func (j *SnapshotJob) getLogsEndpoints(config *Config, DCOSTools DCOSHelper) (en
 	return endpoints, nil
 }
 
-// Init will prepare snapshot job, read config files etc.
-func (j *SnapshotJob) Init(config *Config, DCOSTools DCOSHelper) error {
+// Init will prepare diagnostics job, read config files etc.
+func (j *DiagnosticsJob) Init(config *Config, DCOSTools DCOSHelper) error {
 	j.logProviders = &LogProviders{}
 
 	// load the internal providers
@@ -864,7 +864,7 @@ func roleMatched(roles []string, DCOSTools DCOSHelper) (bool, error) {
 	return isInList(myRole, roles), nil
 }
 
-func (j *SnapshotJob) dispatchLogs(provider string, entity string, config *Config, DCOSTools DCOSHelper) (r io.ReadCloser, err error) {
+func (j *DiagnosticsJob) dispatchLogs(provider string, entity string, config *Config, DCOSTools DCOSHelper) (r io.ReadCloser, err error) {
 	// make a buffered doneChan to communicate back to process.
 
 	if provider == "units" {
@@ -878,7 +878,7 @@ func (j *SnapshotJob) dispatchLogs(provider string, entity string, config *Confi
 					return r, errors.New("Only DC/OS systemd units are available")
 				}
 				log.Debugf("dispatching a unit %s", entity)
-				r, err = readJournalOutputSince(entity, config.FlagSnapshotUnitsLogsSinceString, config.FlagCommandExecTimeoutSec)
+				r, err = readJournalOutputSince(entity, config.FlagDiagnosticsBundleUnitsLogsSinceString, config.FlagCommandExecTimeoutSec)
 				return r, err
 			}
 		}
@@ -923,7 +923,7 @@ func (j *SnapshotJob) dispatchLogs(provider string, entity string, config *Confi
 	return r, errors.New("Unknown provider " + provider)
 }
 
-// the summary report is a file added to a zip snapshot file to track any errors occured while collection logs.
+// the summary report is a file added to a zip bundle file to track any errors occured while collection logs.
 func updateSummaryReport(preflix string, node Node, error string, r *bytes.Buffer) {
 	r.WriteString(fmt.Sprintf("%s [%s] %s %s %s\n", time.Now().String(), preflix, node.IP, node.Role, error))
 }

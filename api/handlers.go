@@ -2,14 +2,14 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"github.com/gorilla/mux"
-	"net/http"
-	"path/filepath"
-	"fmt"
-	"os"
-	"net/http/httputil"
 	"io"
+	"net/http"
+	"net/http/httputil"
+	"os"
+	"path/filepath"
 )
 
 // Route handlers
@@ -128,7 +128,7 @@ func getNodeUnitByNodeIDUnitIDHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // A helper function to send a response.
-func writeResponse(w http.ResponseWriter, response snapshotReportResponse) {
+func writeResponse(w http.ResponseWriter, response diagnosticsReportResponse) {
 	w.WriteHeader(response.ResponseCode)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Error(err)
@@ -142,29 +142,29 @@ func writeCreateResponse(w http.ResponseWriter, response createResponse) {
 	}
 }
 
-// snapshot handlers
-// A handler responsible for removing snapshots. First it will try to find a snapshot locally, if failed
-// it will send a broadcast request to all cluster master members and check if snapshot it available.
-// If snapshot was found on a remote host the local node will send a POST request to remove the snapshot.
-func deleteSnapshotHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
+// diagnostics handlers
+// A handler responsible for removing diagnostics bundles. First it will try to find a bundle locally, if failed
+// it will send a broadcast request to all cluster master members and check if bundle it available.
+// If a bundle was found on a remote host the local node will send a POST request to remove the bundle.
+func deleteBundleHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	vars := mux.Vars(r)
-	response, err := dt.DtSnapshotJob.delete(vars["file"],dt.Cfg, dt.DtDCOSTools)
+	response, err := dt.DtDiagnosticsJob.delete(vars["file"], dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		log.Error(err)
 	}
 	writeResponse(w, response)
 }
 
-// A handler function return a snapshot job status of type `snapshotReportStatus`
-func statusSnapshotReporthandler(w http.ResponseWriter, r *http.Request, dt Dt) {
-	if err := json.NewEncoder(w).Encode(dt.DtSnapshotJob.getStatus(dt.Cfg)); err != nil {
+// A handler function return a diagnostics job status
+func diagnosticsJobStatusHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
+	if err := json.NewEncoder(w).Encode(dt.DtDiagnosticsJob.getStatus(dt.Cfg)); err != nil {
 		log.Error("Failed to encode responses to json")
 	}
 }
 
-// A handler function returns a map of master node ip address as a key and snapshotReportStatus as a value.
-func statusAllSnapshotReporthandler(w http.ResponseWriter, r *http.Request, dt Dt) {
-	status, err := dt.DtSnapshotJob.getStatusAll(dt.Cfg, dt.DtDCOSTools)
+// A handler function returns a map of master node ip address as a key and bundleReportStatus as a value.
+func diagnosticsJobStatusAllHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
+	status, err := dt.DtDiagnosticsJob.getStatusAll(dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		response, _ := prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		writeResponse(w, response)
@@ -177,37 +177,37 @@ func statusAllSnapshotReporthandler(w http.ResponseWriter, r *http.Request, dt D
 
 // A handler function cancels a job running on a local node first. If a job is running on a remote node
 // it will try to send a POST request to cancel it.
-func cancelSnapshotReportHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
-	response, err := dt.DtSnapshotJob.cancel(dt.Cfg, dt.DtDCOSTools)
+func cancelBundleReportHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
+	response, err := dt.DtDiagnosticsJob.cancel(dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		log.Error(err)
 	}
 	writeResponse(w, response)
 }
 
-// A handler function returns a map of master ip as a key and a list of snapshots as a value.
-func listAvailableGLobalSnapshotFilesHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
-	allSnapshots, err := listAllSnapshots(dt.Cfg, dt.DtDCOSTools)
+// A handler function returns a map of master ip as a key and a list of bundles as a value.
+func listAvailableGLobalBundlesFilesHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
+	allBundles, err := listAllBundles(dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		response, _ := prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		writeResponse(w, response)
 		return
 	}
-	if err := json.NewEncoder(w).Encode(allSnapshots); err != nil {
+	if err := json.NewEncoder(w).Encode(allBundles); err != nil {
 		log.Error("Failed to encode responses to json")
 	}
 }
 
-// A handler function returns a list of URLs to download snapshots
-func listAvailableLocalSnapshotFilesHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
-	matches, err := dt.DtSnapshotJob.findLocalSnapshot(dt.Cfg)
+// A handler function returns a list of URLs to download bundles
+func listAvailableLocalBundlesFilesHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
+	matches, err := dt.DtDiagnosticsJob.findLocalBundle(dt.Cfg)
 	if err != nil {
 		response, _ := prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		writeResponse(w, response)
 		return
 	}
 
-	var snapshots []snapshot
+	var localBundles []bundle
 	for _, file := range matches {
 		baseFile := filepath.Base(file)
 		fileInfo, err := os.Stat(file)
@@ -216,22 +216,21 @@ func listAvailableLocalSnapshotFilesHandler(w http.ResponseWriter, r *http.Reque
 			continue
 		}
 
-		snapshots = append(snapshots, snapshot{
-			File: fmt.Sprintf("%s/report/snapshot/serve/%s", BaseRoute, baseFile),
+		localBundles = append(localBundles, bundle{
+			File: fmt.Sprintf("%s/report/diagnostics/serve/%s", BaseRoute, baseFile),
 			Size: fileInfo.Size(),
 		})
 	}
-	if err := json.NewEncoder(w).Encode(snapshots); err != nil {
+	if err := json.NewEncoder(w).Encode(localBundles); err != nil {
 		log.Error("Failed to encode responses to json")
 	}
 }
 
-// A handler function serves a static local file. If a file not available locally and
-// listAvailableGLobalSnapshotFilesHandler returns that a file resides on a different node, it will create a reverse
-// proxy to download the file.
-func downloadSnapshotHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
+// A handler function serves a static local file. If a file not available locally but
+// available on a different node, it will do a reverse proxy.
+func downloadBundleHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	vars := mux.Vars(r)
-	serveFile := dt.Cfg.FlagSnapshotDir + "/" + vars["file"]
+	serveFile := dt.Cfg.FlagDiagnosticsBundleDir + "/" + vars["file"]
 	_, err := os.Stat(serveFile)
 	if err == nil {
 		w.Header().Add("Content-disposition", fmt.Sprintf("attachment; filename=%s", vars["file"]))
@@ -239,7 +238,7 @@ func downloadSnapshotHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 		return
 	}
 	// do a reverse proxy
-	node, location, ok, err := dt.DtSnapshotJob.isSnapshotAvailable(vars["file"], dt.Cfg, dt.DtDCOSTools)
+	node, location, ok, err := dt.DtDiagnosticsJob.isBundleAvailable(vars["file"], dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -258,16 +257,16 @@ func downloadSnapshotHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	http.NotFound(w, r)
 }
 
-// A handler function to start a snapshot job.
-func createSnapshotHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
-	var req snapshotCreateRequest
+// A handler function to start a diagnostics job.
+func createBundleHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
+	var req bundleCreateRequest
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&req); err != nil {
 		response, _ := prepareResponseWithErr(http.StatusBadRequest, err)
 		writeResponse(w, response)
 		return
 	}
-	response, err := dt.DtSnapshotJob.run(req, dt.Cfg, dt.DtDCOSTools)
+	response, err := dt.DtDiagnosticsJob.run(req, dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		log.Error(err)
 	}
@@ -276,7 +275,7 @@ func createSnapshotHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 
 // A handler function to to get a list of available logs on a node.
 func logsListHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
-	endspoints, err := dt.DtSnapshotJob.getLogsEndpoints(dt.Cfg, dt.DtDCOSTools)
+	endspoints, err := dt.DtDiagnosticsJob.getLogsEndpoints(dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		response, _ := prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		writeResponse(w, response)
@@ -290,7 +289,7 @@ func logsListHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 // return a log for past N hours for a specific systemd unit
 func getUnitLogHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	vars := mux.Vars(r)
-	unitLogOut, err := dt.DtSnapshotJob.dispatchLogs(vars["provider"], vars["entity"], dt.Cfg, dt.DtDCOSTools)
+	unitLogOut, err := dt.DtDiagnosticsJob.dispatchLogs(vars["provider"], vars["entity"], dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		response, _ := prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		writeResponse(w, response)

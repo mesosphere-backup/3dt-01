@@ -4,24 +4,23 @@ import (
 	// intentionally rename package to do some magic
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"github.com/gorilla/mux"
 	assertPackage "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
-	"flag"
-	"sync"
-
-	"io"
 )
 
 var testCfg Config
 
 func init() {
-	testCfg, _ = LoadDefaultConfig([]string{"3dt", "-verbose", "-snapshot-dir", "/tmp/snapshot-test"})
+	testCfg, _ = LoadDefaultConfig([]string{"3dt", "-verbose", "-diagnostics-bundle-dir", "/tmp/snapshot-test"})
 }
 
 // fakeDCOSTools is a DCOSHelper interface implementation used for testing.
@@ -32,10 +31,10 @@ type fakeDCOSTools struct {
 	fakeMasters       []Node
 
 	// HTTP GET, POST
-	mockedRequest map[string]FakeHTTPContainer
-	getRequestsMade []string
+	mockedRequest    map[string]FakeHTTPContainer
+	getRequestsMade  []string
 	postRequestsMade []string
-	rawRequestsMade []*http.Request
+	rawRequestsMade  []*http.Request
 }
 
 type FakeHTTPContainer struct {
@@ -46,13 +45,13 @@ type FakeHTTPContainer struct {
 
 func (st *fakeDCOSTools) makeMockedResponse(url string, response []byte, statusCode int, e error) error {
 	if _, ok := st.mockedRequest[url]; ok {
-		return errors.New(url+" is already added")
+		return errors.New(url + " is already added")
 	}
 	st.mockedRequest = make(map[string]FakeHTTPContainer)
 	st.mockedRequest[url] = FakeHTTPContainer{
-		mockResponse: response,
+		mockResponse:   response,
 		mockStatusCode: statusCode,
-		mockErr: e,
+		mockErr:        e,
 	}
 	return nil
 }
@@ -674,7 +673,7 @@ func (s *HandlersTestSuit) TestStartUpdateHealthReportFunc() {
 	s.assert.Equal(hr.DcosVersion, "")
 	s.assert.Equal(hr.Role, "master")
 	s.assert.Equal(hr.MesosID, "node-id-123")
-	s.assert.Equal(hr.TdtVersion, "0.2.1")
+	s.assert.Equal(hr.TdtVersion, "0.2.2")
 }
 
 func TestHandlersTestSuit(t *testing.T) {

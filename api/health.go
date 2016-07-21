@@ -167,7 +167,12 @@ func GetUnitsProperties(dt Dt) (healthReport UnitsHealthResponseJSONStruct, err 
 			log.Errorf("Could not get properties for unit: %s", unit)
 			continue
 		}
-		allUnitsProperties = append(allUnitsProperties, normalizeProperty(unit, currentProperty, dt.DtDCOSTools))
+		normalizedProperty, err := normalizeProperty(currentProperty, dt)
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+		allUnitsProperties = append(allUnitsProperties, normalizedProperty)
 	}
 	// after we finished querying systemd units, close dbus connection
 	if err = dt.DtDCOSTools.CloseDBUSConnection(); err != nil {

@@ -74,9 +74,11 @@ func (st *fakeDCOSTools) GetUnitProperties(pname string) (map[string]interface{}
 	if pname == "unit_to_fail" {
 		return result, errors.New("unit_to_fail occured")
 	}
+	result["Id"] = pname
 	result["LoadState"] = "loaded"
 	result["ActiveState"] = "active"
 	result["Description"] = "PrettyName: My fake description"
+	result["SubState"] = "running"
 	return result, nil
 }
 
@@ -673,7 +675,7 @@ func (s *HandlersTestSuit) TestStartUpdateHealthReportFunc() {
 	s.assert.Equal(hr.DcosVersion, "")
 	s.assert.Equal(hr.Role, "master")
 	s.assert.Equal(hr.MesosID, "node-id-123")
-	s.assert.Equal(hr.TdtVersion, "0.2.2")
+	s.assert.Equal(hr.TdtVersion, "0.2.3")
 }
 
 func TestHandlersTestSuit(t *testing.T) {

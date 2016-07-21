@@ -132,3 +132,17 @@ type bundle struct {
 	File string `json:"file_name"`
 	Size int64  `json:"file_size"`
 }
+
+// UnitPropertiesResponse is a structure to unmarshal dbus.GetunitProperties response
+type UnitPropertiesResponse struct {
+	ID                              string `json:"Id"`
+	LoadState                       string
+	ActiveState                     string
+	SubState                        string
+	Description                     string
+
+	InactiveExitTimestampMonotonic  uint64
+	ActiveEnterTimestampMonotonic   uint64
+	ActiveExitTimestampMonotonic    uint64
+	InactiveEnterTimestampMonotonic uint64
+}

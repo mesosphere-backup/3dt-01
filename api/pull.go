@@ -89,7 +89,7 @@ type findAgentsInHistoryService struct {
 }
 
 func (f *findAgentsInHistoryService) getMesosAgents() (nodes []Node, err error) {
-	basePath := "/var/lib/dcos/dcos-history-service" + f.pastTime
+	basePath := "/var/lib/dcos/dcos-history" + f.pastTime
 	files, err := ioutil.ReadDir(basePath)
 	if err != nil {
 		return nodes, err

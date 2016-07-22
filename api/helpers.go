@@ -387,28 +387,66 @@ func Do(req *http.Request, timeout time.Duration, caPool *x509.CertPool, headers
 	return resp, nil
 }
 
-func normalizeProperty(unitName string, p map[string]interface{}, d DCOSHelper) healthResponseValues {
-	var (
-		unitHealth                          int
-		unitOutput, prettyName, description string
-	)
-
-	// check keys
-	log.Debugf("%s LoadState: %s", unitName, p["LoadState"])
-	if p["LoadState"] != "loaded" {
-		unitHealth = 1
-		unitOutput += fmt.Sprintf("%s is not loaded. Please check `systemctl show all` to check current unit status. ", unitName)
+// CheckUnitHealth tells if the unit is healthy
+func (u *UnitPropertiesResponse) CheckUnitHealth() (int, string, error) {
+	if u.LoadState == "" || u.ActiveState == "" || u.SubState == "" {
+		return 1, "", fmt.Errorf("LoadState: %s, ActiveState: %s and SubState: %s must be set",
+			u.LoadState, u.ActiveState, u.SubState)
 	}
 
-	okStates := []string{"active", "inactive", "activating"}
-	log.Debugf("%s ActiveState: %s", unitName, p["ActiveState"])
-	if !isInList(p["ActiveState"].(string), okStates) {
-		unitHealth = 1
-		unitOutput += fmt.Sprintf("%s state is not one of the possible states %s. Current state is [ %s ]. Please check `systemctl show all %s` to check current unit state. ", unitName, okStates, p["ActiveState"], unitName)
+	if u.LoadState != "loaded" {
+		return 1, fmt.Sprintf("%s is not loaded. Please check `systemctl show all` to check current unit status.", u.ID), nil
+	}
+
+	okActiveStates := []string{"active", "inactive", "activating"}
+	if !isInList(u.ActiveState, okActiveStates) {
+		return 1, fmt.Sprintf(
+			"%s state is not one of the possible states %s. Current state is [ %s ]. " +
+			"Please check `systemctl show all %s` to check current unit state. ", u.ID, okActiveStates, u.ActiveState, u.ID), nil
+	}
+
+	// https://www.freedesktop.org/wiki/Software/systemd/dbus/
+	// if a unit is in `activating` state and `auto-restart` sub-state it means unit is trying to start and fails.
+	if u.ActiveState == "activating" && u.SubState == "auto-restart" {
+		// If ActiveEnterTimestampMonotonic is 0, it means that unit has never been able to switch to active state.
+		// Most likely a ExecStartPre fails before the unit can execute ExecStart.
+		if u.ActiveEnterTimestampMonotonic == 0 {
+			return 1, fmt.Sprintf("unit %s has never entered `active` state", u.ID), nil
+		}
+
+		// If InactiveEnterTimestampMonotonic > ActiveEnterTimestampMonotonic that means that a unit was active
+		// some time ago, but then something happened and it cannot restart.
+		if u.InactiveEnterTimestampMonotonic > u.ActiveEnterTimestampMonotonic {
+			return 1, fmt.Sprintf("unit %s is flapping. Please check `systemctl status %s` to check current unit state.", u.ID, u.ID), nil
+		}
+	}
+
+	return 0, "", nil
+}
+
+func normalizeProperty(unitProps map[string]interface{}, dt Dt) (healthResponseValues, error) {
+	var (
+		description, prettyName string
+		propsResponse UnitPropertiesResponse
+	)
+
+
+	marshaledPropsResponse, err := json.Marshal(unitProps)
+	if err != nil {
+		return healthResponseValues{}, err
+	}
+
+	if err = json.Unmarshal(marshaledPropsResponse, &propsResponse); err != nil {
+		return healthResponseValues{}, err
+	}
+
+	unitHealth, unitOutput, err := propsResponse.CheckUnitHealth()
+	if err != nil {
+		return healthResponseValues{}, err
 	}
 
 	if unitHealth > 0 {
-		journalOutput, err := d.GetJournalOutput(unitName)
+		journalOutput, err := dt.DtDCOSTools.GetJournalOutput(propsResponse.ID)
 		if err == nil {
 			unitOutput += "\n"
 			unitOutput += journalOutput
@@ -417,7 +455,7 @@ func normalizeProperty(unitName string, p map[string]interface{}, d DCOSHelper) 
 		}
 	}
 
-	s := strings.Split(p["Description"].(string), ": ")
+	s := strings.Split(propsResponse.Description, ": ")
 	if len(s) != 2 {
 		description = strings.Join(s, " ")
 
@@ -426,13 +464,13 @@ func normalizeProperty(unitName string, p map[string]interface{}, d DCOSHelper) 
 	}
 
 	return healthResponseValues{
-		UnitID:     unitName,
+		UnitID:     propsResponse.ID,
 		UnitHealth: unitHealth,
 		UnitOutput: unitOutput,
 		UnitTitle:  description,
 		Help:       "",
 		PrettyName: prettyName,
-	}
+	}, nil
 }
 
 type stdoutTimeoutPipe struct {

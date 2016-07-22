@@ -10,7 +10,7 @@ import (
 
 var (
 	// Version of 3dt code.
-	Version = "0.2.2"
+	Version = "0.2.3"
 
 	// APIVer is an API version.
 	APIVer = 1

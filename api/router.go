@@ -189,6 +189,11 @@ func getRoutes(dt Dt) []routeHandler {
 			},
 			methods: []string{"POST"},
 		},
+		// self test route
+		{
+			url:     BaseRoute + "/selftest/info",
+			handler: selfTestHandler,
+		},
 	}
 }
 

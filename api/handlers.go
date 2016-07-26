@@ -300,3 +300,9 @@ func getUnitLogHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	log.Infof("Done read %s", vars["entity"])
 	unitLogOut.Close()
 }
+
+func selfTestHandler(w http.ResponseWriter, r *http.Request) {
+	if err := json.NewEncoder(w).Encode(runSelfTest()); err != nil {
+		log.Error(err)
+	}
+}

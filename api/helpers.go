@@ -188,7 +188,7 @@ func (st *DCOSTools) GetMesosNodeID() (string, error) {
 	}
 	log.Debugf("using role %s, port %d to get node id", role, port)
 
-	url, err := useTLSScheme(fmt.Sprintf("http://%s:%d/state", st.ip, port), st.ForceTLS)
+	url := fmt.Sprintf("http://%s:%d/state", st.ip, port)
 	if err != nil {
 		return "", err
 	}
@@ -224,6 +224,10 @@ func isInList(item string, l []string) bool {
 
 func (st *DCOSTools) doRequest(method, url string, timeout time.Duration, body io.Reader) (responseBody []byte, httpResponseCode int, err error) {
 	log.Debugf("[%s] %s, timeout: %s", method, url, timeout.String())
+	url, err = useTLSScheme(url, st.ForceTLS)
+	if err != nil {
+		return responseBody, http.StatusBadRequest, err
+	}
 	request, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return responseBody, http.StatusBadRequest, err

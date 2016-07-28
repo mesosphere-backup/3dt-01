@@ -16,14 +16,14 @@ import (
 // /api/v1/system/health, get a units status, used by 3dt puller
 func unitsHealthStatus(w http.ResponseWriter, r *http.Request, config *Config) {
 	if err := json.NewEncoder(w).Encode(unitsHealthReport.GetHealthReport()); err != nil {
-		log.Error("Failed to encode responses to json")
+		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
 // /api/v1/system/health/units, get an array of all units collected from all hosts in a cluster
 func getAllUnitsHandler(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(globalMonitoringResponse.GetAllUnits()); err != nil {
-		log.Error("Failed to encode responses to json")
+		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
@@ -32,12 +32,12 @@ func getUnitByIDHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	unitResponse, err := globalMonitoringResponse.GetUnit(vars["unitid"])
 	if err != nil {
-		log.Error(err)
+		log.Errorf("Could not get a unit %s: %s", vars["unitid"], err)
 		json.NewEncoder(w).Encode(err)
 		return
 	}
 	if err := json.NewEncoder(w).Encode(unitResponse); err != nil {
-		log.Error("Failed to encode responses to json")
+		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
@@ -46,12 +46,12 @@ func getNodesByUnitIDHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	nodesForUnitResponse, err := globalMonitoringResponse.GetNodesForUnit(vars["unitid"])
 	if err != nil {
-		log.Error(err)
+		log.Errorf("Could not get a list of nodes for unit %s: %s", vars["unitid"], err)
 		json.NewEncoder(w).Encode(err)
 		return
 	}
 	if err := json.NewEncoder(w).Encode(nodesForUnitResponse); err != nil {
-		log.Error("Failed to encode responses to json")
+		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
@@ -61,26 +61,26 @@ func getNodeByUnitIDNodeIDHandler(w http.ResponseWriter, r *http.Request) {
 	nodePerUnit, err := globalMonitoringResponse.GetSpecificNodeForUnit(vars["unitid"], vars["nodeid"])
 
 	if err != nil {
-		log.Error(err)
+		log.Errorf("Could not get a unit %s for a node %s: %s", vars["unitid"], vars["nodeid"], err)
 		json.NewEncoder(w).Encode(err)
 		return
 	}
 	if err := json.NewEncoder(w).Encode(nodePerUnit); err != nil {
-		log.Error("Failed to encode responses to json")
+		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
 // list the entire tree
 func reportHandler(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(globalMonitoringResponse); err != nil {
-		log.Error("Failed to encode responses to json")
+		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
 // /api/v1/system/health/nodes
 func getNodesHandler(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(globalMonitoringResponse.GetNodes()); err != nil {
-		log.Error("Failed to encode responses to json")
+		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
@@ -89,13 +89,13 @@ func getNodeByIDHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	nodes, err := globalMonitoringResponse.GetNodeByID(vars["nodeid"])
 	if err != nil {
-		log.Error(err)
+		log.Errorf("Could not get a node by id %s: %s", vars["nodeid"], err)
 		json.NewEncoder(w).Encode(err)
 		return
 	}
 
 	if err := json.NewEncoder(w).Encode(nodes); err != nil {
-		log.Error("Failed to encode responses to json")
+		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
@@ -104,13 +104,13 @@ func getNodeUnitsByNodeIDHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	units, err := globalMonitoringResponse.GetNodeUnitsID(vars["nodeid"])
 	if err != nil {
-		log.Error(err)
+		log.Errorf("Could not get a list of unts for node %s: %s", vars["nodeid"], err)
 		json.NewEncoder(w).Encode(err)
 		return
 	}
 
 	if err := json.NewEncoder(w).Encode(units); err != nil {
-		log.Error("Failed to encode responses to json")
+		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
@@ -118,12 +118,12 @@ func getNodeUnitByNodeIDUnitIDHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	unit, err := globalMonitoringResponse.GetNodeUnitByNodeIDUnitID(vars["nodeid"], vars["unitid"])
 	if err != nil {
-		log.Error(err)
+		log.Errorf("Could not get a unit %s for a node %s: %s", vars["unitid"], vars["nodeid"], err)
 		json.NewEncoder(w).Encode(err)
 		return
 	}
 	if err := json.NewEncoder(w).Encode(unit); err != nil {
-		log.Error("Failed to encode responses to json")
+		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
@@ -131,14 +131,14 @@ func getNodeUnitByNodeIDUnitIDHandler(w http.ResponseWriter, r *http.Request) {
 func writeResponse(w http.ResponseWriter, response diagnosticsReportResponse) {
 	w.WriteHeader(response.ResponseCode)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		log.Error(err)
+		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
 func writeCreateResponse(w http.ResponseWriter, response createResponse) {
 	w.WriteHeader(response.ResponseCode)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		log.Error(err)
+		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
@@ -150,7 +150,7 @@ func deleteBundleHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	vars := mux.Vars(r)
 	response, err := dt.DtDiagnosticsJob.delete(vars["file"], dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
-		log.Error(err)
+		log.Errorf("Could not delete a file %s: %s", vars["file"], err)
 	}
 	writeResponse(w, response)
 }
@@ -158,7 +158,7 @@ func deleteBundleHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 // A handler function return a diagnostics job status
 func diagnosticsJobStatusHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	if err := json.NewEncoder(w).Encode(dt.DtDiagnosticsJob.getStatus(dt.Cfg)); err != nil {
-		log.Error("Failed to encode responses to json")
+		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
@@ -171,7 +171,7 @@ func diagnosticsJobStatusAllHandler(w http.ResponseWriter, r *http.Request, dt D
 		return
 	}
 	if err := json.NewEncoder(w).Encode(status); err != nil {
-		log.Error("Failed to encode responses to json")
+		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
@@ -180,7 +180,7 @@ func diagnosticsJobStatusAllHandler(w http.ResponseWriter, r *http.Request, dt D
 func cancelBundleReportHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	response, err := dt.DtDiagnosticsJob.cancel(dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
-		log.Error(err)
+		log.Errorf("Could not cancel a job: %s", err)
 	}
 	writeResponse(w, response)
 }
@@ -194,7 +194,7 @@ func listAvailableGLobalBundlesFilesHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := json.NewEncoder(w).Encode(allBundles); err != nil {
-		log.Error("Failed to encode responses to json")
+		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
@@ -212,7 +212,7 @@ func listAvailableLocalBundlesFilesHandler(w http.ResponseWriter, r *http.Reques
 		baseFile := filepath.Base(file)
 		fileInfo, err := os.Stat(file)
 		if err != nil {
-			log.Error(err)
+			log.Errorf("Could not stat %s: %s", file, err)
 			continue
 		}
 
@@ -222,7 +222,7 @@ func listAvailableLocalBundlesFilesHandler(w http.ResponseWriter, r *http.Reques
 		})
 	}
 	if err := json.NewEncoder(w).Encode(localBundles); err != nil {
-		log.Error("Failed to encode responses to json")
+		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
@@ -268,7 +268,7 @@ func createBundleHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	}
 	response, err := dt.DtDiagnosticsJob.run(req, dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
-		log.Error(err)
+		log.Errorf("Could not run a diagnostics job: %s", err)
 	}
 	writeCreateResponse(w, response)
 }
@@ -282,7 +282,7 @@ func logsListHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 		return
 	}
 	if err := json.NewEncoder(w).Encode(endspoints); err != nil {
-		log.Error("Failed to encode responses to json")
+		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
@@ -303,6 +303,6 @@ func getUnitLogHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 
 func selfTestHandler(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(runSelfTest()); err != nil {
-		log.Error(err)
+		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }

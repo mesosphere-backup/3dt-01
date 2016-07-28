@@ -96,21 +96,22 @@ func (f *findAgentsInHistoryService) getMesosAgents() (nodes []Node, err error) 
 	}
 	nodeCount := make(map[string]int)
 	for _, historyFile := range files {
-		agents, err := ioutil.ReadFile(filepath.Join(basePath, historyFile.Name()))
+		filePath := filepath.Join(basePath, historyFile.Name())
+		agents, err := ioutil.ReadFile(filePath)
 		if err != nil {
-			log.Error(err)
+			log.Errorf("Could not read %s: %s", filePath, err)
 			continue
 		}
 
 		unquotedAgents, err := strconv.Unquote(string(agents))
 		if err != nil {
-			log.Error(err)
+			log.Errorf("Could not unquote agents string %s: %s", string(agents), err)
 			continue
 		}
 
 		var sr agentsResponse
 		if err := json.Unmarshal([]byte(unquotedAgents), &sr); err != nil {
-			log.Error(err)
+			log.Errorf("Could not unmarshal unquotedAgents %s: %s", unquotedAgents, err)
 			continue
 		}
 
@@ -459,12 +460,12 @@ func runPull(dt Dt) {
 	var clusterHosts []Node
 	masterNodes, err := dt.DtDCOSTools.GetMasterNodes()
 	if err != nil {
-		log.Error(err)
+		log.Errorf("Could not get master nodes: %s", err)
 	}
 
 	agentNodes, err := dt.DtDCOSTools.GetAgentNodes()
 	if err != nil {
-		log.Error(err)
+		log.Errorf("Could not get agent nodes: %s", err)
 	}
 
 	clusterHosts = append(clusterHosts, masterNodes...)
@@ -481,7 +482,7 @@ func runPull(dt Dt) {
 	loadJobs(hostsChan, clusterHosts)
 
 	// Pull data from each host
-	for i := 1; i <= len(clusterHosts); i++ {
+	for i := 0; i < len(clusterHosts); i++ {
 		go pullHostStatus(hostsChan, respChan, dt)
 	}
 
@@ -562,7 +563,7 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, dt Dt) {
 
 		port, err := getPullPortByRole(dt.Cfg, host.Role)
 		if err != nil {
-			log.Error(err)
+			log.Errorf("Could not get a port by role %s: %s", host.Role, err)
 			response.Status = http.StatusServiceUnavailable
 			host.Health = 3
 			response.Node = host
@@ -573,7 +574,7 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, dt Dt) {
 		// UnitsRoute available in router.go
 		url, err := useTLSScheme(fmt.Sprintf("http://%s:%d%s", host.IP, port, BaseRoute), dt.Cfg.FlagForceTLS)
 		if err != nil {
-			log.Error(err)
+			log.Errorf("Could not read useTLSScheme: %s", err)
 			response.Status = http.StatusServiceUnavailable
 			host.Health = 3
 			response.Node = host
@@ -586,7 +587,7 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, dt Dt) {
 		timeout := time.Duration(3 * time.Second)
 		body, statusCode, err := dt.DtDCOSTools.Get(url, timeout)
 		if err != nil {
-			log.Error(err)
+			log.Errorf("Could not HTTP GET %s: %s", url, err)
 			response.Status = statusCode
 			host.Health = 3 // 3 stands for unknown
 			respChan <- &response
@@ -597,7 +598,7 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, dt Dt) {
 		// Response should be strictly mapped to jsonBodyStruct, otherwise skip it
 		var jsonBody UnitsHealthResponseJSONStruct
 		if err := json.Unmarshal(body, &jsonBody); err != nil {
-			log.Errorf("Coult not deserialize json reponse from %s, url: %s", host.IP, url)
+			log.Errorf("Coult not deserialize json reponse from %s, url %s: %s", host.IP, url, err)
 			response.Status = statusCode
 			host.Health = 3 // 3 stands for unknown
 			respChan <- &response

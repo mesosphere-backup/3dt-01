@@ -47,8 +47,7 @@ func StartUpdateHealthReport(dt Dt, readyChan chan struct{}, runOnce bool) {
 				closedReadyChan = true
 			}
 		} else {
-			log.Error("Could not update systemd units health report")
-			log.Error(err)
+			log.Errorf("Could not update systemd units health report: %s", err)
 		}
 		unitsHealthReport.UpdateHealthReport(healthReport)
 		if runOnce {
@@ -88,7 +87,7 @@ func getHostDiskUsage(diskPartitions []disk.PartitionStat) (diskUsage []disk.Usa
 		currentDiskUsage, err := disk.Usage(diskProps.Mountpoint)
 		if err != nil {
 			// Just log the error, do not return.
-			log.Error(err)
+			log.Errorf("Could not get a disk usage: %s", err)
 			continue
 		}
 		// Skip the virtual partitions e.g. /proc
@@ -103,11 +102,11 @@ func getHostDiskUsage(diskPartitions []disk.PartitionStat) (diskUsage []disk.Usa
 func updateSystemMetrics() (sysMetrics sysMetrics, err error) {
 	// Try to update system metrics. Do not return if we could not update some of them.
 	if sysMetrics.Memory, err = getHostVirtualMemory(); err != nil {
-		log.Error(err)
+		log.Errorf("Could not get a host virtual memory: %s", err)
 	}
 
 	if sysMetrics.LoadAvarage, err = getHostLoadAvarage(); err != nil {
-		log.Error(err)
+		log.Error("Could not get a host load avarage: %s", err)
 	}
 
 	// Get all partitions available on a host.
@@ -123,29 +122,26 @@ func updateSystemMetrics() (sysMetrics sysMetrics, err error) {
 	return sysMetrics, nil
 }
 
-func logError(err error) {
-	if err != nil {
-		log.Error(err)
-	}
-}
-
 // GetUnitsProperties return a structured units health response of UnitsHealthResponseJsonStruct type.
 func GetUnitsProperties(dt Dt) (healthReport UnitsHealthResponseJSONStruct, err error) {
 	// update system metrics first to make sure we always return them.
 	sysMetrics, err := updateSystemMetrics()
 	if err != nil {
-		log.Error(err)
+		log.Errorf("Could not update system metrics: %s", err)
 	}
 	healthReport.System = sysMetrics
 	healthReport.TdtVersion = dt.Cfg.Version
 	healthReport.Hostname, err = dt.DtDCOSTools.GetHostname()
-	logError(err)
+	if err != nil {
+		log.Errorf("Could not get a hostname: %s", err)
+	}
 
 	// detect DC/OS systemd units
 	foundUnits, err := dt.DtDCOSTools.GetUnitNames()
 	if err != nil {
-		log.Error(err)
+		log.Errorf("Could not get unit names: %s", err)
 	}
+
 	var allUnitsProperties []healthResponseValues
 	// open dbus connection
 	if err = dt.DtDCOSTools.InitializeDBUSConnection(); err != nil {
@@ -169,7 +165,7 @@ func GetUnitsProperties(dt Dt) (healthReport UnitsHealthResponseJSONStruct, err 
 		}
 		normalizedProperty, err := normalizeProperty(currentProperty, dt)
 		if err != nil {
-			log.Error(err)
+			log.Errorf("Could not normalize property for unit %s: %s", unit, err)
 			continue
 		}
 		allUnitsProperties = append(allUnitsProperties, normalizedProperty)
@@ -184,14 +180,20 @@ func GetUnitsProperties(dt Dt) (healthReport UnitsHealthResponseJSONStruct, err 
 	healthReport.Array = allUnitsProperties
 
 	healthReport.IPAddress, err = dt.DtDCOSTools.DetectIP()
-	logError(err)
+	if err != nil {
+		log.Errorf("Could not detect IP: %s", err)
+	}
 
 	healthReport.DcosVersion = dt.Cfg.DCOSVersion
 	healthReport.Role, err = dt.DtDCOSTools.GetNodeRole()
-	logError(err)
+	if err != nil {
+		log.Errorf("Could not get node role: %s", err)
+	}
 
 	healthReport.MesosID, err = dt.DtDCOSTools.GetMesosNodeID()
-	logError(err)
+	if err != nil {
+		log.Errorf("Could not get mesos node id: %s", err)
+	}
 
 	return healthReport, nil
 }

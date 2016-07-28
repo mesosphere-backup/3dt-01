@@ -11,12 +11,12 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	netUrl "net/url"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
-	netUrl "net/url"
 )
 
 // Requester is an implementation of HTTPRequester interface.
@@ -126,7 +126,6 @@ func (st *DCOSTools) GetUnitProperties(pname string) (result map[string]interfac
 	// get Service specific properties.
 	result, err = st.dcon.GetUnitProperties(pname)
 	if err != nil {
-		log.Error(err)
 		return result, err
 	}
 	return result, nil
@@ -267,7 +266,7 @@ func (st *DCOSTools) GetMasterNodes() (nodesResponse []Node, err error) {
 		url:   st.ExhibitorURL,
 		getFn: st.Get,
 		next: &findNodesInDNS{
-			forceTLS: st.ForceTLS,
+			forceTLS:  st.ForceTLS,
 			dnsRecord: "master.mesos",
 			role:      MasterRole,
 			next:      nil,
@@ -279,7 +278,7 @@ func (st *DCOSTools) GetMasterNodes() (nodesResponse []Node, err error) {
 // GetAgentNodes finds DC/OS agents.
 func (st *DCOSTools) GetAgentNodes() (nodes []Node, err error) {
 	finder := &findNodesInDNS{
-		forceTLS: st.ForceTLS,
+		forceTLS:  st.ForceTLS,
 		dnsRecord: "leader.mesos",
 		role:      AgentRole,
 		getFn:     st.Get,
@@ -408,8 +407,8 @@ func (u *UnitPropertiesResponse) CheckUnitHealth() (int, string, error) {
 	okActiveStates := []string{"active", "inactive", "activating"}
 	if !isInList(u.ActiveState, okActiveStates) {
 		return 1, fmt.Sprintf(
-			"%s state is not one of the possible states %s. Current state is [ %s ]. " +
-			"Please check `systemctl show all %s` to check current unit state. ", u.ID, okActiveStates, u.ActiveState, u.ID), nil
+			"%s state is not one of the possible states %s. Current state is [ %s ]. "+
+				"Please check `systemctl show all %s` to check current unit state. ", u.ID, okActiveStates, u.ActiveState, u.ID), nil
 	}
 
 	// https://www.freedesktop.org/wiki/Software/systemd/dbus/
@@ -434,9 +433,8 @@ func (u *UnitPropertiesResponse) CheckUnitHealth() (int, string, error) {
 func normalizeProperty(unitProps map[string]interface{}, dt Dt) (healthResponseValues, error) {
 	var (
 		description, prettyName string
-		propsResponse UnitPropertiesResponse
+		propsResponse           UnitPropertiesResponse
 	)
-
 
 	marshaledPropsResponse, err := json.Marshal(unitProps)
 	if err != nil {
@@ -458,7 +456,7 @@ func normalizeProperty(unitProps map[string]interface{}, dt Dt) (healthResponseV
 			unitOutput += "\n"
 			unitOutput += journalOutput
 		} else {
-			log.Error(err)
+			log.Errorf("Could not read journalctl: %s", err)
 		}
 	}
 
@@ -541,7 +539,7 @@ func runCmd(command []string, timeout int) (io.ReadCloser, error) {
 	// ignore and log error if stderr failed, but do not fail
 	stdout.stderrPipe, err = cmd.StderrPipe()
 	if err != nil {
-		log.Error(err)
+		log.Errorf("Could not attach to stderr pile: %s", err)
 	}
 
 	// Execute a command

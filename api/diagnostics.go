@@ -410,7 +410,14 @@ func (j *DiagnosticsJob) getStatus(config *Config) bundleReportStatus {
 func (j *DiagnosticsJob) getHTTPAddToZip(node Node, endpoints map[string]string, folder string, zipWriter *zip.Writer,
 	summaryErrorsReport, summaryReport *bytes.Buffer, config *Config, DCOSTools DCOSHelper) error {
 	for fileName, httpEndpoint := range endpoints {
-		fullURL := "http://" + node.IP + httpEndpoint
+		fullURL, err := useTLSScheme("http://" + node.IP + httpEndpoint, config.FlagForceTLS)
+		if err != nil {
+			j.Errors = append(j.Errors, err.Error())
+			log.Error(err)
+			updateSummaryReport(err.Error(), node, err.Error(), summaryErrorsReport)
+			continue
+		}
+		log.Debugf("Using URL %s to collect a log", fullURL)
 		select {
 		case _, ok := <-j.cancelChan:
 			if ok {

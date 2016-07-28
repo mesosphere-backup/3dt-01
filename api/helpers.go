@@ -223,11 +223,14 @@ func isInList(item string, l []string) bool {
 }
 
 func (st *DCOSTools) doRequest(method, url string, timeout time.Duration, body io.Reader) (responseBody []byte, httpResponseCode int, err error) {
-	log.Debugf("[%s] %s, timeout: %s", method, url, timeout.String())
-	url, err = useTLSScheme(url, st.ForceTLS)
-	if err != nil {
-		return responseBody, http.StatusBadRequest, err
+	if url != st.ExhibitorURL {
+		url, err = useTLSScheme(url, st.ForceTLS)
+		if err != nil {
+			return responseBody, http.StatusBadRequest, err
+		}
 	}
+
+	log.Debugf("[%s] %s, timeout: %s, forceTLS: %s, basicURL: %s", method, url, timeout.String(), st.ForceTLS, url)
 	request, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return responseBody, http.StatusBadRequest, err

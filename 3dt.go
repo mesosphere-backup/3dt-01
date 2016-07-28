@@ -14,20 +14,23 @@ func getVersion() string {
 	return (fmt.Sprintf("Version: %s, Revision: %s", api.Version, api.Revision))
 }
 
-func runDiag(dt api.Dt) int {
-	var exitCode int
+func runDiag(dt api.Dt) {
 	units, err := api.GetUnitsProperties(dt)
 	if err != nil {
-		log.Error(err)
-		return 1
+		log.Fatalf("Error getting units properties: %s", err)
 	}
+
+	var fail bool
 	for _, unit := range units.Array {
 		if unit.UnitHealth != 0 {
 			fmt.Printf("[%s]: %s %s\n", unit.UnitID, unit.UnitTitle, unit.UnitOutput)
-			exitCode = 1
+			fail = true
 		}
 	}
-	return exitCode
+
+	if fail {
+		log.Fatal("Found unhealthy systemd units")
+	}
 }
 
 func main() {
@@ -37,9 +40,9 @@ func main() {
 	// load config with default values
 	config, err := api.LoadDefaultConfig(os.Args)
 	if err != nil {
-		log.Error(err)
-		os.Exit(1)
+		log.Fatalf("Couuld not load default config: %s", err)
 	}
+
 	// print version and exit
 	if config.FlagVersion {
 		fmt.Println(getVersion())
@@ -53,14 +56,13 @@ func main() {
 
 	// init requester
 	if err := api.Requester.Init(&config, DCOSTools); err != nil {
-		log.Fatal(err)
+		log.Fatalf("Could not initialze the HTTP(S) requester: %s", err)
 	}
 
-	// Create and init diagnostics job
+	// Create and init diagnostics job, do not hard fail on error
 	diagnosticsJob := &api.DiagnosticsJob{}
 	if err := diagnosticsJob.Init(&config, DCOSTools); err != nil {
-		log.Error(err)
-		log.Error("Could not init diagnostics job properly")
+		log.Errorf("Could not init diagnostics job properly: %s", err)
 	}
 
 	// Inject dependencies used for running 3dt.
@@ -72,7 +74,8 @@ func main() {
 
 	// run local diagnostics, verify all systemd units are healthy.
 	if config.FlagDiag {
-		os.Exit(runDiag(dt))
+		runDiag(dt)
+		os.Exit(0)
 	}
 
 	// set verbose (debug) output.
@@ -93,11 +96,10 @@ func main() {
 	// try using systemd socket
 	listeners, err := activation.Listeners(true)
 	if err != nil {
-		log.Error(err)
+		log.Errorf("Systemd socket not found: %s", err)
 	}
 
 	if len(listeners) == 0 || listeners[0] == nil {
-		log.Error("Could not find listen socket")
 		log.Infof("Exposing 3DT API on 0.0.0.0:%d", config.FlagPort)
 		log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.FlagPort), router))
 	}

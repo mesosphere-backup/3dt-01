@@ -10,7 +10,7 @@ import (
 
 var (
 	// Version of 3dt code.
-	Version = "0.2.3"
+	Version = "0.2.4"
 
 	// APIVer is an API version.
 	APIVer = 1
@@ -126,12 +126,12 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	detectIPCmd := os.Getenv("MESOS_IP_DISCOVERY_COMMAND")
 	if detectIPCmd == "" {
 		detectIPCmd = "/opt/mesosphere/bin/detect_ip"
-		log.Warningf("Environment variable MESOS_IP_DISCOVERY_COMMAND is not set, using default location: %s", detectIPCmd)
+		log.Debugf("Environment variable MESOS_IP_DISCOVERY_COMMAND is not set, using default location: %s", detectIPCmd)
 	}
 	config.MesosIPDiscoveryCommand = detectIPCmd
 
 	if os.Getenv("DCOS_VERSION") == "" {
-		log.Warning("Environment variable DCOS_VERSION is not set")
+		log.Debug("Environment variable DCOS_VERSION is not set")
 	}
 	config.DCOSVersion = os.Getenv("DCOS_VERSION")
 	config.SystemdUnits = []string{"dcos-setup.service", "dcos-link-env.service", "dcos-download.service"}

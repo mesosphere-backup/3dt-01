@@ -41,7 +41,7 @@ func (f *findMastersInExhibitor) findMesosMasters() (nodes []Node, err error) {
 	if f.getFn == nil {
 		return nodes, errors.New("Could not initialize HTTP GET function. Make sure you set getFn in constractor")
 	}
-	timeout := time.Duration(time.Second)
+	timeout := time.Duration(time.Second*11)
 	body, statusCode, err := f.getFn(f.url, timeout)
 	if err != nil {
 		return nodes, err

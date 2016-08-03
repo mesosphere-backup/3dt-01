@@ -125,7 +125,7 @@ func (f *findAgentsInHistoryService) getMesosAgents() (nodes []Node, err error) 
 
 	}
 	if len(nodeCount) == 0 {
-		return nodes, errors.New("Agent nodes were not found in hisotry service for the past hour")
+		return nodes, errors.New("Agent nodes were not found in history service for the past hour")
 	}
 
 	for ip := range nodeCount {
@@ -140,7 +140,7 @@ func (f *findAgentsInHistoryService) getMesosAgents() (nodes []Node, err error) 
 func (f *findAgentsInHistoryService) find() (nodes []Node, err error) {
 	nodes, err = f.getMesosAgents()
 	if err == nil {
-		log.Debugf("Found agents in the hisotry service for past %s", f.pastTime)
+		log.Debugf("Found agents in the history service for past %s", f.pastTime)
 		return nodes, nil
 	}
 	// try next provider if it is available

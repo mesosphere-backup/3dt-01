@@ -72,15 +72,15 @@ func main() {
 		DtDiagnosticsJob: diagnosticsJob,
 	}
 
+	// set verbose (debug) output.
+	if config.FlagVerbose {
+		log.SetLevel(log.DebugLevel)
+	}
+
 	// run local diagnostics, verify all systemd units are healthy.
 	if config.FlagDiag {
 		runDiag(dt)
 		os.Exit(0)
-	}
-
-	// set verbose (debug) output.
-	if config.FlagVerbose {
-		log.SetLevel(log.DebugLevel)
 	}
 
 	// start pulling every 60 seconds.

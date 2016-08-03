@@ -188,14 +188,10 @@ func (st *DCOSTools) GetMesosNodeID() (string, error) {
 	log.Debugf("using role %s, port %d to get node id", role, port)
 
 	url := fmt.Sprintf("http://%s:%d/state", st.ip, port)
-	if err != nil {
-		return "", err
-	}
-
-	timeout := time.Duration(3) * time.Second
+	timeout := time.Duration(time.Second*3)
 	body, statusCode, err := st.Get(url, timeout)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 	if statusCode != http.StatusOK {
 		return "", fmt.Errorf("response code: %d", statusCode)

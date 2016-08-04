@@ -41,7 +41,7 @@ func (f *findMastersInExhibitor) findMesosMasters() (nodes []Node, err error) {
 	if f.getFn == nil {
 		return nodes, errors.New("Could not initialize HTTP GET function. Make sure you set getFn in constractor")
 	}
-	timeout := time.Duration(time.Second*11)
+	timeout := time.Duration(time.Second * 11)
 	body, statusCode, err := f.getFn(f.url, timeout)
 	if err != nil {
 		return nodes, err
@@ -448,15 +448,28 @@ func StartPullWithInterval(dt Dt, ready chan struct{}) {
 		log.Error("Not ready to pull from localhost after 10 seconds")
 	}
 
+	// run puller for the first time
+	runPull(dt, false)
+
 	// Start infinite loop
 	for {
-		runPull(dt)
-		log.Debugf("Waiting %d seconds before next pull", dt.Cfg.FlagPullInterval)
-		dt.DtDCOSTools.WaitBetweenPulls(dt.Cfg.FlagPullInterval)
+		select {
+		case <-dt.RunPullerChan:
+			log.Debug("Update cluster health request recevied")
+			runPull(dt, true)
+
+			// signal back that runPull has been executed and data is ready
+			dt.RunPullerDoneChan <- true
+			break
+		case <-time.After(time.Duration(dt.Cfg.FlagPullInterval) * time.Second):
+			// run puller after a timeout
+			runPull(dt, false)
+			break
+		}
 	}
 }
 
-func runPull(dt Dt) {
+func runPull(dt Dt, noCache bool) {
 	var clusterHosts []Node
 	masterNodes, err := dt.DtDCOSTools.GetMasterNodes()
 	if err != nil {
@@ -483,7 +496,7 @@ func runPull(dt Dt) {
 
 	// Pull data from each host
 	for i := 0; i < len(clusterHosts); i++ {
-		go pullHostStatus(hostsChan, respChan, dt)
+		go pullHostStatus(hostsChan, respChan, dt, noCache)
 	}
 
 	// blocking here got get all responses from hosts
@@ -557,7 +570,7 @@ func collectResponses(respChan <-chan *httpResponse, totalHosts int) (responses 
 	}
 }
 
-func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, dt Dt) {
+func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, dt Dt, noCache bool) {
 	for host := range hosts {
 		var response httpResponse
 
@@ -571,8 +584,13 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, dt Dt) {
 			continue
 		}
 
+		baseURL := fmt.Sprintf("http://%s:%d%s", host.IP, port, BaseRoute)
+		if noCache {
+			baseURL += "?cache=0"
+		}
+
 		// UnitsRoute available in router.go
-		url, err := useTLSScheme(fmt.Sprintf("http://%s:%d%s", host.IP, port, BaseRoute), dt.Cfg.FlagForceTLS)
+		url, err := useTLSScheme(baseURL, dt.Cfg.FlagForceTLS)
 		if err != nil {
 			log.Errorf("Could not read useTLSScheme: %s", err)
 			response.Status = http.StatusServiceUnavailable

@@ -38,23 +38,40 @@ func (uh *unitsHealth) UpdateHealthReport(healthReport UnitsHealthResponseJSONSt
 
 // StartUpdateHealthReport should be started in a separate goroutine to update global health report periodically.
 func StartUpdateHealthReport(dt Dt, readyChan chan struct{}, runOnce bool) {
-	var closedReadyChan bool
-	for {
+	updateHealth := func() error {
 		healthReport, err := GetUnitsProperties(dt)
-		if err == nil {
-			if !closedReadyChan {
-				close(readyChan)
-				closedReadyChan = true
-			}
-		} else {
-			log.Errorf("Could not update systemd units health report: %s", err)
+		if err != nil {
+			return err
 		}
 		unitsHealthReport.UpdateHealthReport(healthReport)
-		if runOnce {
-			log.Debug("Run startUpdateHealthReport only once")
-			return
+		return nil
+	}
+
+	// update health for the first time
+	if err := updateHealth(); err == nil {
+		close(readyChan)
+	}
+
+	if runOnce {
+		return
+	}
+
+	for {
+		select {
+		case <- dt.UpdateHealthChan:
+			log.Debug("Received an update health status signal")
+			if err := updateHealth(); err != nil {
+				log.Errorf("Could not update health status: %s", err)
+			}
+			dt.UpdateHealthDoneChan <- true
+			break
+		case <- time.After(time.Duration(dt.Cfg.FlagUpdateHealthReportInterval) * time.Second):
+			log.Debug("Timeout reached, updating health status")
+			if err := updateHealth(); err != nil {
+				log.Errorf("Could not update health status: %s", err)
+			}
+			break
 		}
-		time.Sleep(time.Duration(dt.Cfg.FlagUpdateHealthReportInterval) * time.Second)
 	}
 }
 

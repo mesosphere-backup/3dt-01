@@ -10,11 +10,26 @@ import (
 	"net/http/httputil"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Route handlers
 // /api/v1/system/health, get a units status, used by 3dt puller
-func unitsHealthStatus(w http.ResponseWriter, r *http.Request, config *Config) {
+func unitsHealthStatus(w http.ResponseWriter, r *http.Request, dt Dt) {
+	if cache := r.URL.Query()["cache"]; len(cache) > 0 {
+		dt.UpdateHealthChan <- true
+		select {
+		case <- dt.UpdateHealthDoneChan:
+			log.Debugf("Health status has been updated")
+			break
+		case <- time.After(time.Second * 3):
+			e := "Could not update health status, timeout occured"
+			log.Error(e)
+			http.Error(w, e, http.StatusRequestTimeout)
+			return
+		}
+	}
+
 	if err := json.NewEncoder(w).Encode(unitsHealthReport.GetHealthReport()); err != nil {
 		log.Errorf("Failed to encode responses to json: %s", err)
 	}

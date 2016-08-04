@@ -297,11 +297,6 @@ func (st *DCOSTools) GetAgentNodes() (nodes []Node, err error) {
 	return finder.find()
 }
 
-// WaitBetweenPulls sleep.
-func (st *DCOSTools) WaitBetweenPulls(interval int) {
-	time.Sleep(time.Duration(interval) * time.Second)
-}
-
 // HTTPReq is an implementation of HTTPRequester interface
 type HTTPReq struct {
 	caPool *x509.CertPool

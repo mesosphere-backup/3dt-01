@@ -21,12 +21,12 @@ func (pt *PullType) GetTimestamp() time.Time {
 	return time.Now()
 }
 
-func (pt *PullType) GetUnitsPropertiesViaHttp(url string) ([]byte, int, error) {
+func (pt *PullType) GetUnitsPropertiesViaHttp(url string, timeout int) ([]byte, int, error) {
 	var body []byte
 
 	// a timeout of 1 seconds should be good enough
 	client := http.Client{
-		Timeout: time.Duration(time.Second),
+		Timeout: time.Duration(timeout) * time.Second,
 	}
 
 	resp, err := client.Get(url)
@@ -291,33 +291,33 @@ func StartPullWithInterval(config Config, pi Puller, ready chan bool) {
 		if r == true {
 			log.Info(fmt.Sprintf("Start pulling with interval %d", config.FlagPullInterval))
 			for {
-				RunPull(config.FlagPullInterval, config.FlagPort, pi)
+				RunPull(config, pi)
 			}
 
 		}
 	case <-time.After(time.Second * 10):
 		log.Error("Not ready to pull from localhost after 10 seconds")
 		for {
-			RunPull(config.FlagPullInterval, config.FlagPort, pi)
+			RunPull(config, pi)
 		}
 	}
 }
 
-func RunPull(sec int, port int, pi Puller) {
+func RunPull(config Config, pi Puller) {
 	var ClusterHosts []Node
 	masterNodes, err := pi.LookupMaster()
 	if err != nil {
 		log.Error(err)
-		log.Warningf("Could not get a list of master nodes, waiting %d sec", sec)
-		pi.WaitBetweenPulls(sec)
+		log.Warningf("Could not get a list of master nodes, waiting %d sec", config.FlagPullInterval)
+		pi.WaitBetweenPulls(config.FlagPullInterval)
 		return
 	}
 
 	agentNodes, err := pi.GetAgentsFromMaster()
 	if err != nil {
 		log.Error(err)
-		log.Warningf("Could not get a list of agent nodes, waiting %d sec", sec)
-		pi.WaitBetweenPulls(sec)
+		log.Warningf("Could not get a list of agent nodes, waiting %d sec", config.FlagPullInterval)
+		pi.WaitBetweenPulls(config.FlagPullInterval)
 		return
 	}
 
@@ -330,7 +330,7 @@ func RunPull(sec int, port int, pi Puller) {
 
 	// Pull data from each host
 	for i := 0; i <= len(ClusterHosts); i++ {
-		go pullHostStatus(hostsChan, respChan, port, pi)
+		go pullHostStatus(hostsChan, respChan, config.FlagPort, pi, config.FlagPullTimeout)
 	}
 
 	// blocking here got get all responses from hosts
@@ -339,8 +339,8 @@ func RunPull(sec int, port int, pi Puller) {
 	// update collected units/nodes health statuses
 	UpdateHealthStatus(ClusterHttpResponses, pi)
 
-	log.Debug(fmt.Sprintf("Waiting %d seconds before next pull", sec))
-	pi.WaitBetweenPulls(sec)
+	log.Debug(fmt.Sprintf("Waiting %d seconds before next pull", config.FlagPullInterval))
+	pi.WaitBetweenPulls(config.FlagPullInterval)
 }
 
 // function builds a map of all unique units with status
@@ -407,7 +407,7 @@ func collectResponses(respChan <-chan *HttpResponse, totalHosts int) (responses 
 	}
 }
 
-func pullHostStatus(hosts <-chan Node, respChan chan<- *HttpResponse, port int, pi Puller) {
+func pullHostStatus(hosts <-chan Node, respChan chan<- *HttpResponse, port int, pi Puller, pullTimeout int) {
 	for host := range hosts {
 		var response HttpResponse
 
@@ -416,7 +416,7 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *HttpResponse, port int, 
 
 		// Make a request to get node units status
 		// use fake interface implementation for tests
-		body, statusCode, err := pi.GetUnitsPropertiesViaHttp(url)
+		body, statusCode, err := pi.GetUnitsPropertiesViaHttp(url, pullTimeout)
 		if err != nil {
 			log.Error(err)
 			response.Status = 500

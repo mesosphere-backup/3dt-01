@@ -37,7 +37,7 @@ func (pt *FakePuller) GetAgentsFromMaster() (nodes []Node, err error) {
 	return nodes, nil
 }
 
-func (pt *FakePuller) GetUnitsPropertiesViaHttp(url string) ([]byte, int, error) {
+func (pt *FakePuller) GetUnitsPropertiesViaHttp(url string, timeout int) ([]byte, int, error) {
 	var response string
 
 	// master
@@ -114,7 +114,11 @@ func (pt *FakePuller) UpdateHttpResponses(responses []*HttpResponse) {
 var _ = Describe("Test Pull functionality", func() {
 	// RunPull only once
 	pi := &FakePuller{}
-	RunPull(1, 1050, pi)
+	config := Config{
+		FlagPullInterval: 1,
+		FlagPort: 1050,
+	}
+	RunPull(config, pi)
 
 	Context("Run puller", func() {
 		It("should have `dcos-master.service` in GlobalMonitoringResponse.Units", func() {

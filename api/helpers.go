@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"github.com/coreos/go-systemd/dbus"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	netUrl "net/url"
 	"os"
@@ -62,11 +64,21 @@ func (st *DCOSTools) DetectIP() (string, error) {
 	if detectIPCmd == "" {
 		detectIPCmd = "/opt/mesosphere/bin/detect_ip"
 	}
-	out, err := exec.Command(detectIPCmd).Output()
-	st.ip = strings.TrimRight(string(out), "\n")
+	r, err := runCmd([]string{detectIPCmd}, 1)
 	if err != nil {
-		return st.ip, err
+		return "", err
 	}
+	defer r.Close()
+
+	var cmdOutput bytes.Buffer
+	io.Copy(&cmdOutput, r)
+
+	cmdOutputTrimmed := strings.TrimRight(cmdOutput.String(), "\n")
+	ipAddress := net.ParseIP(cmdOutputTrimmed)
+	if ipAddress == nil {
+		return "", fmt.Errorf("%s returned %s, not a valid IPV4 address", detectIPCmd, cmdOutputTrimmed)
+	}
+	st.ip = ipAddress.String()
 	log.Debugf("Executed /opt/mesosphere/bin/detect_ip, output: %s", st.ip)
 	return st.ip, nil
 }
@@ -124,11 +136,7 @@ func (st *DCOSTools) CloseDBUSConnection() error {
 // GetUnitProperties return a map of systemd unit properties received from dbus.
 func (st *DCOSTools) GetUnitProperties(pname string) (result map[string]interface{}, err error) {
 	// get Service specific properties.
-	result, err = st.dcon.GetUnitProperties(pname)
-	if err != nil {
-		return result, err
-	}
-	return result, nil
+	return st.dcon.GetUnitProperties(pname)
 }
 
 // GetUnitNames read a directory /etc/systemd/system/dcos.target.wants and return a list of found systemd units.
@@ -188,7 +196,7 @@ func (st *DCOSTools) GetMesosNodeID() (string, error) {
 	log.Debugf("using role %s, port %d to get node id", role, port)
 
 	url := fmt.Sprintf("http://%s:%d/state", st.ip, port)
-	timeout := time.Duration(time.Second*3)
+	timeout := time.Duration(time.Second * 3)
 	body, statusCode, err := st.Get(url, timeout)
 	if err != nil {
 		return "", err

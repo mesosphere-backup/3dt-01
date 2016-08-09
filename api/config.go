@@ -17,6 +17,7 @@ type Config struct {
 	SystemdUnits		[]string
 
 	FlagPull		bool
+	FlagPullTimeout         int
 	FlagDiag		bool
 	FlagVerbose		bool
 	FlagVersion		bool
@@ -26,6 +27,7 @@ type Config struct {
 
 func (c *Config) SetFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.FlagPull, "pull", c.FlagPull, "Try to pull checks from DC/OS hosts.")
+	fs.IntVar(&c.FlagPullTimeout, "pull-timeout", c.FlagPullTimeout, "Set pull timeout in seconds.")
 	fs.BoolVar(&c.FlagDiag, "diag", c.FlagDiag, "Get diagnostics output once on the CLI. Does not expose API.")
 	fs.BoolVar(&c.FlagVerbose, "verbose", c.FlagVerbose, "Use verbose debug output.")
 	fs.BoolVar(&c.FlagVersion, "version", c.FlagVersion, "Print version.")
@@ -44,6 +46,9 @@ func LoadDefaultConfig(args []string, version string) (config Config, err error)
 	// default pulling interval is 60 seconds
 	config.FlagPullInterval= 60
 	config.Version = version
+
+	// set default pull timeout to 10 seconds
+	config.FlagPullTimeout = 10
 
 	detectIpCmd := os.Getenv("MESOS_IP_DISCOVERY_COMMAND")
 	if detectIpCmd == "" {

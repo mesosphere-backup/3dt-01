@@ -1,4 +1,4 @@
-# 3DT [![velocity](http://velocity.mesosphere.com/service/velocity/buildStatus/icon?job=public-dcos-3dt-pulls)](http://velocity.mesosphere.com/service/velocity/job/public-dcos-3dt-master/)
+# 3DT [![velocity](https://jenkins.mesosphere.com/service/jenkins/buildStatus/icon?job=public-dcos-3dt-pulls)](https://velocity.mesosphere.com/service/jenkins/view/DCOS/job/public-dcos-3dt-pulls/)
 ## DC/OS Distributed Diagnostics Tool & Aggregation Service
 3DT is a monitoring agent which exposes a HTTP API for querying from the /system/health/v1 DC/OS api. 3DT puller collects the data from 3dt agents and represents individual node health for things like system resources as well as DC/OS-specific services.
 

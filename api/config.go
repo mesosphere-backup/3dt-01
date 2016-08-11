@@ -10,7 +10,7 @@ import (
 
 var (
 	// Version of 3dt code.
-	Version = "0.2.6"
+	Version = "0.2.7"
 
 	// APIVer is an API version.
 	APIVer = 1
@@ -24,25 +24,26 @@ var (
 
 // Config structure is a main config object
 type Config struct {
-	Version                 string
-	Revision                string
-	MesosIPDiscoveryCommand string
-	DCOSVersion             string
-	SystemdUnits            []string
+	Version                                      string
+	Revision                                     string
+	MesosIPDiscoveryCommand                      string
+	DCOSVersion                                  string
+	SystemdUnits                                 []string
 
 	// 3dt flags
-	FlagCACertFile                 string
-	FlagPull                       bool
-	FlagDiag                       bool
-	FlagVerbose                    bool
-	FlagVersion                    bool
-	FlagPort                       int
-	FlagMasterPort                 int
-	FlagAgentPort                  int
-	FlagPullInterval               int
-	FlagUpdateHealthReportInterval int
-	FlagExhibitorClusterStatusURL  string
-	FlagForceTLS                   bool
+	FlagCACertFile                               string
+	FlagPull                                     bool
+	FlagDiag                                     bool
+	FlagVerbose                                  bool
+	FlagVersion                                  bool
+	FlagPort                                     int
+	FlagMasterPort                               int
+	FlagAgentPort                                int
+	FlagPullInterval                             int
+	FlagPullTimeoutSec                           int
+	FlagUpdateHealthReportInterval               int
+	FlagExhibitorClusterStatusURL                string
+	FlagForceTLS                                 bool
 
 	// diagnostics job flags
 	FlagDiagnosticsBundleDir                     string
@@ -68,6 +69,7 @@ func (c *Config) setFlags(fs *flag.FlagSet) {
 	// 3dt flags
 	fs.BoolVar(&c.FlagPull, "pull", c.FlagPull, "Try to pull checks from DC/OS hosts.")
 	fs.IntVar(&c.FlagPullInterval, "pull-interval", c.FlagPullInterval, "Set pull interval in seconds.")
+	fs.IntVar(&c.FlagPullTimeoutSec, "pull-timeout", c.FlagPullTimeoutSec, "Set pull timeout.")
 	fs.IntVar(&c.FlagUpdateHealthReportInterval, "health-update-interval", c.FlagUpdateHealthReportInterval,
 		"Set update health interval in seconds.")
 	fs.StringVar(&c.FlagExhibitorClusterStatusURL, "exhibitor-ip", c.FlagExhibitorClusterStatusURL,
@@ -104,6 +106,9 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	// default pulling and health update interval is 60 seconds
 	config.FlagPullInterval = 60
 	config.FlagUpdateHealthReportInterval = 60
+
+	// Set default pull timeout to 3 seconds
+	config.FlagPullTimeoutSec = 3
 
 	config.Version = Version
 	config.Revision = Revision

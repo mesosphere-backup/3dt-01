@@ -67,9 +67,13 @@ func main() {
 
 	// Inject dependencies used for running 3dt.
 	dt := api.Dt{
-		Cfg:              &config,
-		DtDCOSTools:      DCOSTools,
-		DtDiagnosticsJob: diagnosticsJob,
+		Cfg:               &config,
+		DtDCOSTools:       DCOSTools,
+		DtDiagnosticsJob:  diagnosticsJob,
+		RunPullerChan:     make(chan bool),
+		RunPullerDoneChan: make(chan bool),
+		UpdateHealthChan:  make(chan bool),
+		UpdateHealthDoneChan: make(chan bool),
 	}
 
 	// set verbose (debug) output.

@@ -2,20 +2,22 @@ package api
 
 import (
 	"fmt"
+	log "github.com/Sirupsen/logrus"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"net/http"
+	"time"
 )
 
 // BaseRoute a base 3dt endpoint location.
 const BaseRoute string = "/system/health/v1"
 
 type routeHandler struct {
-	url     string
-	handler func(http.ResponseWriter, *http.Request)
-	headers []header
-	methods []string
-	gzip    bool
+	url                 string
+	handler             func(http.ResponseWriter, *http.Request)
+	headers             []header
+	methods             []string
+	gzip, canFlushCache bool
 }
 
 type header struct {
@@ -39,19 +41,49 @@ func headerMiddleware(next http.Handler, headers []header) http.Handler {
 	})
 }
 
+func noCacheMiddleware(next http.Handler, dt Dt) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if cache := r.URL.Query()["cache"]; len(cache) == 0 {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if !dt.Cfg.FlagPull {
+			e := "3dt was not started with -pull flag"
+			log.Error(e)
+			http.Error(w, e, http.StatusServiceUnavailable)
+			return
+		}
+
+		dt.RunPullerChan <- true
+		select {
+		case <-dt.RunPullerDoneChan:
+			log.Debugf("Successfully collected cluster health status")
+			break
+		case <-time.After(time.Minute):
+			e := "Puller timeout occured"
+			log.Error(e)
+			http.Error(w, e, http.StatusRequestTimeout)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func getRoutes(dt Dt) []routeHandler {
 	return []routeHandler{
 		{
 			// /system/health/v1
 			url: BaseRoute,
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				unitsHealthStatus(w, r, dt.Cfg)
+				unitsHealthStatus(w, r, dt)
 			},
 		},
 		{
 			// /system/health/v1/report
-			url:     fmt.Sprintf("%s/report", BaseRoute),
-			handler: reportHandler,
+			url:           fmt.Sprintf("%s/report", BaseRoute),
+			handler:       reportHandler,
+			canFlushCache: true,
 		},
 		{
 			// /system/health/v1/report/download
@@ -63,46 +95,55 @@ func getRoutes(dt Dt) []routeHandler {
 					value: "attachment; filename=health-report.json",
 				},
 			},
+			canFlushCache: true,
 		},
 		{
 			// /system/health/v1/units
-			url:     fmt.Sprintf("%s/units", BaseRoute),
-			handler: getAllUnitsHandler,
+			url:           fmt.Sprintf("%s/units", BaseRoute),
+			handler:       getAllUnitsHandler,
+			canFlushCache: true,
 		},
 		{
 			// /system/health/v1/units/<unitid>
-			url:     fmt.Sprintf("%s/units/{unitid}", BaseRoute),
-			handler: getUnitByIDHandler,
+			url:           fmt.Sprintf("%s/units/{unitid}", BaseRoute),
+			handler:       getUnitByIDHandler,
+			canFlushCache: true,
 		},
 		{
 			// /system/health/v1/units/<unitid>/nodes
-			url:     fmt.Sprintf("%s/units/{unitid}/nodes", BaseRoute),
-			handler: getNodesByUnitIDHandler,
+			url:           fmt.Sprintf("%s/units/{unitid}/nodes", BaseRoute),
+			handler:       getNodesByUnitIDHandler,
+			canFlushCache: true,
 		},
 		{
 			// /system/health/v1/units/<unitid>/nodes/<nodeid>
-			url:     fmt.Sprintf("%s/units/{unitid}/nodes/{nodeid}", BaseRoute),
-			handler: getNodeByUnitIDNodeIDHandler,
+			url:           fmt.Sprintf("%s/units/{unitid}/nodes/{nodeid}", BaseRoute),
+			handler:       getNodeByUnitIDNodeIDHandler,
+			canFlushCache: true,
 		},
 		{
 			// /system/health/v1/nodes
-			url:     fmt.Sprintf("%s/nodes", BaseRoute),
-			handler: getNodesHandler,
+			url:           fmt.Sprintf("%s/nodes", BaseRoute),
+			handler:       getNodesHandler,
+			canFlushCache: true,
 		},
 		{
 			// /system/health/v1/nodes/<nodeid>
-			url:     fmt.Sprintf("%s/nodes/{nodeid}", BaseRoute),
-			handler: getNodeByIDHandler,
+			url:           fmt.Sprintf("%s/nodes/{nodeid}", BaseRoute),
+			handler:       getNodeByIDHandler,
+			canFlushCache: true,
 		},
 		{
 			// /system/health/v1/nodes/<nodeid>/units
-			url:     fmt.Sprintf("%s/nodes/{nodeid}/units", BaseRoute),
-			handler: getNodeUnitsByNodeIDHandler,
+			url:           fmt.Sprintf("%s/nodes/{nodeid}/units", BaseRoute),
+			handler:       getNodeUnitsByNodeIDHandler,
+			canFlushCache: true,
 		},
 		{
 			// /system/health/v1/nodes/<nodeid>/units/<unitid>
-			url:     fmt.Sprintf("%s/nodes/{nodeid}/units/{unitid}", BaseRoute),
-			handler: getNodeUnitByNodeIDUnitIDHandler,
+			url:           fmt.Sprintf("%s/nodes/{nodeid}/units/{unitid}", BaseRoute),
+			handler:       getNodeUnitByNodeIDUnitIDHandler,
+			canFlushCache: true,
 		},
 
 		// diagnostics routes
@@ -197,12 +238,16 @@ func getRoutes(dt Dt) []routeHandler {
 	}
 }
 
-func wrapHandler(handler http.Handler, route routeHandler) http.Handler {
-	handlerWithHeader := headerMiddleware(handler, route.headers)
+func wrapHandler(handler http.Handler, route routeHandler, dt Dt) http.Handler {
+	h := headerMiddleware(handler, route.headers)
 	if route.gzip {
-		return handlers.CompressHandler(handlerWithHeader)
+		h = handlers.CompressHandler(h)
 	}
-	return handlerWithHeader
+	if route.canFlushCache {
+		h = noCacheMiddleware(h, dt)
+	}
+
+	return h
 }
 
 func loadRoutes(router *mux.Router, dt Dt) *mux.Router {
@@ -211,7 +256,7 @@ func loadRoutes(router *mux.Router, dt Dt) *mux.Router {
 			route.methods = []string{"GET"}
 		}
 		handler := http.HandlerFunc(route.handler)
-		router.Handle(route.url, wrapHandler(handler, route)).Methods(route.methods...)
+		router.Handle(route.url, wrapHandler(handler, route, dt)).Methods(route.methods...)
 	}
 	return router
 }

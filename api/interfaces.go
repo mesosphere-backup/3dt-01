@@ -57,9 +57,6 @@ type DCOSHelper interface {
 	//// GetAgentsFromMaster will lookup agents in DC/OS cluster.
 	GetAgentNodes() ([]Node, error)
 
-	// function to wait between pulls
-	WaitBetweenPulls(int)
-
 	// Get timestamp
 	GetTimestamp() time.Time
 }

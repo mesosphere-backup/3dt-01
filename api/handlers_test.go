@@ -194,9 +194,6 @@ func (st *fakeDCOSTools) HTTPRequest(req *http.Request, timeout time.Duration) (
 	return resp, nil
 }
 
-func (st *fakeDCOSTools) WaitBetweenPulls(interval int) {
-}
-
 func (st *fakeDCOSTools) UpdateHTTPResponses(responses []*httpResponse) {
 	st.fakeHTTPResponses = responses
 }
@@ -675,7 +672,7 @@ func (s *HandlersTestSuit) TestStartUpdateHealthReportFunc() {
 	s.assert.Equal(hr.DcosVersion, "")
 	s.assert.Equal(hr.Role, "master")
 	s.assert.Equal(hr.MesosID, "node-id-123")
-	s.assert.Equal(hr.TdtVersion, "0.2.4")
+	s.assert.Equal(hr.TdtVersion, "0.2.6")
 }
 
 func TestHandlersTestSuit(t *testing.T) {

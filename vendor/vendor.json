@@ -14,9 +14,10 @@
 			"revisionTime": "2016-05-27T14:02:44Z"
 		},
 		{
+			"checksumSHA1": "qEA0NNEkJR39n6HNq1xi5AhXU54=",
 			"path": "github.com/coreos/go-systemd/dbus",
-			"revision": "7b2428fec40033549c68f54e26e89e7ca9a9ce31",
-			"revisionTime": "2016-02-02T22:14:25+01:00"
+			"revision": "bfdc81d0d7e0fb19447b08571f63b774495251ce",
+			"revisionTime": "2016-08-15T18:53:29Z"
 		},
 		{
 			"path": "github.com/godbus/dbus",

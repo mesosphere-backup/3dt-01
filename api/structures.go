@@ -144,6 +144,7 @@ type UnitPropertiesResponse struct {
 	ActiveState                     string
 	SubState                        string
 	Description                     string
+	ExecMainStatus                  int
 
 	InactiveExitTimestampMonotonic  uint64
 	ActiveEnterTimestampMonotonic   uint64

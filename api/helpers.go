@@ -135,8 +135,29 @@ func (st *DCOSTools) CloseDBUSConnection() error {
 
 // GetUnitProperties return a map of systemd unit properties received from dbus.
 func (st *DCOSTools) GetUnitProperties(pname string) (result map[string]interface{}, err error) {
-	// get Service specific properties.
-	return st.dcon.GetUnitProperties(pname)
+	result = make(map[string]interface{})
+	result, err = st.dcon.GetUnitProperties(pname)
+	if err != nil {
+		return result, err
+	}
+
+	// Get Service property
+	propSlice := strings.Split(pname, ".")
+	if len(propSlice) != 2 {
+		return result, fmt.Errorf("Unit name must be in the following format: unitName.Type, got: %s", pname)
+	}
+
+	// let's get service specific properties
+	// https://www.freedesktop.org/wiki/Software/systemd/dbus/
+	if propSlice[1] == "service" {
+		// "ExecMainStatus" will tell us main process exit code
+		p, err := st.dcon.GetServiceProperty(pname, "ExecMainStatus")
+		if err != nil {
+			return result, err
+		}
+		result[p.Name] = p.Value.Value()
+	}
+	return result, nil
 }
 
 // GetUnitNames read a directory /etc/systemd/system/dcos.target.wants and return a list of found systemd units.
@@ -408,6 +429,10 @@ func (u *UnitPropertiesResponse) CheckUnitHealth() (int, string, error) {
 		return 1, fmt.Sprintf(
 			"%s state is not one of the possible states %s. Current state is [ %s ]. "+
 				"Please check `systemctl show all %s` to check current unit state. ", u.ID, okActiveStates, u.ActiveState, u.ID), nil
+	}
+	log.Debugf("%s| ExecMainStatus = %d", u.ID, u.ExecMainStatus)
+	if u.ExecMainStatus != 0 {
+		return 1, fmt.Sprintf("ExecMainStatus return failed status for %s", u.ID), nil
 	}
 
 	// https://www.freedesktop.org/wiki/Software/systemd/dbus/

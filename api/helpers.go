@@ -512,7 +512,7 @@ type stdoutTimeoutPipe struct {
 func (cm *stdoutTimeoutPipe) Read(p []byte) (n int, err error) {
 	n, err = cm.stdoutPipe.Read(p)
 	if n == 0 {
-		log.Error("Coult not read stdout, trying to read stderr")
+		log.Debug("Could not read stdout, trying to read stderr")
 		n, err = cm.stderrPipe.Read(p)
 	}
 	return

@@ -318,9 +318,53 @@ func (st *DCOSTools) GetAgentNodes() (nodes []Node, err error) {
 	return finder.find()
 }
 
+// NewHTTPClient creates a new instance of http.Client
+func NewHTTPClient(timeout time.Duration, transport *http.Transport) *http.Client {
+	client := http.Client{
+		Timeout: timeout,
+	}
+
+	if transport != nil {
+		client.Transport = transport
+	}
+
+	// go http client does not copy the headers when it follows the redirect.
+	// https://github.com/golang/go/issues/4800
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		for attr, val := range via[0].Header {
+			if _, ok := req.Header[attr]; !ok {
+				req.Header[attr] = val
+			}
+		}
+		return nil
+	}
+
+	return &client
+}
+
+// NewSecureTransport creates a new instance of http.Transport
+func NewSecureTransport(caPool *x509.CertPool) *http.Transport {
+	var tlsClientConfig *tls.Config
+	if caPool == nil {
+		// do HTTPS without certificate verification.
+		tlsClientConfig = &tls.Config{
+			InsecureSkipVerify: true,
+		}
+	} else {
+		tlsClientConfig = &tls.Config{
+			RootCAs: caPool,
+		}
+	}
+
+	return &http.Transport{
+		TLSClientConfig: tlsClientConfig,
+	}
+}
+
 // HTTPReq is an implementation of HTTPRequester interface
 type HTTPReq struct {
-	caPool *x509.CertPool
+	secureTransport *http.Transport
+	caPool          *x509.CertPool
 }
 
 // Init HTTPReq, prepare CA Pool if file was passed.
@@ -330,13 +374,15 @@ func (h *HTTPReq) Init(config *Config, DCOSTools DCOSHelper) error {
 		return err
 	}
 	h.caPool = caPool
+	h.secureTransport = NewSecureTransport(caPool)
+
 	return nil
 }
 
 // Do will do an HTTP/HTTPS request.
 func (h *HTTPReq) Do(req *http.Request, timeout time.Duration) (resp *http.Response, err error) {
 	headers := make(map[string]string)
-	return Do(req, timeout, h.caPool, headers)
+	return Do(req, timeout, headers, h.secureTransport)
 }
 
 func loadCAPool(config *Config) (*x509.CertPool, error) {
@@ -365,44 +411,18 @@ func loadCAPool(config *Config) (*x509.CertPool, error) {
 
 // Do makes an HTTP(S) request with predefined http.Request object.
 // Caller is responsible for calling http.Response.Body().Close()
-func Do(req *http.Request, timeout time.Duration, caPool *x509.CertPool, headers map[string]string) (resp *http.Response, err error) {
-	client := http.Client{
-		Timeout: timeout,
-	}
-
-	// go http client does not copy the headers when it follows the redirect.
-	// https://github.com/golang/go/issues/4800
-	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		for attr, val := range via[0].Header {
-			if _, ok := req.Header[attr]; !ok {
-				req.Header[attr] = val
-			}
-		}
-		return nil
-	}
-
-	if req.URL.Scheme == "https" {
-		var tlsClientConfig *tls.Config
-		if caPool == nil {
-			// do HTTPS without certificate verification.
-			tlsClientConfig = &tls.Config{
-				InsecureSkipVerify: true,
-			}
-		} else {
-			tlsClientConfig = &tls.Config{
-				RootCAs: caPool,
-			}
-		}
-
-		client.Transport = &http.Transport{
-			TLSClientConfig: tlsClientConfig,
-		}
-	}
-
+func Do(req *http.Request, timeout time.Duration, headers map[string]string, secureTransport *http.Transport) (resp *http.Response, err error) {
 	// Add headers if available
 	for headerKey, headerValue := range headers {
 		req.Header.Add(headerKey, headerValue)
 	}
+
+	var transport *http.Transport
+	if req.URL.Scheme == "https" && secureTransport != nil {
+		transport = secureTransport
+	}
+
+	client := NewHTTPClient(timeout, transport)
 
 	resp, err = client.Do(req)
 	if err != nil {

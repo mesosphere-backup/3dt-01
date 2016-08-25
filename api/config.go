@@ -125,7 +125,7 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	// 2 minutes for a command to run
 	config.FlagCommandExecTimeoutSec = 120
 
-	config.FlagDiagnosticsBundleEndpointsConfigFile = "/opt/mesosphere/endpoints_config.json"
+	config.FlagDiagnosticsBundleEndpointsConfigFile = "/opt/mesosphere/etc/endpoints_config.json"
 	config.FlagDiagnosticsBundleUnitsLogsSinceString = "24 hours ago"
 
 	detectIPCmd := os.Getenv("MESOS_IP_DISCOVERY_COMMAND")

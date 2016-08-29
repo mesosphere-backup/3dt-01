@@ -82,6 +82,15 @@ func (f *findMastersInExhibitor) find() (nodes []Node, err error) {
 	return nodes, err
 }
 
+// NodesNotFoundError is a custom error called when nodes are not found.
+type NodesNotFoundError struct {
+	msg  string
+}
+
+func (n NodesNotFoundError) Error() string {
+	return n.msg
+}
+
 // find agents in history service
 type findAgentsInHistoryService struct {
 	pastTime string
@@ -125,7 +134,9 @@ func (f *findAgentsInHistoryService) getMesosAgents() (nodes []Node, err error) 
 
 	}
 	if len(nodeCount) == 0 {
-		return nodes, errors.New("Agent nodes were not found in history service for the past hour")
+		return nodes, NodesNotFoundError{
+			msg: fmt.Sprintf("Agent nodes were not found in history service for the past %s", f.pastTime),
+		}
 	}
 
 	for ip := range nodeCount {

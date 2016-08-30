@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	log "github.com/Sirupsen/logrus"
 )
 
 func findAgentsInHistoryServiceSelfTest(pastTime string) error {
@@ -54,7 +55,14 @@ func runSelfTest() map[string]*selfTestResponse {
 		if err == nil {
 			result[selfTestName].Success = true
 		} else {
-			result[selfTestName].ErrorMessage = err.Error()
+			// check for NodesNotFoundError. Do not fail if this happens. It just means history service
+			// was did not dump anything yet.
+			if serr, ok := err.(NodesNotFoundError); ok {
+				log.Debugf("Non critical error recevied: %s", serr)
+				result[selfTestName].Success = true
+			} else {
+				result[selfTestName].ErrorMessage = err.Error()
+			}
 		}
 	}
 	return result

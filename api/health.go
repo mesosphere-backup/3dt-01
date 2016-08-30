@@ -104,7 +104,7 @@ func getHostDiskUsage(diskPartitions []disk.PartitionStat) (diskUsage []disk.Usa
 		currentDiskUsage, err := disk.Usage(diskProps.Mountpoint)
 		if err != nil {
 			// Just log the error, do not return.
-			log.Errorf("Could not get a disk usage: %s", err)
+			log.Debugf("Could not get a disk usage [%s]: %s", diskProps.Mountpoint, err)
 			continue
 		}
 		// Skip the virtual partitions e.g. /proc

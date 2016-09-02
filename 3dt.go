@@ -40,7 +40,7 @@ func main() {
 	// load config with default values
 	config, err := api.LoadDefaultConfig(os.Args)
 	if err != nil {
-		log.Fatalf("Couuld not load default config: %s", err)
+		log.Fatalf("Could not load default config: %s", err)
 	}
 
 	// print version and exit

@@ -33,16 +33,17 @@ const (
 // DiagnosticsJob a main structure for a logs collection job.
 type DiagnosticsJob struct {
 	sync.Mutex
-	cancelChan   chan bool
-	logProviders *LogProviders
+	cancelChan            chan bool
+	logProviders          *LogProviders
 
-	Running        bool          `json:"is_running"`
-	Status         string        `json:"status"`
-	Errors         []string      `json:"errors"`
-	LastBundlePath string        `json:"last_bundle_dir"`
-	JobStarted     time.Time     `json:"job_started"`
-	JobEnded       time.Time     `json:"job_ended"`
-	JobDuration    time.Duration `json:"job_duration"`
+	Running               bool          `json:"is_running"`
+	Status                string        `json:"status"`
+	Errors                []string      `json:"errors"`
+	LastBundlePath        string        `json:"last_bundle_dir"`
+	JobStarted            time.Time     `json:"job_started"`
+	JobEnded              time.Time     `json:"job_ended"`
+	JobDuration           time.Duration `json:"job_duration"`
+	JobProgressPercentage float32       `json:"job_progress_percentage"`
 }
 
 // diagnostics job response format
@@ -63,13 +64,14 @@ type createResponse struct {
 // diagnostics job status format
 type bundleReportStatus struct {
 	// job related fields
-	Running        bool     `json:"is_running"`
-	Status         string   `json:"status"`
-	Errors         []string `json:"errors"`
-	LastBundlePath string   `json:"last_bundle_dir"`
-	JobStarted     string   `json:"job_started"`
-	JobEnded       string   `json:"job_ended"`
-	JobDuration    string   `json:"job_duration"`
+	Running                                  bool     `json:"is_running"`
+	Status                                   string   `json:"status"`
+	Errors                                   []string `json:"errors"`
+	LastBundlePath                           string   `json:"last_bundle_dir"`
+	JobStarted                               string   `json:"job_started"`
+	JobEnded                                 string   `json:"job_ended"`
+	JobDuration                              string   `json:"job_duration"`
+	JobProgressPercentage                    float32  `json:"job_progress_percentage"`
 
 	// config related fields
 	DiagnosticBundlesBaseDir                 string `json:"diagnostics_bundle_dir"`
@@ -146,6 +148,12 @@ func (j *DiagnosticsJob) run(req bundleCreateRequest, config *Config, DCOSTools 
 
 //
 func (j *DiagnosticsJob) runBackgroundJob(nodes []Node, config *Config, DCOSTools DCOSHelper) {
+	if len(nodes) == 0 {
+		e := "Nodes length cannot be 0"
+		j.Status = "Job failed"
+		j.Errors = append(j.Errors, e)
+		return
+	}
 	log.Info("Started background job")
 
 	// log a start time
@@ -227,12 +235,19 @@ func (j *DiagnosticsJob) runBackgroundJob(nodes []Node, config *Config, DCOSTool
 	j.Lock()
 	defer j.Unlock()
 
+	// reset counters
+	j.JobDuration = 0
+	j.JobProgressPercentage = 0
+
+	// we already checked for nodes length, we should not get division by zero error at this point.
+	percentPerNode := 100.0 / float32(len(nodes))
 	for _, node := range nodes {
 		port, err := getPullPortByRole(config, node.Role)
 		if err != nil {
 			log.Errorf("Used incorrect role: %s", err)
 			j.Errors = append(j.Errors, err.Error())
 			updateSummaryReport("Used incorrect role", node, err.Error(), summaryErrorsReport)
+			j.JobProgressPercentage += percentPerNode
 			continue
 		}
 
@@ -245,6 +260,7 @@ func (j *DiagnosticsJob) runBackgroundJob(nodes []Node, config *Config, DCOSTool
 			j.Errors = append(j.Errors, errMsg)
 			log.Errorf("%s: %s", errMsg, err)
 			updateSummaryReport(errMsg, node, err.Error(), summaryErrorsReport)
+			j.JobProgressPercentage += percentPerNode
 			continue
 		}
 		if err = json.Unmarshal(body, &endpoints); err != nil {
@@ -252,17 +268,27 @@ func (j *DiagnosticsJob) runBackgroundJob(nodes []Node, config *Config, DCOSTool
 			j.Errors = append(j.Errors, errMsg)
 			log.Errorf("%s: %s", errMsg, err)
 			updateSummaryReport(errMsg, node, err.Error(), summaryErrorsReport)
+			j.JobProgressPercentage += percentPerNode
 			continue
 		}
 
+		if len(endpoints) == 0 {
+			errMsg := "No endpoints found, url: " + url
+			j.Errors = append(j.Errors, errMsg)
+			log.Error(errMsg)
+			updateSummaryReport(errMsg, node, "", summaryErrorsReport)
+			j.JobProgressPercentage += percentPerNode
+			continue
+		}
 		// add http endpoints
-		err = j.getHTTPAddToZip(node, endpoints, j.LastBundlePath, zipWriter, summaryErrorsReport, summaryReport, config, DCOSTools)
+		err = j.getHTTPAddToZip(node, endpoints, j.LastBundlePath, zipWriter, summaryErrorsReport,
+			                summaryReport, config, DCOSTools, percentPerNode)
 		if err != nil {
-			log.Errorf("Could not add a log to a bundle: %s", err)
 			j.Errors = append(j.Errors, err.Error())
-			updateSummaryReport(err.Error(), node, err.Error(), summaryErrorsReport)
-			if err.Error() == "Job canceled" {
-				log.Error("Job canceled, do not proceed")
+
+			// handle job cancel error
+			if serr, ok := err.(diagnosticsJobCanceledError); ok {
+				log.Errorf("Could not add diagnostics to zip file: %s", serr)
 				j.LastBundlePath = ""
 				if removeErr := os.Remove(zipfile.Name()); removeErr != nil {
 					log.Errorf("Could not remove a bundle: %s", removeErr)
@@ -270,9 +296,13 @@ func (j *DiagnosticsJob) runBackgroundJob(nodes []Node, config *Config, DCOSTool
 				}
 				return
 			}
+
+			log.Errorf("Could not add a log to a bundle: %s", err)
+			updateSummaryReport(err.Error(), node, err.Error(), summaryErrorsReport)
 		}
 		updateSummaryReport("STOP collecting logs", node, "", summaryReport)
 	}
+	j.JobProgressPercentage = 100
 	if len(j.Errors) == 0 {
 		j.Status = "Diagnostics job sucessfully finished"
 	}
@@ -385,13 +415,14 @@ func (j *DiagnosticsJob) getStatus(config *Config) bundleReportStatus {
 		log.Errorf("Could not get a disk usage %s: %s", config.FlagDiagnosticsBundleDir, err)
 	}
 	return bundleReportStatus{
-		Running:        j.Running,
-		Status:         j.Status,
-		Errors:         j.Errors,
-		LastBundlePath: j.LastBundlePath,
-		JobStarted:     j.JobStarted.String(),
-		JobEnded:       j.JobEnded.String(),
-		JobDuration:    j.JobDuration.String(),
+		Running:               j.Running,
+		Status:                j.Status,
+		Errors:                j.Errors,
+		LastBundlePath:        j.LastBundlePath,
+		JobStarted:            j.JobStarted.String(),
+		JobEnded:              j.JobEnded.String(),
+		JobDuration:           j.JobDuration.String(),
+		JobProgressPercentage: j.JobProgressPercentage,
 
 		DiagnosticBundlesBaseDir:                 config.FlagDiagnosticsBundleDir,
 		DiagnosticsJobTimeoutMin:                 config.FlagDiagnosticsJobTimeoutMinutes,
@@ -403,15 +434,30 @@ func (j *DiagnosticsJob) getStatus(config *Config) bundleReportStatus {
 	}
 }
 
+type diagnosticsJobCanceledError struct {
+	msg string
+}
+
+func (d diagnosticsJobCanceledError) Error() string {
+	return d.msg
+}
+
 // fetch an HTTP endpoint and append the output to a zip file.
 func (j *DiagnosticsJob) getHTTPAddToZip(node Node, endpoints map[string]string, folder string, zipWriter *zip.Writer,
-	summaryErrorsReport, summaryReport *bytes.Buffer, config *Config, DCOSTools DCOSHelper) error {
+	summaryErrorsReport, summaryReport *bytes.Buffer, config *Config, DCOSTools DCOSHelper, percentPerNode float32) error {
+	if len(endpoints) == 0 || percentPerNode == 0 {
+		j.JobProgressPercentage += percentPerNode
+		return fmt.Errorf("`endpoints` length or `percentPerNode` arguments cannot be empty. Got: %s, %f", endpoints, percentPerNode)
+	}
+
+	percentPerURL := percentPerNode / float32(len(endpoints))
 	for fileName, httpEndpoint := range endpoints {
 		fullURL, err := useTLSScheme("http://"+node.IP+httpEndpoint, config.FlagForceTLS)
 		if err != nil {
 			j.Errors = append(j.Errors, err.Error())
 			log.Errorf("Could not read force-tls flag: %s", err)
 			updateSummaryReport(err.Error(), node, err.Error(), summaryErrorsReport)
+			j.JobProgressPercentage += percentPerURL
 			continue
 		}
 		log.Debugf("Using URL %s to collect a log", fullURL)
@@ -420,7 +466,9 @@ func (j *DiagnosticsJob) getHTTPAddToZip(node Node, endpoints map[string]string,
 			if ok {
 				updateSummaryReport("Job canceled", node, "", summaryErrorsReport)
 				updateSummaryReport("Job canceled", node, "", summaryReport)
-				return errors.New("Job canceled")
+				return diagnosticsJobCanceledError{
+					msg: "Job canceled",
+				}
 			}
 
 		default:
@@ -435,6 +483,7 @@ func (j *DiagnosticsJob) getHTTPAddToZip(node Node, endpoints map[string]string,
 			j.Errors = append(j.Errors, err.Error())
 			log.Errorf("Could not create a new HTTP request: %s", err)
 			updateSummaryReport(fmt.Sprintf("could not create request for url: %s", fullURL), node, err.Error(), summaryErrorsReport)
+			j.JobProgressPercentage += percentPerURL
 			continue
 		}
 		request.Header.Add("Accept-Encoding", "gzip")
@@ -443,6 +492,7 @@ func (j *DiagnosticsJob) getHTTPAddToZip(node Node, endpoints map[string]string,
 			j.Errors = append(j.Errors, err.Error())
 			log.Errorf("Could not fetch url %s: %s", fullURL, err)
 			updateSummaryReport(fmt.Sprintf("could not fetch url: %s", fullURL), node, err.Error(), summaryErrorsReport)
+			j.JobProgressPercentage += percentPerURL
 			continue
 		}
 		if resp.Header.Get("Content-Encoding") == "gzip" {
@@ -456,11 +506,13 @@ func (j *DiagnosticsJob) getHTTPAddToZip(node Node, endpoints map[string]string,
 			j.Errors = append(j.Errors, err.Error())
 			log.Errorf("Could not add %s to a zip archive: %s", fileName, err)
 			updateSummaryReport(fmt.Sprintf("could not add a file %s to a zip", fileName), node, err.Error(), summaryErrorsReport)
+			j.JobProgressPercentage += percentPerURL
 			continue
 		}
 		io.Copy(zipFile, resp.Body)
 		resp.Body.Close()
 		updateSummaryReport("STOP "+j.Status, node, "", summaryReport)
+		j.JobProgressPercentage += percentPerURL
 	}
 	return nil
 }
@@ -807,6 +859,9 @@ func (j *DiagnosticsJob) getLogsEndpoints(config *Config, DCOSTools DCOSHelper) 
 // Init will prepare diagnostics job, read config files etc.
 func (j *DiagnosticsJob) Init(config *Config, DCOSTools DCOSHelper) error {
 	j.logProviders = &LogProviders{}
+
+	// set JobProgressPercentage -1 means the job has never been executed
+	j.JobProgressPercentage = -1
 
 	// load the internal providers
 	internalProviders, err := loadInternalProviders(config, DCOSTools)

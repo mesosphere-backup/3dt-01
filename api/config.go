@@ -1,10 +1,11 @@
 package api
 
 import (
+	"errors"
 	"flag"
 	"os"
+	"strings"
 
-	"errors"
 	log "github.com/Sirupsen/logrus"
 )
 
@@ -24,26 +25,26 @@ var (
 
 // Config structure is a main config object
 type Config struct {
-	Version                                      string
-	Revision                                     string
-	MesosIPDiscoveryCommand                      string
-	DCOSVersion                                  string
-	SystemdUnits                                 []string
+	Version                 string
+	Revision                string
+	MesosIPDiscoveryCommand string
+	DCOSVersion             string
+	SystemdUnits            []string
 
 	// 3dt flags
-	FlagCACertFile                               string
-	FlagPull                                     bool
-	FlagDiag                                     bool
-	FlagVerbose                                  bool
-	FlagVersion                                  bool
-	FlagPort                                     int
-	FlagMasterPort                               int
-	FlagAgentPort                                int
-	FlagPullInterval                             int
-	FlagPullTimeoutSec                           int
-	FlagUpdateHealthReportInterval               int
-	FlagExhibitorClusterStatusURL                string
-	FlagForceTLS                                 bool
+	FlagCACertFile                 string
+	FlagPull                       bool
+	FlagDiag                       bool
+	FlagVerbose                    bool
+	FlagVersion                    bool
+	FlagPort                       int
+	FlagMasterPort                 int
+	FlagAgentPort                  int
+	FlagPullInterval               int
+	FlagPullTimeoutSec             int
+	FlagUpdateHealthReportInterval int
+	FlagExhibitorClusterStatusURL  string
+	FlagForceTLS                   bool
 
 	// diagnostics job flags
 	FlagDiagnosticsBundleDir                     string
@@ -142,6 +143,12 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	config.SystemdUnits = []string{"dcos-setup.service", "dcos-link-env.service", "dcos-download.service"}
 
 	config.setFlags(flagSet)
+
+	// read env variable DDT_EXTRA_ARGS and append the arguments
+	envArgs := os.Getenv("DDT_EXTRA_ARGS")
+	if envArgs != "" {
+		args = append(args, strings.Split(envArgs, " ")...)
+	}
 
 	// override with user provided arguments
 	if err = flagSet.Parse(args[1:]); err != nil {

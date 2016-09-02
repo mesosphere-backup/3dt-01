@@ -254,7 +254,7 @@ func (st *DCOSTools) doRequest(method, url string, timeout time.Duration, body i
 		}
 	}
 
-	log.Debugf("[%s] %s, timeout: %s, forceTLS: %s, basicURL: %s", method, url, timeout.String(), st.ForceTLS, url)
+	log.Debugf("[%s] %s, timeout: %s, forceTLS: %v, basicURL: %s", method, url, timeout.String(), st.ForceTLS, url)
 	request, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return responseBody, http.StatusBadRequest, err

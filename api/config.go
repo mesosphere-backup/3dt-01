@@ -4,7 +4,6 @@ import (
 	"errors"
 	"flag"
 	"os"
-	"strings"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -143,12 +142,6 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	config.SystemdUnits = []string{"dcos-setup.service", "dcos-link-env.service", "dcos-download.service"}
 
 	config.setFlags(flagSet)
-
-	// read env variable DDT_EXTRA_ARGS and append the arguments
-	envArgs := os.Getenv("DDT_EXTRA_ARGS")
-	if envArgs != "" {
-		args = append(args, strings.Split(envArgs, " ")...)
-	}
 
 	// override with user provided arguments
 	if err = flagSet.Parse(args[1:]); err != nil {

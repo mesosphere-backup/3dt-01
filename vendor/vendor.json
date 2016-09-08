@@ -69,6 +69,24 @@
 			"path": "github.com/shirou/gopsutil/mem",
 			"revision": "7b991b8135166c7fc81b65665a2f35c7a1966cfc",
 			"revisionTime": "2016-05-04T15:08:50Z"
+		},
+		{
+			"checksumSHA1": "drSl/ipSHSsHWWTrp3WZw4LN/No=",
+			"path": "github.com/xeipuuv/gojsonpointer",
+			"revision": "e0fe6f68307607d540ed8eac07a342c33fa1b54a",
+			"revisionTime": "2015-10-27T08:21:46Z"
+		},
+		{
+			"checksumSHA1": "pSoUW+qY6LwIJ5lFwGohPU5HUpg=",
+			"path": "github.com/xeipuuv/gojsonreference",
+			"revision": "e02fc20de94c78484cd5ffb007f8af96be030a45",
+			"revisionTime": "2015-08-08T06:50:54Z"
+		},
+		{
+			"checksumSHA1": "/Ymz72OQ/+g59oAJJA1KftZI8vU=",
+			"path": "github.com/xeipuuv/gojsonschema",
+			"revision": "3f368bbe0e3d19097637bbdf8fdc5383ec1e25e5",
+			"revisionTime": "2016-09-08T08:43:13Z"
 		}
 	],
 	"rootPath": "github.com/dcos/3dt"

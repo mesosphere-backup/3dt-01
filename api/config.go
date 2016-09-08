@@ -6,11 +6,14 @@ import (
 	"os"
 
 	log "github.com/Sirupsen/logrus"
+	"io/ioutil"
+	"encoding/json"
+	"github.com/xeipuuv/gojsonschema"
 )
 
 var (
 	// Version of 3dt code.
-	Version = "0.2.12"
+	Version = "0.2.13"
 
 	// APIVer is an API version.
 	APIVer = 1
@@ -20,41 +23,130 @@ var (
 
 	// flagSet
 	flagSet = flag.NewFlagSet("3dt", flag.ContinueOnError)
+
+	internalJSONValidationSchema = `
+	{
+	  "title": "User config validate schema",
+	  "type": "object",
+	  "properties": {
+	    "ca-cert": {
+	      "type": "string"
+	    },
+	    "port": {
+	      "type": "integer",
+	      "minimum": 1024,
+	      "maximum": 65535
+	    },
+	    "pull": {
+	      "type": "boolean"
+	    },
+	    "master-port": {
+	      "type": "integer",
+	      "minimum": 1,
+	      "maximum": 65535
+	    },
+	    "agent-port": {
+	      "type": "integer",
+	      "minimum": 1,
+	      "maximum": 65535
+	    },
+	    "pull-interval": {
+	      "type": "integer",
+	      "minimum": 1,
+	      "maximum": 3600
+	    },
+	    "verbose": {
+	      "type": "boolean"
+	    },
+	    "health-update-interval": {
+	      "type": "integer",
+	      "minimum": 1,
+	      "maximum": 3600
+	    },
+	    "exhibitor-ip": {
+	      "type": "string"
+	    },
+	    "diagnostics-job-timeout": {
+	      "type": "integer",
+	      "minimum": 1,
+	      "maximum": 720
+	    },
+	    "pull-timeout": {
+	      "type": "integer",
+	      "minimum": 1,
+	      "maximum": 60
+	    },
+	    "force-tls": {
+	      "type": "boolean"
+	    },
+	    "command-exec-timeout": {
+	      "type": "integer",
+	      "minimum": 1,
+	      "maximum": 480
+	    },
+	    "diagnostics-units-since": {
+	      "type": "string"
+	    },
+	    "diagnostics-url-timeout": {
+	      "type": "integer",
+	      "minimum": 1,
+	      "maximum": 60
+	    },
+	    "diagnostics-bundle-dir": {
+	      "type": "string"
+	    },
+	    "endpoint-config": {
+	      "type": "string"
+	    },
+	    "json-validation-schema": {
+	      "type": "string"
+	    }
+	  },
+	  "additionalProperties": false
+	}`
 )
 
 // Config structure is a main config object
 type Config struct {
-	Version                 string
-	Revision                string
-	MesosIPDiscoveryCommand string
-	DCOSVersion             string
-	SystemdUnits            []string
+	Version                                      string `json:"-"`
+	Revision                                     string `json:"-"`
+	MesosIPDiscoveryCommand                      string `json:"-"`
+	DCOSVersion                                  string `json:"-"`
+	SystemdUnits                                 []string `json:"-"`
+
+	// config flag
+	Flag3DTConfig                                string `json:"-"`
+	FlagJSONSchema                               string `json:"json-validation-schema"`
 
 	// 3dt flags
-	FlagCACertFile                 string
-	FlagPull                       bool
-	FlagDiag                       bool
-	FlagVerbose                    bool
-	FlagVersion                    bool
-	FlagPort                       int
-	FlagMasterPort                 int
-	FlagAgentPort                  int
-	FlagPullInterval               int
-	FlagPullTimeoutSec             int
-	FlagUpdateHealthReportInterval int
-	FlagExhibitorClusterStatusURL  string
-	FlagForceTLS                   bool
+	FlagCACertFile                               string `json:"ca-cert"`
+	FlagPull                                     bool   `json:"pull"`
+	FlagDiag                                     bool   `json:"-"`
+	FlagVerbose                                  bool   `json:"verbose"`
+	FlagVersion                                  bool   `json:"-"`
+	FlagPort                                     int    `json:"port"`
+	FlagMasterPort                               int    `json:"master-port"`
+	FlagAgentPort                                int    `json:"agent-port"`
+	FlagPullInterval                             int    `json:"pull-interval"`
+	FlagPullTimeoutSec                           int    `json:"pull-timeout"`
+	FlagUpdateHealthReportInterval               int    `json:"health-update-interval"`
+	FlagExhibitorClusterStatusURL                string `json:"exhibitor-ip"`
+	FlagForceTLS                                 bool   `json:"force-tls"`
 
 	// diagnostics job flags
-	FlagDiagnosticsBundleDir                     string
-	FlagDiagnosticsBundleEndpointsConfigFile     string
-	FlagDiagnosticsBundleUnitsLogsSinceString    string
-	FlagDiagnosticsJobTimeoutMinutes             int
-	FlagDiagnosticsJobGetSingleURLTimeoutMinutes int
-	FlagCommandExecTimeoutSec                    int
+	FlagDiagnosticsBundleDir                     string `json:"diagnostics-bundle-dir"`
+	FlagDiagnosticsBundleEndpointsConfigFile     string `json:"endpoint-config"`
+	FlagDiagnosticsBundleUnitsLogsSinceString    string `json:"diagnostics-units-since"`
+	FlagDiagnosticsJobTimeoutMinutes             int    `json:"diagnostics-job-timeout"`
+	FlagDiagnosticsJobGetSingleURLTimeoutMinutes int    `json:"diagnostics-url-timeout"`
+	FlagCommandExecTimeoutSec                    int    `json:"command-exec-timeout"`
 }
 
 func (c *Config) setFlags(fs *flag.FlagSet) {
+	// config flag
+	fs.StringVar(&c.Flag3DTConfig, "3dt-config", c.Flag3DTConfig, "Use 3DT config file.")
+	fs.StringVar(&c.FlagJSONSchema, "json-validation-schema", c.FlagJSONSchema, "Path to JSON validation schema.")
+
 	//common flags
 	fs.StringVar(&c.FlagCACertFile, "ca-cert", c.FlagCACertFile, "Use certificate authority.")
 	fs.BoolVar(&c.FlagDiag, "diag", c.FlagDiag, "Get diagnostics output once on the CLI. Does not expose API.")
@@ -144,8 +236,81 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	config.setFlags(flagSet)
 
 	// override with user provided arguments
-	if err = flagSet.Parse(args[1:]); err != nil {
+	if err := flagSet.Parse(args[1:]); err != nil {
 		return config, err
 	}
+
+	// check for provided JSON validation schema
+	if config.FlagJSONSchema != "" {
+		validationSchema, err := ioutil.ReadFile(config.FlagJSONSchema)
+		if err != nil {
+			return config, err
+		}
+		internalJSONValidationSchema = string(validationSchema)
+	}
+
+	//validate the config structure
+	if err := validateConfigStruct(config); err != nil {
+		return config, err
+	}
+
+	// if config passed, read it and override the default values with values in config
+	if config.Flag3DTConfig != "" {
+		return readConfigFile(config.Flag3DTConfig, config)
+	}
+
 	return config, nil
+}
+
+func readConfigFile(configPath string, defaultConfig Config) (Config, error) {
+	configContent, err := ioutil.ReadFile(configPath)
+	if err != nil {
+		return defaultConfig, err
+	}
+
+	if err := validateConfigFile(configContent); err != nil {
+		return defaultConfig, err
+	}
+
+	// override default values
+	if err := json.Unmarshal(configContent, &defaultConfig); err != nil {
+		return defaultConfig, err
+	}
+
+	// validate the result of overriding the default config with values from a config file
+	return defaultConfig, validateConfigStruct(defaultConfig)
+}
+
+func validate(documentLoader gojsonschema.JSONLoader) error {
+	schemaLoader := gojsonschema.NewStringLoader(internalJSONValidationSchema)
+	schema, err := gojsonschema.NewSchema(schemaLoader)
+	if err != nil {
+		return err
+	}
+	result, err := schema.Validate(documentLoader)
+	if err != nil {
+		return err
+	}
+
+	if !result.Valid() {
+		return printErrorsAndFail(result.Errors())
+	}
+	return nil
+}
+
+func printErrorsAndFail(resultErrors []gojsonschema.ResultError) error {
+	for _, resultError := range resultErrors {
+			log.Error(resultError)
+	}
+	return errors.New("Validation failed")
+}
+
+func validateConfigStruct(config Config) error {
+	documentLoader := gojsonschema.NewGoLoader(config)
+	return validate(documentLoader)
+}
+
+func validateConfigFile(configContent []byte) error {
+	documentLoader := gojsonschema.NewStringLoader(string(configContent))
+	return validate(documentLoader)
 }

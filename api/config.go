@@ -6,11 +6,15 @@ import (
 	"os"
 
 	log "github.com/Sirupsen/logrus"
+	"io/ioutil"
+	"encoding/json"
+	"fmt"
+	"reflect"
 )
 
 var (
 	// Version of 3dt code.
-	Version = "0.2.12"
+	Version = "0.2.13"
 
 	// APIVer is an API version.
 	APIVer = 1
@@ -24,37 +28,43 @@ var (
 
 // Config structure is a main config object
 type Config struct {
-	Version                 string
-	Revision                string
-	MesosIPDiscoveryCommand string
-	DCOSVersion             string
-	SystemdUnits            []string
+	Version                                      string `json:",omitempty"`
+	Revision                                     string `json:",omitempty"`
+	MesosIPDiscoveryCommand                      string `json:",omitempty"`
+	DCOSVersion                                  string `json:",omitempty"`
+	SystemdUnits                                 []string `json:",omitempty"`
+
+	// config flag
+	Flag3DTConfig                                string `json:",omitempty"`
 
 	// 3dt flags
-	FlagCACertFile                 string
-	FlagPull                       bool
-	FlagDiag                       bool
-	FlagVerbose                    bool
-	FlagVersion                    bool
-	FlagPort                       int
-	FlagMasterPort                 int
-	FlagAgentPort                  int
-	FlagPullInterval               int
-	FlagPullTimeoutSec             int
-	FlagUpdateHealthReportInterval int
-	FlagExhibitorClusterStatusURL  string
-	FlagForceTLS                   bool
+	FlagCACertFile                               string `json:"ca-cert"`
+	FlagPull                                     bool   `json:"pull"`
+	FlagDiag                                     bool   `json:",omitempty"`
+	FlagVerbose                                  bool   `json:"verbose"`
+	FlagVersion                                  bool   `json:",omitempty"`
+	FlagPort                                     int    `json:"port"`
+	FlagMasterPort                               int    `json:"master-port"`
+	FlagAgentPort                                int    `json:"agent-port"`
+	FlagPullInterval                             int    `json:"pull-interval"`
+	FlagPullTimeoutSec                           int    `json:"pull-timeout"`
+	FlagUpdateHealthReportInterval               int    `json:"health-update-interval"`
+	FlagExhibitorClusterStatusURL                string `json:"exhibitor-ip"`
+	FlagForceTLS                                 bool   `json:"force-tls"`
 
 	// diagnostics job flags
-	FlagDiagnosticsBundleDir                     string
-	FlagDiagnosticsBundleEndpointsConfigFile     string
-	FlagDiagnosticsBundleUnitsLogsSinceString    string
-	FlagDiagnosticsJobTimeoutMinutes             int
-	FlagDiagnosticsJobGetSingleURLTimeoutMinutes int
-	FlagCommandExecTimeoutSec                    int
+	FlagDiagnosticsBundleDir                     string `json:"diagnostics-bundle-dir"`
+	FlagDiagnosticsBundleEndpointsConfigFile     string `json:"endpoint-config"`
+	FlagDiagnosticsBundleUnitsLogsSinceString    string `json:"diagnostics-units-since"`
+	FlagDiagnosticsJobTimeoutMinutes             int    `json:"diagnostics-job-timeout"`
+	FlagDiagnosticsJobGetSingleURLTimeoutMinutes int    `json:"diagnostics-url-timeout"`
+	FlagCommandExecTimeoutSec                    int    `json:"command-exec-timeout"`
 }
 
 func (c *Config) setFlags(fs *flag.FlagSet) {
+	// config flag
+	fs.StringVar(&c.Flag3DTConfig, "3dt-config", c.Flag3DTConfig, "Use 3DT config file.")
+
 	//common flags
 	fs.StringVar(&c.FlagCACertFile, "ca-cert", c.FlagCACertFile, "Use certificate authority.")
 	fs.BoolVar(&c.FlagDiag, "diag", c.FlagDiag, "Get diagnostics output once on the CLI. Does not expose API.")
@@ -147,5 +157,53 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	if err = flagSet.Parse(args[1:]); err != nil {
 		return config, err
 	}
+
+	if config.Flag3DTConfig != "" {
+		return readConfigFile(config.Flag3DTConfig, config)
+	}
 	return config, nil
+}
+
+func readConfigFile(configPath string, defaultConfig Config) (Config, error) {
+	// load config
+	configContent, err := ioutil.ReadFile(configPath)
+	if err != nil {
+		return defaultConfig, err
+	}
+
+	if err := validateConfigFile(configContent); err != nil {
+		return defaultConfig, err
+	}
+
+	// override default values
+	err = json.Unmarshal(configContent, &defaultConfig)
+	return defaultConfig, err
+}
+
+// returns nil if config is valid
+func validateConfigFile(configContent []byte) error {
+	configMap := make(map[string]interface{})
+	if err := json.Unmarshal(configContent, &configMap); err != nil {
+		return fmt.Errorf("Error validating config file: %s", err)
+	}
+
+	// validate every single key/value pair in config file
+	for k, v := range configMap {
+		configMapItem := make(map[string]interface{}, 1)
+		configMapItem[k] = v
+		configItem, err := json.Marshal(configMapItem)
+		if err != nil {
+			return fmt.Errorf("Error validating config field: %s. %s", k, err)
+		}
+
+		tmpConfig := Config{}
+		if err := json.Unmarshal(configItem, &tmpConfig); err != nil {
+			return fmt.Errorf("Error validating config field: %s. %s", k, err)
+		}
+
+		if reflect.DeepEqual(tmpConfig, Config{}) {
+			return fmt.Errorf("Invalid config field: %s", k)
+		}
+	}
+	return nil
 }

@@ -207,7 +207,7 @@ func (f *findNodesInDNS) getMesosAgents() (nodes []Node, err error) {
 		return nodes, errors.New("Could not resolve " + f.dnsRecord)
 	}
 
-	url, err := useTLSScheme(fmt.Sprintf("http://%s:5050/slaves", leaderIps[0]), f.forceTLS)
+	url, err := useTLSScheme(fmt.Sprintf("http://%s:5050/state", leaderIps[0]), f.forceTLS)
 	if err != nil {
 		return nodes, err
 	}

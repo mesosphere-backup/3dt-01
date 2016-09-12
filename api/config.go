@@ -100,6 +100,9 @@ var (
 	    },
 	    "json-validation-schema": {
 	      "type": "string"
+	    },
+	    "iam-config": {
+	      "type": "string"
 	    }
 	  },
 	  "additionalProperties": false

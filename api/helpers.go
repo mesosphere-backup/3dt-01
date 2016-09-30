@@ -364,6 +364,7 @@ func NewSecureTransport(caPool *x509.CertPool) *http.Transport {
 // HTTPReq is an implementation of HTTPRequester interface
 type HTTPReq struct {
 	secureTransport *http.Transport
+	transport       *http.Transport
 	caPool          *x509.CertPool
 }
 
@@ -375,6 +376,9 @@ func (h *HTTPReq) Init(config *Config, DCOSTools DCOSHelper) error {
 	}
 	h.caPool = caPool
 	h.secureTransport = NewSecureTransport(caPool)
+	h.transport = &http.Transport{
+		DisableKeepAlives: true,
+	}
 
 	return nil
 }
@@ -382,7 +386,13 @@ func (h *HTTPReq) Init(config *Config, DCOSTools DCOSHelper) error {
 // Do will do an HTTP/HTTPS request.
 func (h *HTTPReq) Do(req *http.Request, timeout time.Duration) (resp *http.Response, err error) {
 	headers := make(map[string]string)
-	return Do(req, timeout, headers, h.secureTransport)
+	var transport *http.Transport
+	if req.URL.Scheme == "https" {
+		transport = h.secureTransport
+	} else {
+		transport = h.transport
+	}
+	return Do(req, timeout, headers, transport)
 }
 
 func loadCAPool(config *Config) (*x509.CertPool, error) {
@@ -411,15 +421,10 @@ func loadCAPool(config *Config) (*x509.CertPool, error) {
 
 // Do makes an HTTP(S) request with predefined http.Request object.
 // Caller is responsible for calling http.Response.Body().Close()
-func Do(req *http.Request, timeout time.Duration, headers map[string]string, secureTransport *http.Transport) (resp *http.Response, err error) {
+func Do(req *http.Request, timeout time.Duration, headers map[string]string, transport *http.Transport) (resp *http.Response, err error) {
 	// Add headers if available
 	for headerKey, headerValue := range headers {
 		req.Header.Add(headerKey, headerValue)
-	}
-
-	var transport *http.Transport
-	if req.URL.Scheme == "https" && secureTransport != nil {
-		transport = secureTransport
 	}
 
 	client := NewHTTPClient(timeout, transport)

@@ -27,6 +27,7 @@ type header struct {
 
 func headerMiddleware(next http.Handler, headers []header) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Set("Connection", "close")
 		setJSONContentType := true
 		for _, header := range headers {
 			if header.name == "Content-type" {

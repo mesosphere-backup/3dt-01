@@ -33,8 +33,8 @@ const (
 // DiagnosticsJob a main structure for a logs collection job.
 type DiagnosticsJob struct {
 	sync.Mutex
-	cancelChan            chan bool
-	logProviders          *LogProviders
+	cancelChan   chan bool
+	logProviders *LogProviders
 
 	Running               bool          `json:"is_running"`
 	Status                string        `json:"status"`
@@ -64,14 +64,14 @@ type createResponse struct {
 // diagnostics job status format
 type bundleReportStatus struct {
 	// job related fields
-	Running                                  bool     `json:"is_running"`
-	Status                                   string   `json:"status"`
-	Errors                                   []string `json:"errors"`
-	LastBundlePath                           string   `json:"last_bundle_dir"`
-	JobStarted                               string   `json:"job_started"`
-	JobEnded                                 string   `json:"job_ended"`
-	JobDuration                              string   `json:"job_duration"`
-	JobProgressPercentage                    float32  `json:"job_progress_percentage"`
+	Running               bool     `json:"is_running"`
+	Status                string   `json:"status"`
+	Errors                []string `json:"errors"`
+	LastBundlePath        string   `json:"last_bundle_dir"`
+	JobStarted            string   `json:"job_started"`
+	JobEnded              string   `json:"job_ended"`
+	JobDuration           string   `json:"job_duration"`
+	JobProgressPercentage float32  `json:"job_progress_percentage"`
 
 	// config related fields
 	DiagnosticBundlesBaseDir                 string `json:"diagnostics_bundle_dir"`
@@ -282,7 +282,7 @@ func (j *DiagnosticsJob) runBackgroundJob(nodes []Node, config *Config, DCOSTool
 		}
 		// add http endpoints
 		err = j.getHTTPAddToZip(node, endpoints, j.LastBundlePath, zipWriter, summaryErrorsReport,
-			                summaryReport, config, DCOSTools, percentPerNode)
+			summaryReport, config, DCOSTools, percentPerNode)
 		if err != nil {
 			j.Errors = append(j.Errors, err.Error())
 

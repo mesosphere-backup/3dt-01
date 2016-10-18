@@ -2,78 +2,10 @@ package api
 
 import (
 	log "github.com/Sirupsen/logrus"
-
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/load"
 	"github.com/shirou/gopsutil/mem"
-
-	"sync"
-	"time"
 )
-
-// unitsHealthReport gets updated in a separate goroutine every 60 sec This variable contains a status of a DC/OS
-// systemd units for the past 60 sec.
-var unitsHealthReport unitsHealth
-
-// unitsHealth is a container for global health report. Getting and updating of health report must go through
-// GetHealthReport and UpdateHealthReport this allows to access data in concurrent manner.
-type unitsHealth struct {
-	sync.Mutex
-	healthReport UnitsHealthResponseJSONStruct
-}
-
-// getHealthReport returns a global health report of UnitsHealthResponseJsonStruct type.
-func (uh *unitsHealth) GetHealthReport() UnitsHealthResponseJSONStruct {
-	uh.Lock()
-	defer uh.Unlock()
-	return uh.healthReport
-}
-
-// updateHealthReport updates a global health report of UnitsHealthResponseJsonStruct type.
-func (uh *unitsHealth) UpdateHealthReport(healthReport UnitsHealthResponseJSONStruct) {
-	uh.Lock()
-	defer uh.Unlock()
-	uh.healthReport = healthReport
-}
-
-// StartUpdateHealthReport should be started in a separate goroutine to update global health report periodically.
-func StartUpdateHealthReport(dt Dt, readyChan chan struct{}, runOnce bool) {
-	updateHealth := func() error {
-		healthReport, err := GetUnitsProperties(dt)
-		if err != nil {
-			return err
-		}
-		unitsHealthReport.UpdateHealthReport(healthReport)
-		return nil
-	}
-
-	// update health for the first time
-	if err := updateHealth(); err == nil {
-		close(readyChan)
-	}
-
-	if runOnce {
-		return
-	}
-
-	for {
-		select {
-		case <- dt.UpdateHealthChan:
-			log.Debug("Received an update health status signal")
-			if err := updateHealth(); err != nil {
-				log.Errorf("Could not update health status: %s", err)
-			}
-			dt.UpdateHealthDoneChan <- true
-			break
-		case <- time.After(time.Duration(dt.Cfg.FlagUpdateHealthReportInterval) * time.Second):
-			log.Debug("Timeout reached, updating health status")
-			if err := updateHealth(); err != nil {
-				log.Errorf("Could not update health status: %s", err)
-			}
-			break
-		}
-	}
-}
 
 func getHostVirtualMemory() (mem.VirtualMemoryStat, error) {
 	vmem, err := mem.VirtualMemory()
@@ -168,9 +100,7 @@ func GetUnitsProperties(dt Dt) (healthReport UnitsHealthResponseJSONStruct, err 
 
 	// DCOS-5862 blacklist systemd units
 	excludeUnits := []string{"dcos-setup.service", "dcos-link-env.service", "dcos-download.service"}
-
-	units := append(dt.Cfg.SystemdUnits, foundUnits...)
-	for _, unit := range units {
+	for _, unit := range foundUnits {
 		if isInList(unit, excludeUnits) {
 			log.Debugf("Skipping blacklisted systemd unit %s", unit)
 			continue

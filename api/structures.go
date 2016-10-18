@@ -1,18 +1,21 @@
 package api
 
 import (
+	"sync"
+	"time"
+
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/load"
 	"github.com/shirou/gopsutil/mem"
-	"sync"
-	"time"
 )
 
 // MonitoringResponse top level global variable to store the entire units/nodes status tree.
 type monitoringResponse struct {
 	sync.RWMutex
-	Units map[string]*unit
-	Nodes map[string]*Node
+
+	Units       map[string]*unit
+	Nodes       map[string]*Node
+	UpdatedTime time.Time
 }
 
 // Unit for systemd unit.
@@ -106,10 +109,10 @@ type nodeResponseFieldsWithErrorStruct struct {
 // Agent response json format
 type agentsResponse struct {
 	Agents []struct {
-		Hostname string `json:"hostname"`
+		Hostname   string `json:"hostname"`
 		Attributes struct {
 			PublicIP string `json:"public_ip"`
-			   } `json:"attributes"`
+		} `json:"attributes"`
 	} `json:"slaves"`
 }
 
@@ -128,8 +131,6 @@ type Dt struct {
 	DtDiagnosticsJob  *DiagnosticsJob
 	RunPullerChan     chan bool
 	RunPullerDoneChan chan bool
-	UpdateHealthChan  chan bool
-	UpdateHealthDoneChan chan bool
 }
 
 type bundle struct {
@@ -139,12 +140,12 @@ type bundle struct {
 
 // UnitPropertiesResponse is a structure to unmarshal dbus.GetunitProperties response
 type UnitPropertiesResponse struct {
-	ID                              string `json:"Id"`
-	LoadState                       string
-	ActiveState                     string
-	SubState                        string
-	Description                     string
-	ExecMainStatus                  int
+	ID             string `json:"Id"`
+	LoadState      string
+	ActiveState    string
+	SubState       string
+	Description    string
+	ExecMainStatus int
 
 	InactiveExitTimestampMonotonic  uint64
 	ActiveEnterTimestampMonotonic   uint64

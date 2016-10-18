@@ -3,34 +3,31 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	log "github.com/Sirupsen/logrus"
-	"github.com/gorilla/mux"
 	"io"
 	"net/http"
 	"net/http/httputil"
 	"os"
 	"path/filepath"
-	"time"
+
+	log "github.com/Sirupsen/logrus"
+	"github.com/gorilla/mux"
 )
+
+func httpError(w http.ResponseWriter, msg string, code int) {
+	log.Error(msg)
+	http.Error(w, msg, code)
+}
 
 // Route handlers
 // /api/v1/system/health, get a units status, used by 3dt puller
 func unitsHealthStatus(w http.ResponseWriter, r *http.Request, dt Dt) {
-	if cache := r.URL.Query()["cache"]; len(cache) > 0 {
-		dt.UpdateHealthChan <- true
-		select {
-		case <- dt.UpdateHealthDoneChan:
-			log.Debugf("Health status has been updated")
-			break
-		case <- time.After(time.Second * 3):
-			e := "Could not update health status, timeout occured"
-			log.Error(e)
-			http.Error(w, e, http.StatusRequestTimeout)
-			return
-		}
+	health, err := GetUnitsProperties(dt)
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	if err := json.NewEncoder(w).Encode(unitsHealthReport.GetHealthReport()); err != nil {
+	if err := json.NewEncoder(w).Encode(health); err != nil {
 		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
@@ -47,8 +44,7 @@ func getUnitByIDHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	unitResponse, err := globalMonitoringResponse.GetUnit(vars["unitid"])
 	if err != nil {
-		log.Errorf("Could not get a unit %s: %s", vars["unitid"], err)
-		json.NewEncoder(w).Encode(err)
+		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if err := json.NewEncoder(w).Encode(unitResponse); err != nil {
@@ -61,8 +57,7 @@ func getNodesByUnitIDHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	nodesForUnitResponse, err := globalMonitoringResponse.GetNodesForUnit(vars["unitid"])
 	if err != nil {
-		log.Errorf("Could not get a list of nodes for unit %s: %s", vars["unitid"], err)
-		json.NewEncoder(w).Encode(err)
+		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if err := json.NewEncoder(w).Encode(nodesForUnitResponse); err != nil {
@@ -76,8 +71,7 @@ func getNodeByUnitIDNodeIDHandler(w http.ResponseWriter, r *http.Request) {
 	nodePerUnit, err := globalMonitoringResponse.GetSpecificNodeForUnit(vars["unitid"], vars["nodeid"])
 
 	if err != nil {
-		log.Errorf("Could not get a unit %s for a node %s: %s", vars["unitid"], vars["nodeid"], err)
-		json.NewEncoder(w).Encode(err)
+		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if err := json.NewEncoder(w).Encode(nodePerUnit); err != nil {
@@ -104,8 +98,7 @@ func getNodeByIDHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	nodes, err := globalMonitoringResponse.GetNodeByID(vars["nodeid"])
 	if err != nil {
-		log.Errorf("Could not get a node by id %s: %s", vars["nodeid"], err)
-		json.NewEncoder(w).Encode(err)
+		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -119,8 +112,7 @@ func getNodeUnitsByNodeIDHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	units, err := globalMonitoringResponse.GetNodeUnitsID(vars["nodeid"])
 	if err != nil {
-		log.Errorf("Could not get a list of unts for node %s: %s", vars["nodeid"], err)
-		json.NewEncoder(w).Encode(err)
+		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -133,8 +125,7 @@ func getNodeUnitByNodeIDUnitIDHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	unit, err := globalMonitoringResponse.GetNodeUnitByNodeIDUnitID(vars["nodeid"], vars["unitid"])
 	if err != nil {
-		log.Errorf("Could not get a unit %s for a node %s: %s", vars["unitid"], vars["nodeid"], err)
-		json.NewEncoder(w).Encode(err)
+		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if err := json.NewEncoder(w).Encode(unit); err != nil {

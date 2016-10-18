@@ -378,12 +378,10 @@ func (s *HandlersTestSuit) SetupTest() {
 
 	// Update global monitoring responses
 	globalMonitoringResponse.updateMonitoringResponse(s.mockedMonitoringResponse)
-	unitsHealthReport.UpdateHealthReport(s.mockedUnitsHealthResponseJSONStruct)
 }
 
 func (s *HandlersTestSuit) TearDownTest() {
 	// clear global variables that might be set
-	unitsHealthReport = unitsHealth{}
 	globalMonitoringResponse = monitoringResponse{}
 }
 
@@ -399,25 +397,6 @@ func (s *HandlersTestSuit) get(url string) []byte {
 	response, _, err := MakeHTTPRequest(s.T(), s.router, url, "GET", nil)
 	s.assert.Nil(err, "Error makeing GET request")
 	return response
-}
-
-// Tests
-func (s *HandlersTestSuit) TestUnitsHealthStruct() {
-	// Test structure HealthReport get/set health report
-	unitsHealthReport.UpdateHealthReport(UnitsHealthResponseJSONStruct{})
-	s.assert.Equal(unitsHealthReport.GetHealthReport(), UnitsHealthResponseJSONStruct{}, "GetHealthReport() should be empty")
-	unitsHealthReport.UpdateHealthReport(s.mockedUnitsHealthResponseJSONStruct)
-	s.assert.Equal(unitsHealthReport.GetHealthReport(), s.mockedUnitsHealthResponseJSONStruct, "GetHealthReport() should NOT be empty")
-}
-
-func (s *HandlersTestSuit) TestUnitsHealthStatusFunc() {
-	// Test health endpoint /system/health/v1
-	resp := s.get("/system/health/v1")
-	var response UnitsHealthResponseJSONStruct
-	json.Unmarshal(resp, &response)
-
-	s.assert.NotEqual(response, UnitsHealthResponseJSONStruct{}, "Response cannot be empty")
-	s.assert.Equal(response, s.mockedUnitsHealthResponseJSONStruct)
 }
 
 func (s *HandlersTestSuit) TestgetAllUnitsHandlerFunc() {
@@ -461,7 +440,7 @@ func (s *HandlersTestSuit) TestgetUnitByIdHandlerFunc() {
 
 	// Unit should not be found
 	resp = s.get("/system/health/v1/units/dcos-notfound.service")
-	s.assert.Equal(string(resp), "{}\n")
+	s.assert.Equal(string(resp), "Unit dcos-notfound.service not found\n")
 }
 
 func (s *HandlersTestSuit) TestgetNodesByUnitIdHandlerFunc() {
@@ -486,7 +465,7 @@ func (s *HandlersTestSuit) TestgetNodesByUnitIdHandlerFunc() {
 
 	// Unit should not be found and no nodes should be returned
 	resp = s.get("/system/health/v1/units/dcos-notfound.service/nodes")
-	s.assert.Equal(string(resp), "{}\n")
+	s.assert.Equal(string(resp), "Unit dcos-notfound.service not found\n")
 }
 
 func (s *HandlersTestSuit) TestgetNodeByUnitIdNodeIdHandlerFunc() {
@@ -508,11 +487,11 @@ func (s *HandlersTestSuit) TestgetNodeByUnitIdNodeIdHandlerFunc() {
 
 	// use wrong unit
 	resp = s.get("/system/health/v1/units/dcos-notfound.service/nodes/10.0.7.192")
-	s.assert.Equal(string(resp), "{}\n")
+	s.assert.Equal(string(resp), "Unit dcos-notfound.service not found\n")
 
 	// use wrong node
 	resp = s.get("/system/health/v1/units/dcos-cosmos.service/nodes/127.0.0.1")
-	s.assert.Equal(string(resp), "{}\n")
+	s.assert.Equal(string(resp), "Node 127.0.0.1 not found\n")
 }
 
 func (s *HandlersTestSuit) TestgetNodesHandlerFunc() {
@@ -547,7 +526,7 @@ func (s *HandlersTestSuit) TestgetNodeByIdHandlerFunc() {
 
 	// use wrong host
 	resp = s.get("/system/health/v1/nodes/127.0.0.1")
-	s.assert.Equal(string(resp), "{}\n")
+	s.assert.Equal(string(resp), "Node 127.0.0.1 not found\n")
 }
 
 func (s *HandlersTestSuit) TestgetNodeUnitsByNodeIdHandlerFunc() {
@@ -567,7 +546,7 @@ func (s *HandlersTestSuit) TestgetNodeUnitsByNodeIdHandlerFunc() {
 
 	// use wrong host
 	resp = s.get("/system/health/v1/nodes/127.0.0.1/units")
-	s.assert.Equal(string(resp), "{}\n")
+	s.assert.Equal(string(resp), "Node 127.0.0.1 not found\n")
 }
 
 func (s *HandlersTestSuit) TestgetNodeUnitByNodeIdUnitIdHandlerFunc() {
@@ -585,11 +564,11 @@ func (s *HandlersTestSuit) TestgetNodeUnitByNodeIdUnitIdHandlerFunc() {
 
 	// use wrong host
 	resp = s.get("/system/health/v1/nodes/127.0.0.1/units/dcos-adminrouter-reload.service")
-	s.assert.Equal(string(resp), "{}\n")
+	s.assert.Equal(string(resp), "Node 127.0.0.1 not found\n")
 
 	// use wrong service
 	resp = s.get("/system/health/v1/nodes/10.0.7.190/units/dcos-bad.service")
-	s.assert.Equal(string(resp), "{}\n")
+	s.assert.Equal(string(resp), "Unit dcos-bad.service not found\n")
 }
 
 func (s *HandlersTestSuit) TestreportHandlerFunc() {
@@ -607,72 +586,6 @@ func (s *HandlersTestSuit) TestIsInListFunc() {
 	s.assert.Equal(isInList("DC", array), true, "DC should be in test array")
 	s.assert.Equal(isInList("CD", array), false, "CD should not be in test array")
 
-}
-
-func (s *HandlersTestSuit) TestStartUpdateHealthReportActualImplementationFunc() {
-	// clear any health report
-	unitsHealthReport.UpdateHealthReport(UnitsHealthResponseJSONStruct{})
-	s.dt.DtDCOSTools = &DCOSTools{}
-
-	readyChan := make(chan struct{}, 1)
-	StartUpdateHealthReport(s.dt, readyChan, true)
-	hr := unitsHealthReport.GetHealthReport()
-	s.assert.Empty(hr.Array)
-}
-
-// TestCheckHealthReportRace is meant to be run under the race detector
-// to confirm that UpdateHealthReport and GetHealthReport do not race.
-func (s *HandlersTestSuit) TestCheckHealthReportRace() {
-	// the strategy we follow is to launch a goroutine that
-	// updates the HealthReport while reading it
-	// from the main thread.
-	done := make(chan struct{})
-	go func() {
-		unitsHealthReport.UpdateHealthReport(UnitsHealthResponseJSONStruct{})
-		close(done)
-	}()
-	_ = unitsHealthReport.GetHealthReport()
-	// We wait for the spawned goroutine to exit before the test
-	// returns in order to prevent the spawned goroutine from racing
-	// with TearDownTest.
-	<-done
-}
-
-func (s *HandlersTestSuit) TestStartUpdateHealthReportFunc() {
-	readyChan := make(chan struct{}, 1)
-	StartUpdateHealthReport(s.dt, readyChan, true)
-	hr := unitsHealthReport.GetHealthReport()
-	s.assert.Equal(hr.Array, []healthResponseValues{
-		{
-			UnitID:     "unit_a",
-			UnitHealth: 0,
-			UnitTitle:  "My fake description",
-			PrettyName: "PrettyName",
-		},
-		{
-			UnitID:     "unit_b",
-			UnitHealth: 0,
-			UnitTitle:  "My fake description",
-			PrettyName: "PrettyName",
-		},
-		{
-			UnitID:     "unit_c",
-			UnitHealth: 0,
-			UnitTitle:  "My fake description",
-			PrettyName: "PrettyName",
-		},
-	})
-	s.assert.NotEmpty(hr.System)
-	s.assert.NotEmpty(hr.System.DiskUsage)
-	s.assert.NotEmpty(hr.System.LoadAvarage)
-	s.assert.NotEmpty(hr.System.Memory)
-	s.assert.NotEmpty(hr.System.Partitions)
-	s.assert.Equal(hr.Hostname, "MyHostName")
-	s.assert.Equal(hr.IPAddress, "127.0.0.1")
-	s.assert.Equal(hr.DcosVersion, "")
-	s.assert.Equal(hr.Role, "master")
-	s.assert.Equal(hr.MesosID, "node-id-123")
-	s.assert.Equal(hr.TdtVersion, "0.2.14")
 }
 
 func TestHandlersTestSuit(t *testing.T) {

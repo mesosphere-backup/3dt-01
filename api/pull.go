@@ -5,13 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
+	"path/filepath"
+	"strconv"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
-	"net"
-	"path/filepath"
-	"strconv"
 )
 
 const (
@@ -84,7 +84,7 @@ func (f *findMastersInExhibitor) find() (nodes []Node, err error) {
 
 // NodesNotFoundError is a custom error called when nodes are not found.
 type NodesNotFoundError struct {
-	msg  string
+	msg string
 }
 
 func (n NodesNotFoundError) Error() string {
@@ -269,6 +269,7 @@ func (mr *monitoringResponse) updateMonitoringResponse(r monitoringResponse) {
 	defer mr.Unlock()
 	mr.Nodes = r.Nodes
 	mr.Units = r.Units
+	mr.UpdatedTime = r.UpdatedTime
 }
 
 // Get all units available in globalMonitoringResponse
@@ -349,7 +350,7 @@ func (mr *monitoringResponse) GetSpecificNodeForUnit(unitName string, nodeIP str
 			}, nil
 		}
 	}
-	return nodeResponseFieldsWithErrorStruct{}, fmt.Errorf("Node %s not found")
+	return nodeResponseFieldsWithErrorStruct{}, fmt.Errorf("Node %s not found", nodeIP)
 }
 
 func (mr *monitoringResponse) GetNodes() nodesResponseJSONStruct {
@@ -450,37 +451,36 @@ func (mr *monitoringResponse) GetNodeUnitByNodeIDUnitID(nodeIP string, unitID st
 	return healthResponseValues{}, fmt.Errorf("Unit %s not found", unitID)
 }
 
-// StartPullWithInterval will start to pull a DC/OS cluster health status
-func StartPullWithInterval(dt Dt, ready chan struct{}) {
-	select {
-	case <-ready:
-		log.Infof("Start pulling with interval %d", dt.Cfg.FlagPullInterval)
-	case <-time.After(time.Second * 10):
-		log.Error("Not ready to pull from localhost after 10 seconds")
+func (mr *monitoringResponse) GetLastUpdatedTime() string {
+	mr.Lock()
+	defer mr.Unlock()
+	if mr.UpdatedTime.IsZero() {
+		return ""
 	}
+	return mr.UpdatedTime.Format(time.ANSIC)
+}
 
-	// run puller for the first time
-	runPull(dt, false)
-
+// StartPullWithInterval will start to pull a DC/OS cluster health status
+func StartPullWithInterval(dt Dt) {
 	// Start infinite loop
 	for {
+		runPull(dt)
+	inner:
 		select {
 		case <-dt.RunPullerChan:
 			log.Debug("Update cluster health request recevied")
-			runPull(dt, true)
-
-			// signal back that runPull has been executed and data is ready
+			runPull(dt)
 			dt.RunPullerDoneChan <- true
-			break
+			goto inner
+
 		case <-time.After(time.Duration(dt.Cfg.FlagPullInterval) * time.Second):
-			// run puller after a timeout
-			runPull(dt, false)
-			break
+			log.Debugf("Update cluster health after %d interval", dt.Cfg.FlagPullInterval)
 		}
+
 	}
 }
 
-func runPull(dt Dt, noCache bool) {
+func runPull(dt Dt) {
 	var clusterHosts []Node
 	masterNodes, err := dt.DtDCOSTools.GetMasterNodes()
 	if err != nil {
@@ -507,7 +507,7 @@ func runPull(dt Dt, noCache bool) {
 
 	// Pull data from each host
 	for i := 0; i < len(clusterHosts); i++ {
-		go pullHostStatus(hostsChan, respChan, dt, noCache)
+		go pullHostStatus(hostsChan, respChan, dt)
 	}
 
 	// blocking here got get all responses from hosts
@@ -551,10 +551,11 @@ func updateHealthStatus(responses []*httpResponse) {
 			}
 		}
 	}
-	log.Debugf("Number of nodes: %d, len of responses: %d", len(nodes), len(responses))
+	log.Debugf("Number of nodes: %d, len of responses: %d. Time: %s", len(nodes), len(responses))
 	globalMonitoringResponse.updateMonitoringResponse(monitoringResponse{
 		Units: units,
 		Nodes: nodes,
+		UpdatedTime: time.Now(),
 	})
 }
 
@@ -581,7 +582,7 @@ func collectResponses(respChan <-chan *httpResponse, totalHosts int) (responses 
 	}
 }
 
-func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, dt Dt, noCache bool) {
+func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, dt Dt) {
 	for host := range hosts {
 		var response httpResponse
 
@@ -596,9 +597,6 @@ func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, dt Dt, noC
 		}
 
 		baseURL := fmt.Sprintf("http://%s:%d%s", host.IP, port, BaseRoute)
-		if noCache {
-			baseURL += "?cache=0"
-		}
 
 		// UnitsRoute available in router.go
 		url, err := useTLSScheme(baseURL, dt.Cfg.FlagForceTLS)

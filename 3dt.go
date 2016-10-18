@@ -2,12 +2,12 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 
-	log "github.com/Sirupsen/logrus"
+	"github.com/Sirupsen/logrus"
 	"github.com/coreos/go-systemd/activation"
 	"github.com/dcos/3dt/api"
-	"net/http"
 )
 
 func getVersion() string {
@@ -17,7 +17,7 @@ func getVersion() string {
 func runDiag(dt api.Dt) {
 	units, err := api.GetUnitsProperties(dt)
 	if err != nil {
-		log.Fatalf("Error getting units properties: %s", err)
+		logrus.Fatalf("Error getting units properties: %s", err)
 	}
 
 	var fail bool
@@ -29,18 +29,15 @@ func runDiag(dt api.Dt) {
 	}
 
 	if fail {
-		log.Fatal("Found unhealthy systemd units")
+		logrus.Fatal("Found unhealthy systemd units")
 	}
 }
 
 func main() {
-	// a message channel to ensure we can start pulling safely
-	readyChan := make(chan struct{})
-
 	// load config with default values
 	config, err := api.LoadDefaultConfig(os.Args)
 	if err != nil {
-		log.Fatalf("Could not load default config: %s", err)
+		logrus.Fatalf("Could not load default config: %s", err)
 	}
 
 	// print version and exit
@@ -56,29 +53,27 @@ func main() {
 
 	// init requester
 	if err := api.Requester.Init(&config, DCOSTools); err != nil {
-		log.Fatalf("Could not initialze the HTTP(S) requester: %s", err)
+		logrus.Fatalf("Could not initialze the HTTP(S) requester: %s", err)
 	}
 
 	// Create and init diagnostics job, do not hard fail on error
 	diagnosticsJob := &api.DiagnosticsJob{}
 	if err := diagnosticsJob.Init(&config, DCOSTools); err != nil {
-		log.Errorf("Could not init diagnostics job properly: %s", err)
+		logrus.Errorf("Could not init diagnostics job properly: %s", err)
 	}
 
 	// Inject dependencies used for running 3dt.
 	dt := api.Dt{
-		Cfg:               &config,
-		DtDCOSTools:       DCOSTools,
-		DtDiagnosticsJob:  diagnosticsJob,
-		RunPullerChan:     make(chan bool),
-		RunPullerDoneChan: make(chan bool),
-		UpdateHealthChan:  make(chan bool),
-		UpdateHealthDoneChan: make(chan bool),
+		Cfg:                  &config,
+		DtDCOSTools:          DCOSTools,
+		DtDiagnosticsJob:     diagnosticsJob,
+		RunPullerChan:        make(chan bool),
+		RunPullerDoneChan:    make(chan bool),
 	}
 
 	// set verbose (debug) output.
 	if config.FlagVerbose {
-		log.SetLevel(log.DebugLevel)
+		logrus.SetLevel(logrus.DebugLevel)
 	}
 
 	// run local diagnostics, verify all systemd units are healthy.
@@ -87,26 +82,26 @@ func main() {
 		os.Exit(0)
 	}
 
+	// start diagnostic server and expose endpoints.
+	logrus.Info("Start 3DT")
+
 	// start pulling every 60 seconds.
 	if config.FlagPull {
-		go api.StartPullWithInterval(dt, readyChan)
+		go api.StartPullWithInterval(dt)
 	}
 
-	// start diagnostic server and expose endpoints.
-	log.Info("Start 3DT")
-	go api.StartUpdateHealthReport(dt, readyChan, false)
 	router := api.NewRouter(dt)
 
 	// try using systemd socket
 	listeners, err := activation.Listeners(true)
 	if err != nil {
-		log.Errorf("Systemd socket not found: %s", err)
+		logrus.Errorf("Systemd socket not found: %s", err)
 	}
 
 	if len(listeners) == 0 || listeners[0] == nil {
-		log.Infof("Exposing 3DT API on 0.0.0.0:%d", config.FlagPort)
-		log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.FlagPort), router))
+		logrus.Infof("Exposing 3DT API on 0.0.0.0:%d", config.FlagPort)
+		logrus.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.FlagPort), router))
 	}
-	log.Infof("Using socket: %s", listeners[0].Addr().String())
-	log.Fatal(http.Serve(listeners[0], router))
+	logrus.Infof("Using socket: %s", listeners[0].Addr().String())
+	logrus.Fatal(http.Serve(listeners[0], router))
 }

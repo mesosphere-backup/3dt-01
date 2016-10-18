@@ -1,19 +1,19 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
+	"io/ioutil"
 	"os"
 
 	log "github.com/Sirupsen/logrus"
-	"io/ioutil"
-	"encoding/json"
 	"github.com/xeipuuv/gojsonschema"
 )
 
 var (
 	// Version of 3dt code.
-	Version = "0.2.14"
+	Version = "0.2.15"
 
 	// APIVer is an API version.
 	APIVer = 1
@@ -103,6 +103,9 @@ var (
 	    },
 	    "iam-config": {
 	      "type": "string"
+	    },
+	    "debug": {
+	      "type": "boolean"
 	    }
 	  },
 	  "additionalProperties": false
@@ -111,30 +114,31 @@ var (
 
 // Config structure is a main config object
 type Config struct {
-	Version                                      string `json:"-"`
-	Revision                                     string `json:"-"`
-	MesosIPDiscoveryCommand                      string `json:"-"`
-	DCOSVersion                                  string `json:"-"`
-	SystemdUnits                                 []string `json:"-"`
+	Version                 string   `json:"-"`
+	Revision                string   `json:"-"`
+	MesosIPDiscoveryCommand string   `json:"-"`
+	DCOSVersion             string   `json:"-"`
+	SystemdUnits            []string `json:"-"`
 
 	// config flag
-	Flag3DTConfig                                string `json:"-"`
-	FlagJSONSchema                               string `json:"json-validation-schema"`
+	Flag3DTConfig  string `json:"-"`
+	FlagJSONSchema string `json:"json-validation-schema"`
 
 	// 3dt flags
-	FlagCACertFile                               string `json:"ca-cert"`
-	FlagPull                                     bool   `json:"pull"`
-	FlagDiag                                     bool   `json:"-"`
-	FlagVerbose                                  bool   `json:"verbose"`
-	FlagVersion                                  bool   `json:"-"`
-	FlagPort                                     int    `json:"port"`
-	FlagMasterPort                               int    `json:"master-port"`
-	FlagAgentPort                                int    `json:"agent-port"`
-	FlagPullInterval                             int    `json:"pull-interval"`
-	FlagPullTimeoutSec                           int    `json:"pull-timeout"`
-	FlagUpdateHealthReportInterval               int    `json:"health-update-interval"`
-	FlagExhibitorClusterStatusURL                string `json:"exhibitor-ip"`
-	FlagForceTLS                                 bool   `json:"force-tls"`
+	FlagCACertFile                 string `json:"ca-cert"`
+	FlagPull                       bool   `json:"pull"`
+	FlagDiag                       bool   `json:"-"`
+	FlagVerbose                    bool   `json:"verbose"`
+	FlagVersion                    bool   `json:"-"`
+	FlagPort                       int    `json:"port"`
+	FlagMasterPort                 int    `json:"master-port"`
+	FlagAgentPort                  int    `json:"agent-port"`
+	FlagPullInterval               int    `json:"pull-interval"`
+	FlagPullTimeoutSec             int    `json:"pull-timeout"`
+	FlagUpdateHealthReportInterval int    `json:"health-update-interval"`
+	FlagExhibitorClusterStatusURL  string `json:"exhibitor-ip"`
+	FlagForceTLS                   bool   `json:"force-tls"`
+	FlagDebug                      bool   `json:"debug"`
 
 	// diagnostics job flags
 	FlagDiagnosticsBundleDir                     string `json:"diagnostics-bundle-dir"`
@@ -170,6 +174,7 @@ func (c *Config) setFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.FlagExhibitorClusterStatusURL, "exhibitor-ip", c.FlagExhibitorClusterStatusURL,
 		"Use Exhibitor IP address to discover master nodes.")
 	fs.BoolVar(&c.FlagForceTLS, "force-tls", c.FlagForceTLS, "Use HTTPS to do all requests.")
+	fs.BoolVar(&c.FlagDebug, "debug", c.FlagDebug, "Enable pprof debugging endpoints.")
 
 	// diagnostics job flags
 	fs.StringVar(&c.FlagDiagnosticsBundleDir, "diagnostics-bundle-dir", c.FlagDiagnosticsBundleDir, "Set a path to store diagnostic bundles")
@@ -234,7 +239,6 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 		log.Debug("Environment variable DCOS_VERSION is not set")
 	}
 	config.DCOSVersion = os.Getenv("DCOS_VERSION")
-	config.SystemdUnits = []string{"dcos-setup.service", "dcos-link-env.service", "dcos-download.service"}
 
 	config.setFlags(flagSet)
 
@@ -303,7 +307,7 @@ func validate(documentLoader gojsonschema.JSONLoader) error {
 
 func printErrorsAndFail(resultErrors []gojsonschema.ResultError) error {
 	for _, resultError := range resultErrors {
-			log.Error(resultError)
+		log.Error(resultError)
 	}
 	return errors.New("Validation failed")
 }

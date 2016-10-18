@@ -2,11 +2,13 @@ package api
 
 import (
 	"fmt"
-	log "github.com/Sirupsen/logrus"
+	"net/http"
+	"net/http/pprof"
+	"time"
+
+	"github.com/Sirupsen/logrus"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-	"net/http"
-	"time"
 )
 
 // BaseRoute a base 3dt endpoint location.
@@ -45,13 +47,16 @@ func headerMiddleware(next http.Handler, headers []header) http.Handler {
 func noCacheMiddleware(next http.Handler, dt Dt) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if cache := r.URL.Query()["cache"]; len(cache) == 0 {
+			if t := globalMonitoringResponse.GetLastUpdatedTime(); t != "" {
+				w.Header().Set("Last-Modified-3DT", t)
+			}
 			next.ServeHTTP(w, r)
 			return
 		}
 
 		if !dt.Cfg.FlagPull {
 			e := "3dt was not started with -pull flag"
-			log.Error(e)
+			logrus.Error(e)
 			http.Error(w, e, http.StatusServiceUnavailable)
 			return
 		}
@@ -59,20 +64,21 @@ func noCacheMiddleware(next http.Handler, dt Dt) http.Handler {
 		dt.RunPullerChan <- true
 		select {
 		case <-dt.RunPullerDoneChan:
-			log.Debugf("Successfully collected cluster health status")
-			break
+			logrus.Debug("Fresh data updated")
+
 		case <-time.After(time.Minute):
-			e := "Puller timeout occured"
-			log.Error(e)
-			http.Error(w, e, http.StatusRequestTimeout)
-			return
+			panic("Error getting fresh health report")
+		}
+
+		if t := globalMonitoringResponse.GetLastUpdatedTime(); t != "" {
+			w.Header().Set("Last-Modified-3DT", t)
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
 func getRoutes(dt Dt) []routeHandler {
-	return []routeHandler{
+	routes := []routeHandler{
 		{
 			// /system/health/v1
 			url: BaseRoute,
@@ -237,6 +243,83 @@ func getRoutes(dt Dt) []routeHandler {
 			handler: selfTestHandler,
 		},
 	}
+
+	if dt.Cfg.FlagDebug {
+		logrus.Debug("Enabling pprof endpoints.")
+		routes = append(routes, []routeHandler{
+			{
+				url:     BaseRoute + "/debug/pprof/",
+				handler: pprof.Index,
+				gzip:    true,
+				headers: []header{
+					{
+						name: "Content-type",
+						value: "text/html",
+					},
+				},
+			},
+			{
+				url:     BaseRoute + "/debug/pprof/cmdline",
+				handler: pprof.Cmdline,
+				gzip:    true,
+				headers: []header{
+					{
+						name: "Content-type",
+						value: "text/html",
+					},
+				},
+			},
+			{
+				url:     BaseRoute + "/debug/pprof/profile",
+				handler: pprof.Profile,
+				gzip:    true,
+				headers: []header{
+					{
+						name: "Content-type",
+						value: "text/html",
+					},
+				},
+			},
+			{
+				url:     BaseRoute + "/debug/pprof/symbol",
+				handler: pprof.Symbol,
+				gzip:    true,
+				headers: []header{
+					{
+						name: "Content-type",
+						value: "text/html",
+					},
+				},
+			},
+			{
+				url:     BaseRoute + "/debug/pprof/trace",
+				handler: pprof.Trace,
+				gzip:    true,
+				headers: []header{
+					{
+						name: "Content-type",
+						value: "text/html",
+					},
+				},
+			},
+			{
+				url: BaseRoute + "/debug/pprof/{profile}",
+				handler: func(w http.ResponseWriter, req *http.Request) {
+					profile := mux.Vars(req)["profile"]
+					pprof.Handler(profile).ServeHTTP(w, req)
+				},
+				gzip: true,
+				headers: []header{
+					{
+						name: "Content-type",
+						value: "text/html",
+					},
+				},
+			},
+		}...)
+	}
+
+	return routes
 }
 
 func wrapHandler(handler http.Handler, route routeHandler, dt Dt) http.Handler {

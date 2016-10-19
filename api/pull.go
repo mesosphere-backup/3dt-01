@@ -9,9 +9,10 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
+	"github.com/Sirupsen/logrus"
 )
 
 const (
@@ -71,12 +72,12 @@ func (f *findMastersInExhibitor) findMesosMasters() (nodes []Node, err error) {
 func (f *findMastersInExhibitor) find() (nodes []Node, err error) {
 	nodes, err = f.findMesosMasters()
 	if err == nil {
-		log.Debug("Found masters in exhibitor")
+		logrus.Debug("Found masters in exhibitor")
 		return nodes, nil
 	}
 	// try next provider if it is available
 	if f.next != nil {
-		log.Warning(err)
+		logrus.Warning(err)
 		return f.next.find()
 	}
 	return nodes, err
@@ -108,19 +109,19 @@ func (f *findAgentsInHistoryService) getMesosAgents() (nodes []Node, err error) 
 		filePath := filepath.Join(basePath, historyFile.Name())
 		agents, err := ioutil.ReadFile(filePath)
 		if err != nil {
-			log.Errorf("Could not read %s: %s", filePath, err)
+			logrus.Errorf("Could not read %s: %s", filePath, err)
 			continue
 		}
 
 		unquotedAgents, err := strconv.Unquote(string(agents))
 		if err != nil {
-			log.Errorf("Could not unquote agents string %s: %s", string(agents), err)
+			logrus.Errorf("Could not unquote agents string %s: %s", string(agents), err)
 			continue
 		}
 
 		var sr agentsResponse
 		if err := json.Unmarshal([]byte(unquotedAgents), &sr); err != nil {
-			log.Errorf("Could not unmarshal unquotedAgents %s: %s", unquotedAgents, err)
+			logrus.Errorf("Could not unmarshal unquotedAgents %s: %s", unquotedAgents, err)
 			continue
 		}
 
@@ -151,12 +152,12 @@ func (f *findAgentsInHistoryService) getMesosAgents() (nodes []Node, err error) 
 func (f *findAgentsInHistoryService) find() (nodes []Node, err error) {
 	nodes, err = f.getMesosAgents()
 	if err == nil {
-		log.Debugf("Found agents in the history service for past %s", f.pastTime)
+		logrus.Debugf("Found agents in the history service for past %s", f.pastTime)
 		return nodes, nil
 	}
 	// try next provider if it is available
 	if f.next != nil {
-		log.Warning(err)
+		logrus.Warning(err)
 		return f.next.find()
 	}
 	return nodes, err
@@ -254,11 +255,11 @@ func (f *findNodesInDNS) dispatchGetNodesByRole() (nodes []Node, err error) {
 func (f *findNodesInDNS) find() (nodes []Node, err error) {
 	nodes, err = f.dispatchGetNodesByRole()
 	if err == nil {
-		log.Debugf("Found %s nodes by resolving %s", f.role, f.dnsRecord)
+		logrus.Debugf("Found %s nodes by resolving %s", f.role, f.dnsRecord)
 		return nodes, err
 	}
 	if f.next != nil {
-		log.Warning(err)
+		logrus.Warning(err)
 		return f.next.find()
 	}
 	return nodes, err
@@ -378,12 +379,12 @@ func (mr *monitoringResponse) getMasterAgentNodes() ([]Node, []Node, error) {
 	var masterNodes, agentNodes []Node
 	for _, node := range mr.Nodes {
 		if node.Role == MasterRole {
-			masterNodes = append(masterNodes, *node)
+			masterNodes = append(masterNodes, node)
 			continue
 		}
 
 		if node.Role == AgentRole || node.Role == AgentPublicRole {
-			agentNodes = append(agentNodes, *node)
+			agentNodes = append(agentNodes, node)
 		}
 	}
 
@@ -468,212 +469,170 @@ func StartPullWithInterval(dt Dt) {
 	inner:
 		select {
 		case <-dt.RunPullerChan:
-			log.Debug("Update cluster health request recevied")
+			logrus.Debug("Update cluster health request recevied")
 			runPull(dt)
 			dt.RunPullerDoneChan <- true
 			goto inner
 
 		case <-time.After(time.Duration(dt.Cfg.FlagPullInterval) * time.Second):
-			log.Debugf("Update cluster health after %d interval", dt.Cfg.FlagPullInterval)
+			logrus.Debugf("Update cluster health after %d interval", dt.Cfg.FlagPullInterval)
 		}
 
 	}
 }
 
 func runPull(dt Dt) {
-	var clusterHosts []Node
-	masterNodes, err := dt.DtDCOSTools.GetMasterNodes()
+	clusterNodes, err := dt.DtDCOSTools.GetMasterNodes()
 	if err != nil {
-		log.Errorf("Could not get master nodes: %s", err)
+		logrus.Errorf("Could not get master nodes: %s", err)
 	}
 
 	agentNodes, err := dt.DtDCOSTools.GetAgentNodes()
 	if err != nil {
-		log.Errorf("Could not get agent nodes: %s", err)
+		logrus.Errorf("Could not get agent nodes: %s", err)
 	}
 
-	clusterHosts = append(clusterHosts, masterNodes...)
-	clusterHosts = append(clusterHosts, agentNodes...)
+	clusterNodes = append(clusterNodes, agentNodes...)
 
 	// If not nodes found we should wait for a timeout between trying the next pull.
-	if len(clusterHosts) == 0 {
-		log.Error("Could not find master or agent nodes")
+	if len(clusterNodes) == 0 {
+		logrus.Error("Could not find master or agent nodes")
 		return
 	}
 
-	respChan := make(chan *httpResponse, len(clusterHosts))
-	hostsChan := make(chan Node, len(clusterHosts))
-	loadJobs(hostsChan, clusterHosts)
+	respChan := make(chan *httpResponse, len(clusterNodes))
 
 	// Pull data from each host
-	for i := 0; i < len(clusterHosts); i++ {
-		go pullHostStatus(hostsChan, respChan, dt)
+	var wg sync.WaitGroup
+	for _, node := range clusterNodes {
+		wg.Add(1)
+		go pullHostStatus(node, respChan, dt, &wg)
 	}
-
-	// blocking here got get all responses from hosts
-	clusterHTTPResponses := collectResponses(respChan, len(clusterHosts))
+	wg.Wait()
 
 	// update collected units/nodes health statuses
-	updateHealthStatus(clusterHTTPResponses)
+	updateHealthStatus(respChan)
 }
 
 // function builds a map of all unique units with status
-func updateHealthStatus(responses []*httpResponse) {
-	units := make(map[string]*unit)
-	nodes := make(map[string]*Node)
+func updateHealthStatus(responses <-chan *httpResponse) {
+	var (
+		units = make(map[string]unit)
+		nodes = make(map[string]Node)
+	)
 
-	for httpResponseIndex, httpResponse := range responses {
-		if httpResponse.Status != http.StatusOK {
-			nodes[httpResponse.Node.IP] = &httpResponse.Node
-			log.Errorf("Status code: %d", httpResponse.Status)
-			continue
-		}
-		if _, ok := nodes[httpResponse.Node.IP]; !ok {
-			// copy a node, to avoid circular loop
-			newNode := responses[httpResponseIndex].Node
-			nodes[httpResponse.Node.IP] = &newNode
-		}
-		for unitResponseIndex, unitResponse := range httpResponse.Units {
-			// we don't want to have circular explosion here, so make a brand new Unit{} with all fields
-			// but []*Node{}
-			nodes[httpResponse.Node.IP].Units = append(nodes[httpResponse.Node.IP].Units, unitResponse)
-			if _, ok := units[unitResponse.UnitName]; ok {
-				// Append nodes
-				for _, node := range unitResponse.Nodes {
-					units[unitResponse.UnitName].Nodes = append(units[unitResponse.UnitName].Nodes, node)
-				}
-				if unitResponse.Health > units[unitResponse.UnitName].Health {
-					units[unitResponse.UnitName].Health = unitResponse.Health
-				}
-			} else {
-				// make sure our reference does not go away
-				units[unitResponse.UnitName] = &responses[httpResponseIndex].Units[unitResponseIndex]
-			}
-		}
-	}
-	log.Debugf("Number of nodes: %d, len of responses: %d. Time: %s", len(nodes), len(responses))
-	globalMonitoringResponse.updateMonitoringResponse(monitoringResponse{
-		Units: units,
-		Nodes: nodes,
-		UpdatedTime: time.Now(),
-	})
-}
-
-func collectResponses(respChan <-chan *httpResponse, totalHosts int) (responses []*httpResponse) {
 	for {
-		if totalHosts == 0 {
-			log.Debug("Nothing to process")
-			return responses
-		}
 		select {
-		case r := <-respChan:
-			// Add the response to the return array
-			responses = append(responses, r)
-			log.Debug("Responses ", len(responses), " total hosts ", totalHosts)
-			if len(responses) == totalHosts {
-				return responses
+		case response := <-responses:
+			node := response.Node
+			node.Units = response.Units
+			nodes[response.Node.IP] = node
+
+			for _, currentUnit := range response.Units {
+				u, ok := units[currentUnit.UnitName]
+				if ok {
+					u.Nodes = append(u.Nodes, currentUnit.Nodes...)
+					if currentUnit.Health > u.Health {
+						u.Health = currentUnit.Health
+					}
+					units[currentUnit.UnitName] = u
+				} else {
+					units[currentUnit.UnitName] = currentUnit
+				}
 			}
-		// If there is nothing on the channel, timeout for 1s and print our total processed
-		// responses so far.
-		case <-time.After(time.Second):
-			log.Debugf("Processed responses: %d", len(responses))
-			return responses
+		default:
+			globalMonitoringResponse.updateMonitoringResponse(monitoringResponse{
+				Nodes:       nodes,
+				Units:       units,
+				UpdatedTime: time.Now(),
+			})
+			return
 		}
 	}
 }
 
-func pullHostStatus(hosts <-chan Node, respChan chan<- *httpResponse, dt Dt) {
-	for host := range hosts {
-		var response httpResponse
-
-		port, err := getPullPortByRole(dt.Cfg, host.Role)
-		if err != nil {
-			log.Errorf("Could not get a port by role %s: %s", host.Role, err)
-			response.Status = http.StatusServiceUnavailable
-			host.Health = 3
-			response.Node = host
-			respChan <- &response
-			continue
-		}
-
-		baseURL := fmt.Sprintf("http://%s:%d%s", host.IP, port, BaseRoute)
-
-		// UnitsRoute available in router.go
-		url, err := useTLSScheme(baseURL, dt.Cfg.FlagForceTLS)
-		if err != nil {
-			log.Errorf("Could not read useTLSScheme: %s", err)
-			response.Status = http.StatusServiceUnavailable
-			host.Health = 3
-			response.Node = host
-			respChan <- &response
-			continue
-		}
-
-		// Make a request to get node units status
-		// use fake interface implementation for tests
-		timeout := time.Duration(dt.Cfg.FlagPullTimeoutSec) * time.Second
-		body, statusCode, err := dt.DtDCOSTools.Get(url, timeout)
-		if err != nil {
-			log.Errorf("Could not HTTP GET %s: %s", url, err)
-			response.Status = statusCode
-			host.Health = 3 // 3 stands for unknown
-			respChan <- &response
-			response.Node = host
-			continue
-		}
-
-		// Response should be strictly mapped to jsonBodyStruct, otherwise skip it
-		var jsonBody UnitsHealthResponseJSONStruct
-		if err := json.Unmarshal(body, &jsonBody); err != nil {
-			log.Errorf("Coult not deserialize json reponse from %s, url %s: %s", host.IP, url, err)
-			response.Status = statusCode
-			host.Health = 3 // 3 stands for unknown
-			respChan <- &response
-			response.Node = host
-			continue
-		}
-		response.Status = statusCode
-
-		// Update Response and send it back to respChan
-		host.Host = jsonBody.Hostname
-
-		// update mesos node id
-		host.MesosID = jsonBody.MesosID
-
-		host.Output = make(map[string]string)
-
-		// if at least one unit is not healthy, the host should be set unhealthy
-		for _, propertiesMap := range jsonBody.Array {
-			if propertiesMap.UnitHealth > host.Health {
-				host.Health = propertiesMap.UnitHealth
-				break
-			}
-		}
-
-		for _, propertiesMap := range jsonBody.Array {
-			// update error message per host per unit
-			host.Output[propertiesMap.UnitID] = propertiesMap.UnitOutput
-			response.Units = append(response.Units, unit{
-				propertiesMap.UnitID,
-				[]Node{host},
-				propertiesMap.UnitHealth,
-				propertiesMap.UnitTitle,
-				dt.DtDCOSTools.GetTimestamp(),
-				propertiesMap.PrettyName,
-			})
-		}
+func pullHostStatus(host Node, respChan chan<- *httpResponse, dt Dt, wg *sync.WaitGroup) {
+	defer wg.Done()
+	var response httpResponse
+	port, err := getPullPortByRole(dt.Cfg, host.Role)
+	if err != nil {
+		logrus.Errorf("Could not get a port by role %s: %s", host.Role, err)
+		response.Status = http.StatusServiceUnavailable
+		host.Health = 3
 		response.Node = host
 		respChan <- &response
+		return
 	}
-}
 
-func loadJobs(jobChan chan Node, hosts []Node) {
-	for _, u := range hosts {
-		log.Debugf("Adding %s to jobs processing channel", u.IP)
-		jobChan <- u
+	baseURL := fmt.Sprintf("http://%s:%d%s", host.IP, port, BaseRoute)
+
+	// UnitsRoute available in router.go
+	url, err := useTLSScheme(baseURL, dt.Cfg.FlagForceTLS)
+	if err != nil {
+		logrus.Errorf("Could not read useTLSScheme: %s", err)
+		response.Status = http.StatusServiceUnavailable
+		host.Health = 3
+		response.Node = host
+		respChan <- &response
+		return
 	}
-	// we should close the channel, since we will recreate a list every 60 sec
-	close(jobChan)
+
+	// Make a request to get node units status
+	// use fake interface implementation for tests
+	timeout := time.Duration(dt.Cfg.FlagPullTimeoutSec) * time.Second
+	body, statusCode, err := dt.DtDCOSTools.Get(url, timeout)
+	if err != nil {
+		logrus.Errorf("Could not HTTP GET %s: %s", url, err)
+		response.Status = statusCode
+		host.Health = 3 // 3 stands for unknown
+		respChan <- &response
+		response.Node = host
+		return
+	}
+
+	// Response should be strictly mapped to jsonBodyStruct, otherwise skip it
+	var jsonBody UnitsHealthResponseJSONStruct
+	if err := json.Unmarshal(body, &jsonBody); err != nil {
+		logrus.Errorf("Coult not deserialize json reponse from %s, url %s: %s", host.IP, url, err)
+		response.Status = statusCode
+		host.Health = 3 // 3 stands for unknown
+		respChan <- &response
+		response.Node = host
+		return
+	}
+	response.Status = statusCode
+
+	// Update Response and send it back to respChan
+	host.Host = jsonBody.Hostname
+
+	// update mesos node id
+	host.MesosID = jsonBody.MesosID
+
+	host.Output = make(map[string]string)
+
+	// if at least one unit is not healthy, the host should be set unhealthy
+	for _, propertiesMap := range jsonBody.Array {
+		if propertiesMap.UnitHealth > host.Health {
+			host.Health = propertiesMap.UnitHealth
+			break
+		}
+	}
+
+	for _, propertiesMap := range jsonBody.Array {
+		// update error message per host per unit
+		host.Output[propertiesMap.UnitID] = propertiesMap.UnitOutput
+		response.Units = append(response.Units, unit{
+			propertiesMap.UnitID,
+			[]Node{host},
+			propertiesMap.UnitHealth,
+			propertiesMap.UnitTitle,
+			dt.DtDCOSTools.GetTimestamp(),
+			propertiesMap.PrettyName,
+		})
+	}
+	response.Node = host
+	respChan <- &response
+
 }
 
 func getPullPortByRole(config *Config, role string) (int, error) {

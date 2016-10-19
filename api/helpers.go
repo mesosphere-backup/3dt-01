@@ -479,7 +479,7 @@ func (u *UnitPropertiesResponse) CheckUnitHealth() (int, string, error) {
 	return 0, "", nil
 }
 
-func normalizeProperty(unitProps map[string]interface{}, dt Dt) (healthResponseValues, error) {
+func normalizeProperty(unitProps map[string]interface{}, tools DCOSHelper) (healthResponseValues, error) {
 	var (
 		description, prettyName string
 		propsResponse           UnitPropertiesResponse
@@ -500,7 +500,7 @@ func normalizeProperty(unitProps map[string]interface{}, dt Dt) (healthResponseV
 	}
 
 	if unitHealth > 0 {
-		journalOutput, err := dt.DtDCOSTools.GetJournalOutput(propsResponse.ID)
+		journalOutput, err := tools.GetJournalOutput(propsResponse.ID)
 		if err == nil {
 			unitOutput += "\n"
 			unitOutput += journalOutput

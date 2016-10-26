@@ -265,8 +265,8 @@ func (s *HandlersTestSuit) SetupTest() {
 		TdtVersion:  "1.2.3",
 	}
 	s.mockedMonitoringResponse = monitoringResponse{
-		Units: map[string]*unit{
-			"dcos-adminrouter-reload.service": &unit{
+		Units: map[string]unit{
+			"dcos-adminrouter-reload.service": unit{
 				UnitName: "dcos-adminrouter-reload.service",
 				Nodes: []Node{
 					{
@@ -297,7 +297,7 @@ func (s *HandlersTestSuit) SetupTest() {
 				Timestamp:  time.Now(),
 				PrettyName: "Admin Router Reload",
 			},
-			"dcos-cosmos.service": &unit{
+			"dcos-cosmos.service": unit{
 				UnitName: "dcos-cosmos.service",
 				Nodes: []Node{
 					{
@@ -329,8 +329,8 @@ func (s *HandlersTestSuit) SetupTest() {
 				PrettyName: "Package Service",
 			},
 		},
-		Nodes: map[string]*Node{
-			"10.0.7.190": &Node{
+		Nodes: map[string]Node{
+			"10.0.7.190": Node{
 				Role:   "master",
 				IP:     "10.0.7.190",
 				Health: 0,

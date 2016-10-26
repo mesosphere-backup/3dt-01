@@ -45,7 +45,7 @@ func (s *DiagnosticsTestSuit) TearDownTest() {
 
 func (s *DiagnosticsTestSuit) TestFindRequestedNodes() {
 	mockedGlobalMonitoringResponse := monitoringResponse{
-		Nodes: map[string]*Node{
+		Nodes: map[string]Node{
 			"10.10.0.1": {
 				IP:   "10.10.0.1",
 				Role: "master",

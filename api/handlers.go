@@ -21,7 +21,7 @@ func httpError(w http.ResponseWriter, msg string, code int) {
 // Route handlers
 // /api/v1/system/health, get a units status, used by 3dt puller
 func unitsHealthStatus(w http.ResponseWriter, r *http.Request, dt Dt) {
-	health, err := GetUnitsProperties(dt)
+	health, err := dt.SystemdUnits.GetUnitsProperties(dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return

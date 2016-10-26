@@ -13,15 +13,15 @@ import (
 type monitoringResponse struct {
 	sync.RWMutex
 
-	Units       map[string]*unit
-	Nodes       map[string]*Node
+	Units       map[string]unit
+	Nodes       map[string]Node
 	UpdatedTime time.Time
 }
 
 // Unit for systemd unit.
 type unit struct {
 	UnitName   string
-	Nodes      []Node
+	Nodes      []Node `json:",omitempty"`
 	Health     int
 	Title      string
 	Timestamp  time.Time
@@ -36,7 +36,7 @@ type Node struct {
 	Host    string
 	Health  int
 	Output  map[string]string
-	Units   []unit
+	Units   []unit `json:",omitempty"`
 	MesosID string
 }
 
@@ -131,6 +131,7 @@ type Dt struct {
 	DtDiagnosticsJob  *DiagnosticsJob
 	RunPullerChan     chan bool
 	RunPullerDoneChan chan bool
+	SystemdUnits      *SystemdUnits
 }
 
 type bundle struct {

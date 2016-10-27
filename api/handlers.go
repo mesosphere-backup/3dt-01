@@ -236,23 +236,30 @@ func listAvailableLocalBundlesFilesHandler(w http.ResponseWriter, r *http.Reques
 // available on a different node, it will do a reverse proxy.
 func downloadBundleHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	vars := mux.Vars(r)
-	serveFile := dt.Cfg.FlagDiagnosticsBundleDir + "/" + vars["file"]
-	_, err := os.Stat(serveFile)
-	if err == nil {
-		w.Header().Add("Content-disposition", fmt.Sprintf("attachment; filename=%s", vars["file"]))
-		http.ServeFile(w, r, serveFile)
-		return
-	}
-	// do a reverse proxy
 	node, location, ok, err := dt.DtDiagnosticsJob.isBundleAvailable(vars["file"], dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 	if ok {
+		// check if the file is available on localhost.
+		serveFile := dt.Cfg.FlagDiagnosticsBundleDir + "/" + vars["file"]
+		_, err := os.Stat(serveFile)
+		if err == nil {
+			w.Header().Add("Content-disposition", fmt.Sprintf("attachment; filename=%s", vars["file"]))
+			http.ServeFile(w, r, serveFile)
+			return
+		}
+
+		// proxy to appropriate host with a file.
+		scheme := "http"
+		if dt.Cfg.FlagForceTLS {
+			scheme = "https"
+		}
+
 		director := func(req *http.Request) {
 			req = r
-			req.URL.Scheme = "http"
+			req.URL.Scheme = scheme
 			req.URL.Host = fmt.Sprintf("%s:%d", node, dt.Cfg.FlagPort)
 			req.URL.Path = location
 		}

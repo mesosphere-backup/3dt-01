@@ -72,7 +72,7 @@ func (s *HelpersTestSuit) TestRunCmdTimeoutStdout() {
 	buf := new(bytes.Buffer)
 	io.Copy(buf, r)
 	timeElapsed := time.Since(startTest)
-	s.assert.True(timeElapsed.Seconds() >= 5 && timeElapsed.Seconds() <= 7)
+	s.assert.True(timeElapsed.Seconds() >= 5 && timeElapsed.Seconds() <= 10)
 	s.assert.NotEmpty(buf.String())
 }
 

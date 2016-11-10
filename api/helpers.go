@@ -630,7 +630,7 @@ func readJournalOutputSince(unit, sinceString string, timeout int) (io.ReadClose
 		return stdout, errors.New("Unit should start with dcos-, got: " + unit)
 	}
 	if strings.ContainsAny(unit, " ;&|") {
-		return stdout, errors.New("Unit cannot contain special charachters or spaces")
+		return stdout, errors.New("Unit cannot contain special characters or spaces")
 	}
 	command := []string{"journalctl", "--no-pager", "-u", unit, "--since", sinceString}
 	return runCmd(command, timeout)

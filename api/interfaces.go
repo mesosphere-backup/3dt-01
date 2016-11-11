@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// HTTPRequester is an inteface to make HTTP requests
+// HTTPRequester is an interface to make HTTP requests
 type HTTPRequester interface {
 	Init(*Config, DCOSHelper) error
 	Do(*http.Request, time.Duration) (*http.Response, error)

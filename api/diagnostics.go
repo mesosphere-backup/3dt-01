@@ -30,7 +30,7 @@ const (
 	Agents = "agents"
 )
 
-// DiagnosticsJob a main structure for a logs collection job.
+// DiagnosticsJob is the main structure for a logs collection job.
 type DiagnosticsJob struct {
 	sync.Mutex
 	cancelChan   chan bool

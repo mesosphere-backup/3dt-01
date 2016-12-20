@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/gorilla/mux"
@@ -260,10 +262,13 @@ func downloadBundleHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 		director := func(req *http.Request) {
 			req = r
 			req.URL.Scheme = scheme
-			req.URL.Host = fmt.Sprintf("%s:%d", node, dt.Cfg.FlagPort)
+			req.URL.Host = net.JoinHostPort(node, strconv.Itoa(dt.Cfg.FlagMasterPort))
 			req.URL.Path = location
 		}
-		proxy := &httputil.ReverseProxy{Director: director}
+		proxy := &httputil.ReverseProxy{
+			Director: director,
+			Transport: Requester.Transport(),
+		}
 		proxy.ServeHTTP(w, r)
 		return
 	}

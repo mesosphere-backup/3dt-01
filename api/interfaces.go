@@ -9,6 +9,7 @@ import (
 type HTTPRequester interface {
 	Init(*Config, DCOSHelper) error
 	Do(*http.Request, time.Duration) (*http.Response, error)
+	Transport() http.RoundTripper
 }
 
 // DCOSHelper DC/OS specific tools interface.

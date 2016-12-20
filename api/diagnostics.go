@@ -98,7 +98,7 @@ func (j *DiagnosticsJob) run(req bundleCreateRequest, config *Config, DCOSTools 
 	}
 
 	if role == AgentRole || role == AgentPublicRole {
-		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, errors.New("Running diagnostics job on agent node is not implemented."))
+		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, errors.New("Running diagnostics job on agent node is not implemented"))
 	}
 
 	isRunning, _, err := j.isRunning(config, DCOSTools)
@@ -399,7 +399,7 @@ func (j *DiagnosticsJob) getStatusAll(config *Config, DCOSTools DCOSHelper) (map
 		statuses[master.IP] = status
 	}
 	if len(statuses) == 0 {
-		return statuses, errors.New("Could not determine wheather the diagnostics job is running or not.")
+		return statuses, errors.New("Could not determine wheather the diagnostics job is running or not")
 	}
 	return statuses, nil
 }
@@ -550,7 +550,7 @@ func (j *DiagnosticsJob) cancel(config *Config, DCOSTools DCOSHelper) (response 
 		log.Errorf("Could not detect node role: %s", err)
 	}
 	if role == AgentRole || role == AgentPublicRole {
-		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Canceling diagnostics job on agent node is not implemented."))
+		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("Canceling diagnostics job on agent node is not implemented"))
 	}
 
 	// return error if we could not find if the job is running or not.

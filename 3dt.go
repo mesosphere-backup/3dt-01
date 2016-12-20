@@ -11,7 +11,7 @@ import (
 )
 
 func getVersion() string {
-	return (fmt.Sprintf("Version: %s, Revision: %s", api.Version, api.Revision))
+	return fmt.Sprintf("Version: %s, Revision: %s", api.Version, api.Revision)
 }
 
 func runDiag(dt api.Dt) {

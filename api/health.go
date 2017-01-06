@@ -139,7 +139,7 @@ func updateSystemMetrics() (sysMetrics sysMetrics, err error) {
 	}
 
 	if sysMetrics.LoadAvarage, err = getHostLoadAvarage(); err != nil {
-		logrus.Error("Could not get a host load average : %s", err)
+		logrus.Errorf("Could not get a host load average : %s", err)
 	}
 
 	// Get all partitions available on a host.

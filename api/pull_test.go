@@ -24,7 +24,7 @@ func (s *PullerTestSuit) SetupTest() {
 }
 
 func (s *PullerTestSuit) TearDownTest() {
-	globalMonitoringResponse.updateMonitoringResponse(monitoringResponse{})
+	globalMonitoringResponse.updateMonitoringResponse(&monitoringResponse{})
 }
 
 // TestMonitoringResponseRace checks that the various exported methods
@@ -35,14 +35,14 @@ func (s *PullerTestSuit) TestMonitoringResponseRace() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		globalMonitoringResponse.updateMonitoringResponse(monitoringResponse{})
+		globalMonitoringResponse.updateMonitoringResponse(&monitoringResponse{})
 	}()
 	// We call globalMonitoringResponse twice to ensure the RWMutex's write lock
 	// is held, not just a read lock.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		globalMonitoringResponse.updateMonitoringResponse(monitoringResponse{})
+		globalMonitoringResponse.updateMonitoringResponse(&monitoringResponse{})
 	}()
 	wg.Add(1)
 	go func() {

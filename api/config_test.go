@@ -15,7 +15,7 @@ func TestIncorrectField(t *testing.T) {
 	`
 	documentLoader := gojsonschema.NewStringLoader(userConfig)
 	if err := validate(documentLoader); err == nil {
-		t.Error("Test must fail, but it didn't: %s")
+		t.Error("Test must fail, but it didn't")
 	}
 }
 
@@ -43,7 +43,7 @@ func TestPortMinimum(t *testing.T) {
 	`
 	documentLoader := gojsonschema.NewStringLoader(userConfig)
 	if err := validate(documentLoader); err == nil {
-		t.Error("Test must fail, but it didn't: %s")
+		t.Error("Test must fail, but it didn't")
 	}
 }
 
@@ -56,6 +56,6 @@ func TestPortMaximum(t *testing.T) {
 	`
 	documentLoader := gojsonschema.NewStringLoader(userConfig)
 	if err := validate(documentLoader); err == nil {
-		t.Error("Test must fail, but it didn't: %s")
+		t.Error("Test must fail, but it didn't")
 	}
 }

@@ -83,7 +83,7 @@ func getNodeByUnitIDNodeIDHandler(w http.ResponseWriter, r *http.Request) {
 
 // list the entire tree
 func reportHandler(w http.ResponseWriter, r *http.Request) {
-	if err := json.NewEncoder(w).Encode(globalMonitoringResponse); err != nil {
+	if err := json.NewEncoder(w).Encode(&globalMonitoringResponse); err != nil {
 		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }

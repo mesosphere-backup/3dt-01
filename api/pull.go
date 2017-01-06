@@ -40,7 +40,7 @@ type findMastersInExhibitor struct {
 
 func (f *findMastersInExhibitor) findMesosMasters() (nodes []Node, err error) {
 	if f.getFn == nil {
-		return nodes, errors.New("could not initialize HTTP GET function. Make sure you set getFn in constructor")
+		return nodes, errors.New("could not initialize HTTP GET function. Make sure you set getFn in the constructor")
 	}
 	timeout := time.Duration(time.Second * 11)
 	body, statusCode, err := f.getFn(f.url, timeout)
@@ -265,7 +265,7 @@ func (f *findNodesInDNS) find() (nodes []Node, err error) {
 	return nodes, err
 }
 
-func (mr *monitoringResponse) updateMonitoringResponse(r monitoringResponse) {
+func (mr *monitoringResponse) updateMonitoringResponse(r *monitoringResponse) {
 	mr.Lock()
 	defer mr.Unlock()
 	mr.Nodes = r.Nodes
@@ -541,7 +541,7 @@ func updateHealthStatus(responses <-chan *httpResponse) {
 				}
 			}
 		default:
-			globalMonitoringResponse.updateMonitoringResponse(monitoringResponse{
+			globalMonitoringResponse.updateMonitoringResponse(&monitoringResponse{
 				Nodes:       nodes,
 				Units:       units,
 				UpdatedTime: time.Now(),

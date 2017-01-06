@@ -40,11 +40,11 @@ func (s *DiagnosticsTestSuit) SetupTest() {
 }
 
 func (s *DiagnosticsTestSuit) TearDownTest() {
-	globalMonitoringResponse.updateMonitoringResponse(monitoringResponse{})
+	globalMonitoringResponse.updateMonitoringResponse(&monitoringResponse{})
 }
 
 func (s *DiagnosticsTestSuit) TestFindRequestedNodes() {
-	mockedGlobalMonitoringResponse := monitoringResponse{
+	mockedGlobalMonitoringResponse := &monitoringResponse{
 		Nodes: map[string]Node{
 			"10.10.0.1": {
 				IP:   "10.10.0.1",

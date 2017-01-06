@@ -7,18 +7,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	log "github.com/Sirupsen/logrus"
-	"github.com/coreos/go-systemd/dbus"
 	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
 	netUrl "net/url"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Sirupsen/logrus"
+	"github.com/coreos/go-systemd/dbus"
+	"github.com/dcos/dcos-go/exec"
+	"github.com/dcos/dcos-log/dcos-log/journal/reader"
 )
 
 // Requester is an implementation of HTTPRequester interface.
@@ -53,7 +55,7 @@ func (st *DCOSTools) GetHostname() (string, error) {
 // When the function is called again, ip will be taken from cache.
 func (st *DCOSTools) DetectIP() (string, error) {
 	if st.ip != "" {
-		log.Debugf("Found IP in memory: %s", st.ip)
+		logrus.Debugf("Found IP in memory: %s", st.ip)
 		return st.ip, nil
 	}
 
@@ -64,11 +66,11 @@ func (st *DCOSTools) DetectIP() (string, error) {
 	if detectIPCmd == "" {
 		detectIPCmd = "/opt/mesosphere/bin/detect_ip"
 	}
-	r, err := runCmd([]string{detectIPCmd}, 1)
+
+	r, err := exec.Run("bash", []string{detectIPCmd}, exec.Timeout(3*time.Second))
 	if err != nil {
 		return "", err
 	}
-	defer r.Close()
 
 	var cmdOutput bytes.Buffer
 	io.Copy(&cmdOutput, r)
@@ -79,7 +81,7 @@ func (st *DCOSTools) DetectIP() (string, error) {
 		return "", fmt.Errorf("%s returned %s, not a valid IPV4 address", detectIPCmd, cmdOutputTrimmed)
 	}
 	st.ip = ipAddress.String()
-	log.Debugf("Executed /opt/mesosphere/bin/detect_ip, output: %s", st.ip)
+	logrus.Debugf("Executed /opt/mesosphere/bin/detect_ip, output: %s", st.ip)
 	return st.ip, nil
 }
 
@@ -169,17 +171,32 @@ func (st *DCOSTools) GetUnitNames() (units []string, err error) {
 	for _, f := range files {
 		units = append(units, f.Name())
 	}
-	log.Debugf("List of units: %s", units)
+	logrus.Debugf("List of units: %s", units)
 	return units, nil
 }
 
 // GetJournalOutput returns last 50 lines of journald command output for a specific systemd unit.
 func (st *DCOSTools) GetJournalOutput(unit string) (string, error) {
-	out, err := exec.Command("journalctl", "--no-pager", "-n", "50", "-u", unit).Output()
+	matches := []reader.JournalEntryMatch{
+		{
+			Field: "UNIT",
+			Value: unit,
+		},
+	}
+
+	format := reader.NewEntryFormatter("text/plain", false)
+	j, err := reader.NewReader(format, reader.OptionMatch(matches), reader.OptionSkipPrev(50))
 	if err != nil {
 		return "", err
 	}
-	return string(out), nil
+	defer j.Journal.Close()
+
+	entries, err := ioutil.ReadAll(j)
+	if err != nil {
+		return "", err
+	}
+
+	return string(entries), nil
 }
 
 func useTLSScheme(url string, use bool) (string, error) {
@@ -197,7 +214,7 @@ func useTLSScheme(url string, use bool) (string, error) {
 // GetMesosNodeID return a mesos node id.
 func (st *DCOSTools) GetMesosNodeID() (string, error) {
 	if st.mesosID != "" {
-		log.Debugf("Found in memory mesos node id: %s", st.mesosID)
+		logrus.Debugf("Found in memory mesos node id: %s", st.mesosID)
 		return st.mesosID, nil
 	}
 	role, err := st.GetNodeRole()
@@ -214,7 +231,7 @@ func (st *DCOSTools) GetMesosNodeID() (string, error) {
 	if !ok {
 		return "", fmt.Errorf("%s role not found", role)
 	}
-	log.Debugf("using role %s, port %d to get node id", role, port)
+	logrus.Debugf("using role %s, port %d to get node id", role, port)
 
 	url, err := useTLSScheme(fmt.Sprintf("http://%s:%d/state", st.ip, port), st.ForceTLS)
 	if err != nil {
@@ -234,7 +251,7 @@ func (st *DCOSTools) GetMesosNodeID() (string, error) {
 	json.Unmarshal(body, &respJSON)
 	if id, ok := respJSON["id"]; ok {
 		st.mesosID = id.(string)
-		log.Debugf("Received node id %s", st.mesosID)
+		logrus.Debugf("Received node id %s", st.mesosID)
 		return st.mesosID, nil
 	}
 	return "", errors.New("Field id not found")
@@ -258,7 +275,7 @@ func (st *DCOSTools) doRequest(method, url string, timeout time.Duration, body i
 		}
 	}
 
-	log.Debugf("[%s] %s, timeout: %s, forceTLS: %v, basicURL: %s", method, url, timeout.String(), st.ForceTLS, url)
+	logrus.Debugf("[%s] %s, timeout: %s, forceTLS: %v, basicURL: %s", method, url, timeout.String(), st.ForceTLS, url)
 	request, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return responseBody, http.StatusBadRequest, err
@@ -464,7 +481,7 @@ func (u *UnitPropertiesResponse) CheckUnitHealth() (int, string, error) {
 			"%s state is not one of the possible states %s. Current state is [ %s ]. "+
 				"Please check `systemctl show all %s` to check current unit state. ", u.ID, okActiveStates, u.ActiveState, u.ID), nil
 	}
-	log.Debugf("%s| ExecMainStatus = %d", u.ID, u.ExecMainStatus)
+	logrus.Debugf("%s| ExecMainStatus = %d", u.ID, u.ExecMainStatus)
 	if u.ExecMainStatus != 0 {
 		return 1, fmt.Sprintf("ExecMainStatus return failed status for %s", u.ID), nil
 	}
@@ -514,7 +531,7 @@ func normalizeProperty(unitProps map[string]interface{}, tools DCOSHelper) (heal
 			unitOutput += "\n"
 			unitOutput += journalOutput
 		} else {
-			log.Errorf("Could not read journalctl: %s", err)
+			logrus.Errorf("Could not read journalctl: %s", err)
 		}
 	}
 
@@ -536,89 +553,89 @@ func normalizeProperty(unitProps map[string]interface{}, tools DCOSHelper) (heal
 	}, nil
 }
 
-type stdoutTimeoutPipe struct {
-	stdoutPipe io.ReadCloser
-	stderrPipe io.ReadCloser
-	cmd        *exec.Cmd
-	done       chan struct{}
-}
-
-func (cm *stdoutTimeoutPipe) Read(p []byte) (n int, err error) {
-	n, err = cm.stdoutPipe.Read(p)
-	if n == 0 {
-		log.Debug("Could not read stdout, trying to read stderr")
-		n, err = cm.stderrPipe.Read(p)
-	}
-	return
-}
-
-func (cm *stdoutTimeoutPipe) Close() error {
-	select {
-	case <-cm.done:
-		return nil
-	default:
-		close(cm.done)
-		if cm.cmd != nil {
-			if err := cm.cmd.Wait(); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (cm *stdoutTimeoutPipe) kill() error {
-	if cm.cmd != nil {
-		cm.cmd.Process.Kill()
-	}
-	return nil
-}
-
-// Run a command. The Wait() will be called only if the caller closes done channel or timeout occurs.
-// This will make sure we can read from StdoutPipe.
-func runCmd(command []string, timeout int) (io.ReadCloser, error) {
-	stdout := &stdoutTimeoutPipe{}
-	stdout.done = make(chan struct{})
-	// if command has arguments, append them to args.
-	args := []string{}
-	if len(command) > 1 {
-		args = command[1:len(command)]
-	}
-	log.Debugf("Run: %s", command)
-	cmd := exec.Command(command[0], args...)
-
-	var err error
-	// get stdout pipe
-	stdout.stdoutPipe, err = cmd.StdoutPipe()
-	if err != nil {
-		return stdout, err
-	}
-
-	// ignore and log error if stderr failed, but do not fail
-	stdout.stderrPipe, err = cmd.StderrPipe()
-	if err != nil {
-		log.Errorf("Could not attach to stderr pile: %s", err)
-	}
-
-	// Execute a command
-	if err := cmd.Start(); err != nil {
-		return stdout, err
-	}
-	stdout.cmd = cmd
-
-	// Run a separate goroutine to handle timeout and read command's return code.
-	go func() {
-		fullCommand := strings.Join(cmd.Args, " ")
-		select {
-		case <-stdout.done:
-			log.Infof("Command %s executed successfully, PID %d", fullCommand, stdout.cmd.Process.Pid)
-		case <-time.After(time.Duration(timeout) * time.Second):
-			log.Errorf("Timeout occured, command %s, killing PID %d", fullCommand, cmd.Process.Pid)
-			stdout.kill()
-		}
-	}()
-	return stdout, nil
-}
+//type stdoutTimeoutPipe struct {
+//	stdoutPipe io.ReadCloser
+//	stderrPipe io.ReadCloser
+//	cmd        *exec.Cmd
+//	done       chan struct{}
+//}
+//
+//func (cm *stdoutTimeoutPipe) Read(p []byte) (n int, err error) {
+//	n, err = cm.stdoutPipe.Read(p)
+//	if n == 0 {
+//		log.Debug("Could not read stdout, trying to read stderr")
+//		n, err = cm.stderrPipe.Read(p)
+//	}
+//	return
+//}
+//
+//func (cm *stdoutTimeoutPipe) Close() error {
+//	select {
+//	case <-cm.done:
+//		return nil
+//	default:
+//		close(cm.done)
+//		if cm.cmd != nil {
+//			if err := cm.cmd.Wait(); err != nil {
+//				return err
+//			}
+//		}
+//	}
+//	return nil
+//}
+//
+//func (cm *stdoutTimeoutPipe) kill() error {
+//	if cm.cmd != nil {
+//		cm.cmd.Process.Kill()
+//	}
+//	return nil
+//}
+//
+//// Run a command. The Wait() will be called only if the caller closes done channel or timeout occurs.
+//// This will make sure we can read from StdoutPipe.
+//func runCmd(command []string, timeout int) (io.ReadCloser, error) {
+//	stdout := &stdoutTimeoutPipe{}
+//	stdout.done = make(chan struct{})
+//	// if command has arguments, append them to args.
+//	args := []string{}
+//	if len(command) > 1 {
+//		args = command[1:len(command)]
+//	}
+//	log.Debugf("Run: %s", command)
+//	cmd := exec.Command(command[0], args...)
+//
+//	var err error
+//	// get stdout pipe
+//	stdout.stdoutPipe, err = cmd.StdoutPipe()
+//	if err != nil {
+//		return stdout, err
+//	}
+//
+//	// ignore and log error if stderr failed, but do not fail
+//	stdout.stderrPipe, err = cmd.StderrPipe()
+//	if err != nil {
+//		log.Errorf("Could not attach to stderr pile: %s", err)
+//	}
+//
+//	// Execute a command
+//	if err := cmd.Start(); err != nil {
+//		return stdout, err
+//	}
+//	stdout.cmd = cmd
+//
+//	// Run a separate goroutine to handle timeout and read command's return code.
+//	go func() {
+//		fullCommand := strings.Join(cmd.Args, " ")
+//		select {
+//		case <-stdout.done:
+//			log.Infof("Command %s executed successfully, PID %d", fullCommand, stdout.cmd.Process.Pid)
+//		case <-time.After(time.Duration(timeout) * time.Second):
+//			log.Errorf("Timeout occured, command %s, killing PID %d", fullCommand, cmd.Process.Pid)
+//			stdout.kill()
+//		}
+//	}()
+//	return stdout, nil
+//}
 
 // open a file for reading, a caller if responsible to close a file descriptor.
 func readFile(fileLocation string) (r io.ReadCloser, err error) {
@@ -629,14 +646,34 @@ func readFile(fileLocation string) (r io.ReadCloser, err error) {
 	return file, nil
 }
 
-func readJournalOutputSince(unit, sinceString string, timeout int) (io.ReadCloser, error) {
-	stdout := &stdoutTimeoutPipe{}
-	if !strings.HasPrefix(unit, "dcos-") {
-		return stdout, errors.New("Unit should start with dcos-, got: " + unit)
+func readJournalOutputSince(unit, sinceString string) (io.ReadCloser, error) {
+	//stdout := &stdoutTimeoutPipe{}
+	//if !strings.HasPrefix(unit, "dcos-") {
+	//	return stdout, errors.New("Unit should start with dcos-, got: " + unit)
+	//}
+	//if strings.ContainsAny(unit, " ;&|") {
+	//	return stdout, errors.New("Unit cannot contain special characters or spaces")
+	//}
+	//command := []string{"journalctl", "--no-pager", "-u", unit, "--since", sinceString}
+	//return runCmd(command, timeout)
+	matches := []reader.JournalEntryMatch{
+		{
+			Field: "_SYSTEMD_UNIT",
+			Value: unit,
+		},
 	}
-	if strings.ContainsAny(unit, " ;&|") {
-		return stdout, errors.New("Unit cannot contain special characters or spaces")
+
+	duration, err := time.ParseDuration(sinceString)
+	if err != nil {
+		logrus.Errorf("Error parsing %s. Defaulting to 24 hours", sinceString)
+		duration = time.Hour * 24
 	}
-	command := []string{"journalctl", "--no-pager", "-u", unit, "--since", sinceString}
-	return runCmd(command, timeout)
+	format := reader.NewEntryFormatter("text/plain", false)
+	j, err := reader.NewReader(format, reader.OptionMatch(matches), reader.OptionSince(duration), reader.OptionSkipPrev(50))
+	if err != nil {
+		return nil, err
+	}
+
+
+	return j, nil
 }

@@ -316,6 +316,7 @@ func getUnitLogHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	log.Infof("Start read %s", vars["entity"])
 	io.Copy(w, unitLogOut)
 	log.Infof("Done read %s", vars["entity"])
+
 	unitLogOut.Close()
 }
 

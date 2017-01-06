@@ -64,17 +64,17 @@ func (s *HelpersTestSuit) TestRunCmdFail() {
 	s.assert.EqualError(err, `exec: "wrongCommand123": executable file not found in $PATH`)
 }
 
-//func (s *HelpersTestSuit) TestRunCmdTimeoutStdout() {
-//	startTest := time.Now()
-//	r, err := runCmd([]string{"yes"}, 5)
-//	defer r.Close()
-//	s.assert.NoError(err)
-//	buf := new(bytes.Buffer)
-//	io.Copy(buf, r)
-//	timeElapsed := time.Since(startTest)
-//	s.assert.True(timeElapsed.Seconds() >= 5 && timeElapsed.Seconds() <= 10)
-//	s.assert.NotEmpty(buf.String())
-//}
+func (s *HelpersTestSuit) TestRunCmdTimeoutStdout() {
+	startTest := time.Now()
+	r, err := runCmd([]string{"yes"}, 5)
+	defer r.Close()
+	s.assert.NoError(err)
+	buf := new(bytes.Buffer)
+	io.Copy(buf, r)
+	timeElapsed := time.Since(startTest)
+	s.assert.True(timeElapsed.Seconds() >= 5 && timeElapsed.Seconds() <= 10)
+	s.assert.NotEmpty(buf.String())
+}
 
 func (s *HelpersTestSuit) TestRunCmdStdout() {
 	r, err := runCmd([]string{"ls", "-la", "/"}, 1)

@@ -20,6 +20,30 @@
 			"revisionTime": "2016-08-15T18:53:29Z"
 		},
 		{
+			"checksumSHA1": "v9Y85RpVcs4qmvctia8udPP+KOk=",
+			"path": "github.com/coreos/go-systemd/sdjournal",
+			"revision": "7c9533367ef925dc1078d75e5b7141e10da2c4e8",
+			"revisionTime": "2016-12-12T10:46:09Z"
+		},
+		{
+			"checksumSHA1": "O8c/VKtW34XPJNNlyeb/im8vWSI=",
+			"path": "github.com/coreos/pkg/dlopen",
+			"revision": "447b7ec906e523386d9c53be15b55a8ae86ea944",
+			"revisionTime": "2016-10-26T22:29:26Z"
+		},
+		{
+			"checksumSHA1": "ZlJiS1RE06MscHhuI1kYNdJi+Tk=",
+			"path": "github.com/dcos/dcos-go/exec",
+			"revision": "e9b33ecaa9430314c5708f7c74c3fa428ed68860",
+			"revisionTime": "2016-12-20T17:47:03Z"
+		},
+		{
+			"checksumSHA1": "eiWAM3OruvF6CF66PEGdDIcR8ko=",
+			"path": "github.com/dcos/dcos-log/dcos-log/journal/reader",
+			"revision": "858754d83ec9aa68c90bf79ae9e79bef428f6388",
+			"revisionTime": "2017-01-07T03:03:01Z"
+		},
+		{
 			"path": "github.com/godbus/dbus",
 			"revision": "230e4b23db2fd81c53eaa0073f76659d4849ce51",
 			"revisionTime": "2016-02-20T11:55:41-08:00"

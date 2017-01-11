@@ -21,6 +21,7 @@ import (
 	"github.com/coreos/go-systemd/dbus"
 	"github.com/dcos/dcos-go/exec"
 	"github.com/dcos/dcos-log/dcos-log/journal/reader"
+	//"github.com/dcos/dcos-go/dcos/nodeutil"
 )
 
 // Requester is an implementation of HTTPRequester interface.
@@ -29,13 +30,15 @@ var Requester HTTPRequester = &HTTPReq{}
 // DCOSTools is implementation of DCOSHelper interface.
 type DCOSTools struct {
 	sync.Mutex
+
 	ExhibitorURL string
+	Role         string
 	ForceTLS     bool
-	dcon         *dbus.Conn
-	hostname     string
-	role         string
-	ip           string
-	mesosID      string
+
+	dcon     *dbus.Conn
+	hostname string
+	ip       string
+	mesosID  string
 }
 
 // GetHostname return a localhost hostname.
@@ -88,22 +91,10 @@ func (st *DCOSTools) DetectIP() (string, error) {
 // GetNodeRole returns a nodes role. It will run only once and cache the result.
 // When the function is called again, ip will be taken from cache.
 func (st *DCOSTools) GetNodeRole() (string, error) {
-	if st.role != "" {
-		return st.role, nil
+	if st.Role == "" {
+		return "", errors.New("Could not determine a role, no /etc/mesosphere/roles/{master,slave,slave_public} file found")
 	}
-	if _, err := os.Stat("/etc/mesosphere/roles/master"); err == nil {
-		st.role = MasterRole
-		return st.role, nil
-	}
-	if _, err := os.Stat("/etc/mesosphere/roles/slave"); err == nil {
-		st.role = AgentRole
-		return st.role, nil
-	}
-	if _, err := os.Stat("/etc/mesosphere/roles/slave_public"); err == nil {
-		st.role = AgentPublicRole
-		return st.role, nil
-	}
-	return "", errors.New("Could not determine a role, no /etc/mesosphere/roles/{master,slave,slave_public} file found")
+	return st.Role, nil
 }
 
 // InitializeDBUSConnection opens a dbus connection. The connection is available via st.dcon
@@ -673,7 +664,6 @@ func readJournalOutputSince(unit, sinceString string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-
 
 	return j, nil
 }

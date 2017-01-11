@@ -49,6 +49,7 @@ func main() {
 	DCOSTools := &api.DCOSTools{
 		ExhibitorURL: config.FlagExhibitorClusterStatusURL,
 		ForceTLS:     config.FlagForceTLS,
+		Role: config.FlagRole,
 	}
 
 	// init requester

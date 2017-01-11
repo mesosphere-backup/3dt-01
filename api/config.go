@@ -106,8 +106,13 @@ var (
 	    },
 	    "debug": {
 	      "type": "boolean"
+	    },
+	    "role": {
+	      "type": "string",
+	      "enum": ["master", "agent", "agent_public"]
 	    }
 	  },
+	  "required": ["role"],
 	  "additionalProperties": false
 	}`
 )
@@ -139,6 +144,7 @@ type Config struct {
 	FlagExhibitorClusterStatusURL  string `json:"exhibitor-ip"`
 	FlagForceTLS                   bool   `json:"force-tls"`
 	FlagDebug                      bool   `json:"debug"`
+	FlagRole                       string `json:"role"`
 
 	// diagnostics job flags
 	FlagDiagnosticsBundleDir                     string `json:"diagnostics-bundle-dir"`
@@ -175,6 +181,7 @@ func (c *Config) setFlags(fs *flag.FlagSet) {
 		"Use Exhibitor IP address to discover master nodes.")
 	fs.BoolVar(&c.FlagForceTLS, "force-tls", c.FlagForceTLS, "Use HTTPS to do all requests.")
 	fs.BoolVar(&c.FlagDebug, "debug", c.FlagDebug, "Enable pprof debugging endpoints.")
+	fs.StringVar(&c.FlagRole, "role", c.FlagRole, "Set node role")
 
 	// diagnostics job flags
 	fs.StringVar(&c.FlagDiagnosticsBundleDir, "diagnostics-bundle-dir", c.FlagDiagnosticsBundleDir, "Set a path to store diagnostic bundles")

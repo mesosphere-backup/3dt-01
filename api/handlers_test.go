@@ -20,7 +20,7 @@ import (
 var testCfg Config
 
 func init() {
-	testCfg, _ = LoadDefaultConfig([]string{"3dt", "-verbose", "-diagnostics-bundle-dir", "/tmp/snapshot-test"})
+	testCfg, _ = LoadDefaultConfig([]string{"3dt", "-role", "master", "-diagnostics-bundle-dir", "/tmp/snapshot-test"})
 }
 
 // fakeDCOSTools is a DCOSHelper interface implementation used for testing.

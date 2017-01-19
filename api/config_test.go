@@ -25,7 +25,8 @@ func TestValidateSuccess(t *testing.T) {
 	{
 	  "port": 1024,
 	  "pull": true,
-	  "pull-interval": 10
+	  "pull-interval": 10,
+	  "role": "master"
 	}
 	`
 	documentLoader := gojsonschema.NewStringLoader(userConfig)

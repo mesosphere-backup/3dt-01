@@ -85,7 +85,7 @@ func main() {
 		Transport: tr,
 	}
 	if err := diagnosticsJob.Init(&config, DCOSTools); err != nil {
-		logrus.Errorf("Could not init diagnostics job properly: %s", err)
+		logrus.Fatalf("Could not init diagnostics job properly: %s", err)
 	}
 
 	// Inject dependencies used for running 3dt.

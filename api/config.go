@@ -265,16 +265,15 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 		internalJSONValidationSchema = string(validationSchema)
 	}
 
-	//validate the config structure
-	if err := validateConfigStruct(config); err != nil {
-		return config, err
-	}
-
 	// if config passed, read it and override the default values with values in config
 	if config.Flag3DTConfig != "" {
 		return readConfigFile(config.Flag3DTConfig, config)
 	}
 
+	//validate the config structure
+	if err := validateConfigStruct(config); err != nil {
+		return config, err
+	}
 	return config, nil
 }
 

@@ -593,7 +593,7 @@ func pullHostStatus(host Node, respChan chan<- *httpResponse, dt Dt, wg *sync.Wa
 	// Response should be strictly mapped to jsonBodyStruct, otherwise skip it
 	var jsonBody UnitsHealthResponseJSONStruct
 	if err := json.Unmarshal(body, &jsonBody); err != nil {
-		logrus.Errorf("Coult not deserialize json reponse from %s, url %s: %s", host.IP, url, err)
+		logrus.Errorf("Could not deserialize json reponse from %s, url %s: %s", host.IP, url, err)
 		response.Status = statusCode
 		host.Health = 3 // 3 stands for unknown
 		respChan <- &response

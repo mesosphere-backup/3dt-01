@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -9,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"net"
 	"net/http"
 	netUrl "net/url"
 	"os"
@@ -19,9 +17,8 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/coreos/go-systemd/dbus"
-	"github.com/dcos/dcos-go/exec"
 	"github.com/dcos/dcos-log/dcos-log/journal/reader"
-	//"github.com/dcos/dcos-go/dcos/nodeutil"
+	"github.com/dcos/dcos-go/dcos/nodeutil"
 )
 
 // Requester is an implementation of HTTPRequester interface.
@@ -34,6 +31,7 @@ type DCOSTools struct {
 	ExhibitorURL string
 	Role         string
 	ForceTLS     bool
+	NodeInfo     nodeutil.NodeInfo
 
 	dcon     *dbus.Conn
 	hostname string
@@ -57,35 +55,11 @@ func (st *DCOSTools) GetHostname() (string, error) {
 // DetectIP returns a detected IP by running /opt/mesosphere/bin/detect_ip. It will run only once and cache the result.
 // When the function is called again, ip will be taken from cache.
 func (st *DCOSTools) DetectIP() (string, error) {
-	if st.ip != "" {
-		logrus.Debugf("Found IP in memory: %s", st.ip)
-		return st.ip, nil
-	}
-
-	var detectIPCmd string
-	// Try to get a path to detect_ip script from environment variable.
-	// Variable should be available when start 3dt from systemd. Otherwise hardcode the path.
-	detectIPCmd = os.Getenv("MESOS_IP_DISCOVERY_COMMAND")
-	if detectIPCmd == "" {
-		detectIPCmd = "/opt/mesosphere/bin/detect_ip"
-	}
-
-	r, err := exec.Run("bash", []string{detectIPCmd}, exec.Timeout(3*time.Second))
+	ip, err := st.NodeInfo.DetectIP()
 	if err != nil {
 		return "", err
 	}
-
-	var cmdOutput bytes.Buffer
-	io.Copy(&cmdOutput, r)
-
-	cmdOutputTrimmed := strings.TrimRight(cmdOutput.String(), "\n")
-	ipAddress := net.ParseIP(cmdOutputTrimmed)
-	if ipAddress == nil {
-		return "", fmt.Errorf("%s returned %s, not a valid IPV4 address", detectIPCmd, cmdOutputTrimmed)
-	}
-	st.ip = ipAddress.String()
-	logrus.Debugf("Executed /opt/mesosphere/bin/detect_ip, output: %s", st.ip)
-	return st.ip, nil
+	return ip.String(), nil
 }
 
 // GetNodeRole returns a nodes role. It will run only once and cache the result.
@@ -204,48 +178,7 @@ func useTLSScheme(url string, use bool) (string, error) {
 
 // GetMesosNodeID return a mesos node id.
 func (st *DCOSTools) GetMesosNodeID() (string, error) {
-	if st.mesosID != "" {
-		logrus.Debugf("Found in memory mesos node id: %s", st.mesosID)
-		return st.mesosID, nil
-	}
-	role, err := st.GetNodeRole()
-	if err != nil {
-		return "", err
-	}
-
-	roleMesosPort := make(map[string]int)
-	roleMesosPort[MasterRole] = 5050
-	roleMesosPort[AgentRole] = 5051
-	roleMesosPort[AgentPublicRole] = 5051
-
-	port, ok := roleMesosPort[role]
-	if !ok {
-		return "", fmt.Errorf("%s role not found", role)
-	}
-	logrus.Debugf("using role %s, port %d to get node id", role, port)
-
-	url, err := useTLSScheme(fmt.Sprintf("http://%s:%d/state", st.ip, port), st.ForceTLS)
-	if err != nil {
-		return "", err
-	}
-
-	timeout := time.Duration(time.Second * 3)
-	body, statusCode, err := st.Get(url, timeout)
-	if err != nil {
-		return "", err
-	}
-	if statusCode != http.StatusOK {
-		return "", fmt.Errorf("response code: %d", statusCode)
-	}
-
-	var respJSON map[string]interface{}
-	json.Unmarshal(body, &respJSON)
-	if id, ok := respJSON["id"]; ok {
-		st.mesosID = id.(string)
-		logrus.Debugf("Received node id %s", st.mesosID)
-		return st.mesosID, nil
-	}
-	return "", errors.New("Field id not found")
+	return st.NodeInfo.MesosID(nil)
 }
 
 // Help functions
@@ -331,8 +264,8 @@ func (st *DCOSTools) GetAgentNodes() (nodes []Node, err error) {
 }
 
 // NewHTTPClient creates a new instance of http.Client
-func NewHTTPClient(timeout time.Duration, transport *http.Transport) *http.Client {
-	client := http.Client{
+func NewHTTPClient(timeout time.Duration, transport http.RoundTripper) *http.Client {
+	client := &http.Client{
 		Timeout: timeout,
 	}
 
@@ -351,7 +284,7 @@ func NewHTTPClient(timeout time.Duration, transport *http.Transport) *http.Clien
 		return nil
 	}
 
-	return &client
+	return client
 }
 
 // NewSecureTransport creates a new instance of http.Transport

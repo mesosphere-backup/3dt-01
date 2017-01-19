@@ -8,6 +8,7 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/coreos/go-systemd/activation"
 	"github.com/dcos/3dt/api"
+	"github.com/dcos/dcos-go/dcos/nodeutil"
 )
 
 func getVersion() string {
@@ -46,10 +47,17 @@ func main() {
 		os.Exit(0)
 	}
 
+	client := &http.Client{}
+	nodeInfo, err := nodeutil.NewNodeInfo(client)
+	if err != nil {
+		logrus.Fatalf("Could not initialize nodeInfo: %s", err)
+	}
+
 	DCOSTools := &api.DCOSTools{
 		ExhibitorURL: config.FlagExhibitorClusterStatusURL,
 		ForceTLS:     config.FlagForceTLS,
 		Role: config.FlagRole,
+		NodeInfo: nodeInfo,
 	}
 
 	// init requester

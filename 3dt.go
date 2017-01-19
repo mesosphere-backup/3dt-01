@@ -76,10 +76,6 @@ func main() {
 		Transport:    tr,
 	}
 
-	//if err := api.Requester.Init(&config, DCOSTools); err != nil {
-	//	logrus.Fatalf("Could not initialze the HTTP(S) requester: %s", err)
-	//}
-
 	// Create and init diagnostics job, do not hard fail on error
 	diagnosticsJob := &api.DiagnosticsJob{
 		Transport: tr,

@@ -38,14 +38,15 @@ type DiagnosticsJob struct {
 	cancelChan   chan bool
 	logProviders *LogProviders
 
-	Running               bool          `json:"is_running"`
-	Status                string        `json:"status"`
-	Errors                []string      `json:"errors"`
-	LastBundlePath        string        `json:"last_bundle_dir"`
-	JobStarted            time.Time     `json:"job_started"`
-	JobEnded              time.Time     `json:"job_ended"`
-	JobDuration           time.Duration `json:"job_duration"`
-	JobProgressPercentage float32       `json:"job_progress_percentage"`
+	Transport             http.RoundTripper `json:"-"`
+	Running               bool              `json:"is_running"`
+	Status                string            `json:"status"`
+	Errors                []string          `json:"errors"`
+	LastBundlePath        string            `json:"last_bundle_dir"`
+	JobStarted            time.Time         `json:"job_started"`
+	JobEnded              time.Time         `json:"job_ended"`
+	JobDuration           time.Duration     `json:"job_duration"`
+	JobProgressPercentage float32           `json:"job_progress_percentage"`
 }
 
 // diagnostics job response format
@@ -489,7 +490,9 @@ func (j *DiagnosticsJob) getHTTPAddToZip(node Node, endpoints map[string]string,
 			continue
 		}
 		request.Header.Add("Accept-Encoding", "gzip")
-		resp, err := Requester.Do(request, timeout)
+
+		client := NewHTTPClient(timeout, j.Transport)
+		resp, err := client.Do(request)
 		if err != nil {
 			j.Errors = append(j.Errors, err.Error())
 			logrus.Errorf("Could not fetch url %s: %s", fullURL, err)

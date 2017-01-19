@@ -1,8 +1,6 @@
 package api
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,12 +15,12 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/coreos/go-systemd/dbus"
-	"github.com/dcos/dcos-log/dcos-log/journal/reader"
 	"github.com/dcos/dcos-go/dcos/nodeutil"
+	"github.com/dcos/dcos-log/dcos-log/journal/reader"
 )
 
 // Requester is an implementation of HTTPRequester interface.
-var Requester HTTPRequester = &HTTPReq{}
+//var Requester HTTPRequester = &HTTPReq{}
 
 // DCOSTools is implementation of DCOSHelper interface.
 type DCOSTools struct {
@@ -32,6 +30,7 @@ type DCOSTools struct {
 	Role         string
 	ForceTLS     bool
 	NodeInfo     nodeutil.NodeInfo
+	Transport    http.RoundTripper
 
 	dcon     *dbus.Conn
 	hostname string
@@ -205,7 +204,8 @@ func (st *DCOSTools) doRequest(method, url string, timeout time.Duration, body i
 		return responseBody, http.StatusBadRequest, err
 	}
 
-	resp, err := Requester.Do(request, timeout)
+	client := NewHTTPClient(timeout, st.Transport)
+	resp, err := client.Do(request)
 	if err != nil {
 		return responseBody, http.StatusBadRequest, err
 	}
@@ -288,105 +288,105 @@ func NewHTTPClient(timeout time.Duration, transport http.RoundTripper) *http.Cli
 }
 
 // NewSecureTransport creates a new instance of http.Transport
-func NewSecureTransport(caPool *x509.CertPool) *http.Transport {
-	var tlsClientConfig *tls.Config
-	if caPool == nil {
-		// do HTTPS without certificate verification.
-		tlsClientConfig = &tls.Config{
-			InsecureSkipVerify: true,
-		}
-	} else {
-		tlsClientConfig = &tls.Config{
-			RootCAs: caPool,
-		}
-	}
-
-	return &http.Transport{
-		TLSClientConfig: tlsClientConfig,
-	}
-}
+//func NewSecureTransport(caPool *x509.CertPool) *http.Transport {
+//	var tlsClientConfig *tls.Config
+//	if caPool == nil {
+//		// do HTTPS without certificate verification.
+//		tlsClientConfig = &tls.Config{
+//			InsecureSkipVerify: true,
+//		}
+//	} else {
+//		tlsClientConfig = &tls.Config{
+//			RootCAs: caPool,
+//		}
+//	}
+//
+//	return &http.Transport{
+//		TLSClientConfig: tlsClientConfig,
+//	}
+//}
 
 // HTTPReq is an implementation of HTTPRequester interface
-type HTTPReq struct {
-	secureTransport *http.Transport
-	transport       *http.Transport
-	caPool          *x509.CertPool
-}
+//type HTTPReq struct {
+//	secureTransport *http.Transport
+//	transport       *http.Transport
+//	caPool          *x509.CertPool
+//}
 
 // Init HTTPReq, prepare CA Pool if file was passed.
-func (h *HTTPReq) Init(config *Config, DCOSTools DCOSHelper) error {
-	caPool, err := loadCAPool(config)
-	if err != nil {
-		return err
-	}
-	h.caPool = caPool
-	h.secureTransport = NewSecureTransport(caPool)
-	h.transport = &http.Transport{
-		DisableKeepAlives: true,
-	}
-
-	return nil
-}
+//func (h *HTTPReq) Init(config *Config, DCOSTools DCOSHelper) error {
+//	caPool, err := loadCAPool(config)
+//	if err != nil {
+//		return err
+//	}
+//	h.caPool = caPool
+//	h.secureTransport = NewSecureTransport(caPool)
+//	h.transport = &http.Transport{
+//		DisableKeepAlives: true,
+//	}
+//
+//	return nil
+//}
 
 // Do will do an HTTP/HTTPS request.
-func (h *HTTPReq) Do(req *http.Request, timeout time.Duration) (resp *http.Response, err error) {
-	headers := make(map[string]string)
-	var transport *http.Transport
-	if req.URL.Scheme == "https" {
-		transport = h.secureTransport
-	} else {
-		transport = h.transport
-	}
-	return Do(req, timeout, headers, transport)
-}
+//func (h *HTTPReq) Do(req *http.Request, timeout time.Duration) (resp *http.Response, err error) {
+//	headers := make(map[string]string)
+//	var transport *http.Transport
+//	if req.URL.Scheme == "https" {
+//		transport = h.secureTransport
+//	} else {
+//		transport = h.transport
+//	}
+//	return Do(req, timeout, headers, transport)
+//}
+//
+//// Transport will return a loaded instance of RoundTripper
+//func (h *HTTPReq) Transport() http.RoundTripper {
+//	return h.transport
+//}
 
-// Transport will return a loaded instance of RoundTripper
-func (h *HTTPReq) Transport() http.RoundTripper {
-	return h.transport
-}
-
-func loadCAPool(config *Config) (*x509.CertPool, error) {
-	// If no ca found, return nil.
-	if config.FlagCACertFile == "" {
-		return nil, nil
-	}
-
-	caPool := x509.NewCertPool()
-	f, err := os.Open(config.FlagCACertFile)
-	if err != nil {
-		return caPool, err
-	}
-	defer f.Close()
-
-	b, err := ioutil.ReadAll(f)
-	if err != nil {
-		return caPool, err
-	}
-
-	if !caPool.AppendCertsFromPEM(b) {
-		return caPool, errors.New("CACertFile parsing failed")
-	}
-	return caPool, nil
-}
+//func loadCAPool(config *Config) (*x509.CertPool, error) {
+//	// If no ca found, return nil.
+//	if config.FlagCACertFile == "" {
+//		return nil, nil
+//	}
+//
+//	caPool := x509.NewCertPool()
+//	f, err := os.Open(config.FlagCACertFile)
+//	if err != nil {
+//		return caPool, err
+//	}
+//	defer f.Close()
+//
+//	b, err := ioutil.ReadAll(f)
+//	if err != nil {
+//		return caPool, err
+//	}
+//
+//	if !caPool.AppendCertsFromPEM(b) {
+//		return caPool, errors.New("CACertFile parsing failed")
+//	}
+//	return caPool, nil
+//}
 
 // Do makes an HTTP(S) request with predefined http.Request object.
 // Caller is responsible for calling http.Response.Body().Close()
-func Do(req *http.Request, timeout time.Duration, headers map[string]string, transport *http.Transport) (resp *http.Response, err error) {
-	// Add headers if available
-	for headerKey, headerValue := range headers {
-		req.Header.Add(headerKey, headerValue)
-	}
-
-	client := NewHTTPClient(timeout, transport)
-
-	resp, err = client.Do(req)
-	if err != nil {
-		return resp, err
-	}
-
-	// the user of this function is responsible to close the response body.
-	return resp, nil
-}
+//func Do(req *http.Request, timeout time.Duration, headers map[string]string, transport *http.Transport) (resp *http.Response, err error) {
+//	// Add headers if available
+//	for headerKey, headerValue := range headers {
+//		req.Header.Add(headerKey, headerValue)
+//	}
+//
+//	client := NewHTTPClient(timeout, transport)
+//
+//	resp, err = client.Do(req)
+//	if err != nil {
+//		return resp, err
+//	}
+//
+//	// the user of this function is responsible to close the response body.
+//	return resp, nil
+//}
 
 // CheckUnitHealth tells if the unit is healthy
 func (u *UnitPropertiesResponse) CheckUnitHealth() (int, string, error) {

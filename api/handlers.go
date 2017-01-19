@@ -266,8 +266,8 @@ func downloadBundleHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 			req.URL.Path = location
 		}
 		proxy := &httputil.ReverseProxy{
-			Director: director,
-			Transport: Requester.Transport(),
+			Director:  director,
+			Transport: dt.DtDiagnosticsJob.Transport,
 		}
 		proxy.ServeHTTP(w, r)
 		return

@@ -145,6 +145,7 @@ type Config struct {
 	FlagForceTLS                   bool   `json:"force-tls"`
 	FlagDebug                      bool   `json:"debug"`
 	FlagRole                       string `json:"role"`
+	FlagIAMConfig                  string `json:"iam-config"`
 
 	// diagnostics job flags
 	FlagDiagnosticsBundleDir                     string `json:"diagnostics-bundle-dir"`
@@ -182,6 +183,7 @@ func (c *Config) setFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.FlagForceTLS, "force-tls", c.FlagForceTLS, "Use HTTPS to do all requests.")
 	fs.BoolVar(&c.FlagDebug, "debug", c.FlagDebug, "Enable pprof debugging endpoints.")
 	fs.StringVar(&c.FlagRole, "role", c.FlagRole, "Set node role")
+	fs.StringVar(&c.FlagIAMConfig, "iam-config", c.FlagIAMConfig, "A path to identity and access managment config")
 
 	// diagnostics job flags
 	fs.StringVar(&c.FlagDiagnosticsBundleDir, "diagnostics-bundle-dir", c.FlagDiagnosticsBundleDir, "Set a path to store diagnostic bundles")

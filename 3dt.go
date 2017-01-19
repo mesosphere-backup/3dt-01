@@ -8,6 +8,7 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/coreos/go-systemd/activation"
 	"github.com/dcos/3dt/api"
+	"github.com/dcos/dcos-go/dcos/http/transport"
 	"github.com/dcos/dcos-go/dcos/nodeutil"
 )
 
@@ -53,20 +54,36 @@ func main() {
 		logrus.Fatalf("Could not initialize nodeInfo: %s", err)
 	}
 
+	// init new transport
+	transportOptions := []transport.OptionTransportFunc{}
+	if config.FlagCACertFile != "" {
+		transportOptions = append(transportOptions, transport.OptionCaCertificatePath(config.FlagCACertFile))
+	}
+	if config.FlagIAMConfig != "" {
+		transportOptions = append(transportOptions, transport.OptionIAMConfigPath(config.FlagIAMConfig))
+	}
+
+	tr, err := transport.NewTransport(transportOptions...)
+	if err != nil {
+		logrus.Fatalf("Unable to initialize HTTP transport: %s", err)
+	}
+
 	DCOSTools := &api.DCOSTools{
 		ExhibitorURL: config.FlagExhibitorClusterStatusURL,
 		ForceTLS:     config.FlagForceTLS,
-		Role: config.FlagRole,
-		NodeInfo: nodeInfo,
+		Role:         config.FlagRole,
+		NodeInfo:     nodeInfo,
+		Transport:    tr,
 	}
 
-	// init requester
-	if err := api.Requester.Init(&config, DCOSTools); err != nil {
-		logrus.Fatalf("Could not initialze the HTTP(S) requester: %s", err)
-	}
+	//if err := api.Requester.Init(&config, DCOSTools); err != nil {
+	//	logrus.Fatalf("Could not initialze the HTTP(S) requester: %s", err)
+	//}
 
 	// Create and init diagnostics job, do not hard fail on error
-	diagnosticsJob := &api.DiagnosticsJob{}
+	diagnosticsJob := &api.DiagnosticsJob{
+		Transport: tr,
+	}
 	if err := diagnosticsJob.Init(&config, DCOSTools); err != nil {
 		logrus.Errorf("Could not init diagnostics job properly: %s", err)
 	}

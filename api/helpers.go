@@ -399,6 +399,11 @@ func (h *HTTPReq) Do(req *http.Request, timeout time.Duration) (resp *http.Respo
 	return Do(req, timeout, headers, transport)
 }
 
+// Transport will return a loaded instance of RoundTripper
+func (h *HTTPReq) Transport() http.RoundTripper {
+	return h.transport
+}
+
 func loadCAPool(config *Config) (*x509.CertPool, error) {
 	// If no ca found, return nil.
 	if config.FlagCACertFile == "" {

@@ -8,6 +8,7 @@ import (
 	"os"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/dcos/dcos-go/dcos"
 	"github.com/xeipuuv/gojsonschema"
 )
 
@@ -106,7 +107,7 @@ var (
 	    },
 	    "role": {
 	      "type": "string",
-	      "enum": ["master", "agent", "agent_public", ""]
+	      "enum": ["master", "agent", "agent_public"]
 	    }
 	  },
 	  "additionalProperties": false
@@ -215,6 +216,9 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	config.FlagPullTimeoutSec = 3
 
 	config.Version = Version
+
+	// default to master role
+	config.FlagRole = dcos.RoleMaster
 
 	config.FlagExhibitorClusterStatusURL = "http://127.0.0.1:8181/exhibitor/v1/cluster/status"
 

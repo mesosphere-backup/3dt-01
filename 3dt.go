@@ -77,18 +77,13 @@ func main() {
 		Transport: tr,
 	}
 
-	var nodeInfo nodeutil.NodeInfo
-	if config.FlagRole == "" {
-		nodeInfo = nil
-	} else {
-		var options []nodeutil.Option
-		if config.FlagForceTLS {
-			options = append(options, nodeutil.OptionMesosStateURL(defaultStateURL.String()))
-		}
-		nodeInfo, err = nodeutil.NewNodeInfo(client, config.FlagRole, options...)
-		if err != nil {
-			logrus.Fatalf("Could not initialize nodeInfo: %s", err)
-		}
+	var options []nodeutil.Option
+	if config.FlagForceTLS {
+		options = append(options, nodeutil.OptionMesosStateURL(defaultStateURL.String()))
+	}
+	nodeInfo, err := nodeutil.NewNodeInfo(client, config.FlagRole, options...)
+	if err != nil {
+		logrus.Fatalf("Could not initialize nodeInfo: %s", err)
 	}
 
 	DCOSTools := &api.DCOSTools{
@@ -126,11 +121,6 @@ func main() {
 	if config.FlagDiag {
 		runDiag(dt)
 		os.Exit(0)
-	}
-
-	// make sure we set the role before starting a service
-	if config.FlagRole == "" {
-		logrus.Fatalf("`-role` is a required parameter")
 	}
 
 	// start diagnostic server and expose endpoints.

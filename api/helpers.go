@@ -1,39 +1,41 @@
 package api
 
 import (
-	"bytes"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
-	log "github.com/Sirupsen/logrus"
-	"github.com/coreos/go-systemd/dbus"
 	"io"
 	"io/ioutil"
-	"net"
 	"net/http"
 	netUrl "net/url"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Sirupsen/logrus"
+	"github.com/coreos/go-systemd/dbus"
+	"github.com/dcos/dcos-go/dcos/nodeutil"
+	"github.com/dcos/dcos-log/dcos-log/journal/reader"
 )
 
 // Requester is an implementation of HTTPRequester interface.
-var Requester HTTPRequester = &HTTPReq{}
+//var Requester HTTPRequester = &HTTPReq{}
 
 // DCOSTools is implementation of DCOSHelper interface.
 type DCOSTools struct {
 	sync.Mutex
+
 	ExhibitorURL string
+	Role         string
 	ForceTLS     bool
-	dcon         *dbus.Conn
-	hostname     string
-	role         string
-	ip           string
-	mesosID      string
+	NodeInfo     nodeutil.NodeInfo
+	Transport    http.RoundTripper
+
+	dcon     *dbus.Conn
+	hostname string
+	ip       string
+	mesosID  string
 }
 
 // GetHostname return a localhost hostname.
@@ -52,56 +54,20 @@ func (st *DCOSTools) GetHostname() (string, error) {
 // DetectIP returns a detected IP by running /opt/mesosphere/bin/detect_ip. It will run only once and cache the result.
 // When the function is called again, ip will be taken from cache.
 func (st *DCOSTools) DetectIP() (string, error) {
-	if st.ip != "" {
-		log.Debugf("Found IP in memory: %s", st.ip)
-		return st.ip, nil
-	}
-
-	var detectIPCmd string
-	// Try to get a path to detect_ip script from environment variable.
-	// Variable should be available when start 3dt from systemd. Otherwise hardcode the path.
-	detectIPCmd = os.Getenv("MESOS_IP_DISCOVERY_COMMAND")
-	if detectIPCmd == "" {
-		detectIPCmd = "/opt/mesosphere/bin/detect_ip"
-	}
-	r, err := runCmd([]string{detectIPCmd}, 1)
+	ip, err := st.NodeInfo.DetectIP()
 	if err != nil {
 		return "", err
 	}
-	defer r.Close()
-
-	var cmdOutput bytes.Buffer
-	io.Copy(&cmdOutput, r)
-
-	cmdOutputTrimmed := strings.TrimRight(cmdOutput.String(), "\n")
-	ipAddress := net.ParseIP(cmdOutputTrimmed)
-	if ipAddress == nil {
-		return "", fmt.Errorf("%s returned %s, not a valid IPV4 address", detectIPCmd, cmdOutputTrimmed)
-	}
-	st.ip = ipAddress.String()
-	log.Debugf("Executed /opt/mesosphere/bin/detect_ip, output: %s", st.ip)
-	return st.ip, nil
+	return ip.String(), nil
 }
 
 // GetNodeRole returns a nodes role. It will run only once and cache the result.
 // When the function is called again, ip will be taken from cache.
 func (st *DCOSTools) GetNodeRole() (string, error) {
-	if st.role != "" {
-		return st.role, nil
+	if st.Role == "" {
+		return "", errors.New("Could not determine a role, no /etc/mesosphere/roles/{master,slave,slave_public} file found")
 	}
-	if _, err := os.Stat("/etc/mesosphere/roles/master"); err == nil {
-		st.role = MasterRole
-		return st.role, nil
-	}
-	if _, err := os.Stat("/etc/mesosphere/roles/slave"); err == nil {
-		st.role = AgentRole
-		return st.role, nil
-	}
-	if _, err := os.Stat("/etc/mesosphere/roles/slave_public"); err == nil {
-		st.role = AgentPublicRole
-		return st.role, nil
-	}
-	return "", errors.New("Could not determine a role, no /etc/mesosphere/roles/{master,slave,slave_public} file found")
+	return st.Role, nil
 }
 
 // InitializeDBUSConnection opens a dbus connection. The connection is available via st.dcon
@@ -169,17 +135,32 @@ func (st *DCOSTools) GetUnitNames() (units []string, err error) {
 	for _, f := range files {
 		units = append(units, f.Name())
 	}
-	log.Debugf("List of units: %s", units)
+	logrus.Debugf("List of units: %s", units)
 	return units, nil
 }
 
 // GetJournalOutput returns last 50 lines of journald command output for a specific systemd unit.
 func (st *DCOSTools) GetJournalOutput(unit string) (string, error) {
-	out, err := exec.Command("journalctl", "--no-pager", "-n", "50", "-u", unit).Output()
+	matches := []reader.JournalEntryMatch{
+		{
+			Field: "UNIT",
+			Value: unit,
+		},
+	}
+
+	format := reader.NewEntryFormatter("text/plain", false)
+	j, err := reader.NewReader(format, reader.OptionMatch(matches), reader.OptionSkipPrev(50))
 	if err != nil {
 		return "", err
 	}
-	return string(out), nil
+	defer j.Journal.Close()
+
+	entries, err := ioutil.ReadAll(j)
+	if err != nil {
+		return "", err
+	}
+
+	return string(entries), nil
 }
 
 func useTLSScheme(url string, use bool) (string, error) {
@@ -196,48 +177,7 @@ func useTLSScheme(url string, use bool) (string, error) {
 
 // GetMesosNodeID return a mesos node id.
 func (st *DCOSTools) GetMesosNodeID() (string, error) {
-	if st.mesosID != "" {
-		log.Debugf("Found in memory mesos node id: %s", st.mesosID)
-		return st.mesosID, nil
-	}
-	role, err := st.GetNodeRole()
-	if err != nil {
-		return "", err
-	}
-
-	roleMesosPort := make(map[string]int)
-	roleMesosPort[MasterRole] = 5050
-	roleMesosPort[AgentRole] = 5051
-	roleMesosPort[AgentPublicRole] = 5051
-
-	port, ok := roleMesosPort[role]
-	if !ok {
-		return "", fmt.Errorf("%s role not found", role)
-	}
-	log.Debugf("using role %s, port %d to get node id", role, port)
-
-	url, err := useTLSScheme(fmt.Sprintf("http://%s:%d/state", st.ip, port), st.ForceTLS)
-	if err != nil {
-		return "", err
-	}
-
-	timeout := time.Duration(time.Second * 3)
-	body, statusCode, err := st.Get(url, timeout)
-	if err != nil {
-		return "", err
-	}
-	if statusCode != http.StatusOK {
-		return "", fmt.Errorf("response code: %d", statusCode)
-	}
-
-	var respJSON map[string]interface{}
-	json.Unmarshal(body, &respJSON)
-	if id, ok := respJSON["id"]; ok {
-		st.mesosID = id.(string)
-		log.Debugf("Received node id %s", st.mesosID)
-		return st.mesosID, nil
-	}
-	return "", errors.New("Field id not found")
+	return st.NodeInfo.MesosID(nil)
 }
 
 // Help functions
@@ -258,13 +198,14 @@ func (st *DCOSTools) doRequest(method, url string, timeout time.Duration, body i
 		}
 	}
 
-	log.Debugf("[%s] %s, timeout: %s, forceTLS: %v, basicURL: %s", method, url, timeout.String(), st.ForceTLS, url)
+	logrus.Debugf("[%s] %s, timeout: %s, forceTLS: %v, basicURL: %s", method, url, timeout.String(), st.ForceTLS, url)
 	request, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return responseBody, http.StatusBadRequest, err
 	}
 
-	resp, err := Requester.Do(request, timeout)
+	client := NewHTTPClient(timeout, st.Transport)
+	resp, err := client.Do(request)
 	if err != nil {
 		return responseBody, http.StatusBadRequest, err
 	}
@@ -323,8 +264,8 @@ func (st *DCOSTools) GetAgentNodes() (nodes []Node, err error) {
 }
 
 // NewHTTPClient creates a new instance of http.Client
-func NewHTTPClient(timeout time.Duration, transport *http.Transport) *http.Client {
-	client := http.Client{
+func NewHTTPClient(timeout time.Duration, transport http.RoundTripper) *http.Client {
+	client := &http.Client{
 		Timeout: timeout,
 	}
 
@@ -343,108 +284,7 @@ func NewHTTPClient(timeout time.Duration, transport *http.Transport) *http.Clien
 		return nil
 	}
 
-	return &client
-}
-
-// NewSecureTransport creates a new instance of http.Transport
-func NewSecureTransport(caPool *x509.CertPool) *http.Transport {
-	var tlsClientConfig *tls.Config
-	if caPool == nil {
-		// do HTTPS without certificate verification.
-		tlsClientConfig = &tls.Config{
-			InsecureSkipVerify: true,
-		}
-	} else {
-		tlsClientConfig = &tls.Config{
-			RootCAs: caPool,
-		}
-	}
-
-	return &http.Transport{
-		TLSClientConfig: tlsClientConfig,
-	}
-}
-
-// HTTPReq is an implementation of HTTPRequester interface
-type HTTPReq struct {
-	secureTransport *http.Transport
-	transport       *http.Transport
-	caPool          *x509.CertPool
-}
-
-// Init HTTPReq, prepare CA Pool if file was passed.
-func (h *HTTPReq) Init(config *Config, DCOSTools DCOSHelper) error {
-	caPool, err := loadCAPool(config)
-	if err != nil {
-		return err
-	}
-	h.caPool = caPool
-	h.secureTransport = NewSecureTransport(caPool)
-	h.transport = &http.Transport{
-		DisableKeepAlives: true,
-	}
-
-	return nil
-}
-
-// Do will do an HTTP/HTTPS request.
-func (h *HTTPReq) Do(req *http.Request, timeout time.Duration) (resp *http.Response, err error) {
-	headers := make(map[string]string)
-	var transport *http.Transport
-	if req.URL.Scheme == "https" {
-		transport = h.secureTransport
-	} else {
-		transport = h.transport
-	}
-	return Do(req, timeout, headers, transport)
-}
-
-// Transport will return a loaded instance of RoundTripper
-func (h *HTTPReq) Transport() http.RoundTripper {
-	return h.transport
-}
-
-func loadCAPool(config *Config) (*x509.CertPool, error) {
-	// If no ca found, return nil.
-	if config.FlagCACertFile == "" {
-		return nil, nil
-	}
-
-	caPool := x509.NewCertPool()
-	f, err := os.Open(config.FlagCACertFile)
-	if err != nil {
-		return caPool, err
-	}
-	defer f.Close()
-
-	b, err := ioutil.ReadAll(f)
-	if err != nil {
-		return caPool, err
-	}
-
-	if !caPool.AppendCertsFromPEM(b) {
-		return caPool, errors.New("CACertFile parsing failed")
-	}
-	return caPool, nil
-}
-
-// Do makes an HTTP(S) request with predefined http.Request object.
-// Caller is responsible for calling http.Response.Body().Close()
-func Do(req *http.Request, timeout time.Duration, headers map[string]string, transport *http.Transport) (resp *http.Response, err error) {
-	// Add headers if available
-	for headerKey, headerValue := range headers {
-		req.Header.Add(headerKey, headerValue)
-	}
-
-	client := NewHTTPClient(timeout, transport)
-
-	resp, err = client.Do(req)
-	if err != nil {
-		return resp, err
-	}
-
-	// the user of this function is responsible to close the response body.
-	return resp, nil
+	return client
 }
 
 // CheckUnitHealth tells if the unit is healthy
@@ -464,7 +304,7 @@ func (u *UnitPropertiesResponse) CheckUnitHealth() (int, string, error) {
 			"%s state is not one of the possible states %s. Current state is [ %s ]. "+
 				"Please check `systemctl show all %s` to check current unit state. ", u.ID, okActiveStates, u.ActiveState, u.ID), nil
 	}
-	log.Debugf("%s| ExecMainStatus = %d", u.ID, u.ExecMainStatus)
+	logrus.Debugf("%s| ExecMainStatus = %d", u.ID, u.ExecMainStatus)
 	if u.ExecMainStatus != 0 {
 		return 1, fmt.Sprintf("ExecMainStatus return failed status for %s", u.ID), nil
 	}
@@ -514,7 +354,7 @@ func normalizeProperty(unitProps map[string]interface{}, tools DCOSHelper) (heal
 			unitOutput += "\n"
 			unitOutput += journalOutput
 		} else {
-			log.Errorf("Could not read journalctl: %s", err)
+			logrus.Errorf("Could not read journalctl: %s", err)
 		}
 	}
 
@@ -536,90 +376,6 @@ func normalizeProperty(unitProps map[string]interface{}, tools DCOSHelper) (heal
 	}, nil
 }
 
-type stdoutTimeoutPipe struct {
-	stdoutPipe io.ReadCloser
-	stderrPipe io.ReadCloser
-	cmd        *exec.Cmd
-	done       chan struct{}
-}
-
-func (cm *stdoutTimeoutPipe) Read(p []byte) (n int, err error) {
-	n, err = cm.stdoutPipe.Read(p)
-	if n == 0 {
-		log.Debug("Could not read stdout, trying to read stderr")
-		n, err = cm.stderrPipe.Read(p)
-	}
-	return
-}
-
-func (cm *stdoutTimeoutPipe) Close() error {
-	select {
-	case <-cm.done:
-		return nil
-	default:
-		close(cm.done)
-		if cm.cmd != nil {
-			if err := cm.cmd.Wait(); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (cm *stdoutTimeoutPipe) kill() error {
-	if cm.cmd != nil {
-		cm.cmd.Process.Kill()
-	}
-	return nil
-}
-
-// Run a command. The Wait() will be called only if the caller closes done channel or timeout occurs.
-// This will make sure we can read from StdoutPipe.
-func runCmd(command []string, timeout int) (io.ReadCloser, error) {
-	stdout := &stdoutTimeoutPipe{}
-	stdout.done = make(chan struct{})
-	// if command has arguments, append them to args.
-	args := []string{}
-	if len(command) > 1 {
-		args = command[1:len(command)]
-	}
-	log.Debugf("Run: %s", command)
-	cmd := exec.Command(command[0], args...)
-
-	var err error
-	// get stdout pipe
-	stdout.stdoutPipe, err = cmd.StdoutPipe()
-	if err != nil {
-		return stdout, err
-	}
-
-	// ignore and log error if stderr failed, but do not fail
-	stdout.stderrPipe, err = cmd.StderrPipe()
-	if err != nil {
-		log.Errorf("Could not attach to stderr pile: %s", err)
-	}
-
-	// Execute a command
-	if err := cmd.Start(); err != nil {
-		return stdout, err
-	}
-	stdout.cmd = cmd
-
-	// Run a separate goroutine to handle timeout and read command's return code.
-	go func() {
-		fullCommand := strings.Join(cmd.Args, " ")
-		select {
-		case <-stdout.done:
-			log.Infof("Command %s executed successfully, PID %d", fullCommand, stdout.cmd.Process.Pid)
-		case <-time.After(time.Duration(timeout) * time.Second):
-			log.Errorf("Timeout occured, command %s, killing PID %d", fullCommand, cmd.Process.Pid)
-			stdout.kill()
-		}
-	}()
-	return stdout, nil
-}
-
 // open a file for reading, a caller if responsible to close a file descriptor.
 func readFile(fileLocation string) (r io.ReadCloser, err error) {
 	file, err := os.Open(fileLocation)
@@ -629,14 +385,24 @@ func readFile(fileLocation string) (r io.ReadCloser, err error) {
 	return file, nil
 }
 
-func readJournalOutputSince(unit, sinceString string, timeout int) (io.ReadCloser, error) {
-	stdout := &stdoutTimeoutPipe{}
-	if !strings.HasPrefix(unit, "dcos-") {
-		return stdout, errors.New("Unit should start with dcos-, got: " + unit)
+func readJournalOutputSince(unit, sinceString string) (io.ReadCloser, error) {
+	matches := []reader.JournalEntryMatch{
+		{
+			Field: "_SYSTEMD_UNIT",
+			Value: unit,
+		},
 	}
-	if strings.ContainsAny(unit, " ;&|") {
-		return stdout, errors.New("Unit cannot contain special characters or spaces")
+
+	duration, err := time.ParseDuration(sinceString)
+	if err != nil {
+		logrus.Errorf("Error parsing %s. Defaulting to 24 hours", sinceString)
+		duration = time.Hour * 24
 	}
-	command := []string{"journalctl", "--no-pager", "-u", unit, "--since", sinceString}
-	return runCmd(command, timeout)
+	format := reader.NewEntryFormatter("text/plain", false)
+	j, err := reader.NewReader(format, reader.OptionMatch(matches), reader.OptionSince(duration), reader.OptionSkipPrev(50))
+	if err != nil {
+		return nil, err
+	}
+
+	return j, nil
 }

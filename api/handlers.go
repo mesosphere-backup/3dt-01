@@ -83,7 +83,7 @@ func getNodeByUnitIDNodeIDHandler(w http.ResponseWriter, r *http.Request) {
 
 // list the entire tree
 func reportHandler(w http.ResponseWriter, r *http.Request) {
-	if err := json.NewEncoder(w).Encode(globalMonitoringResponse); err != nil {
+	if err := json.NewEncoder(w).Encode(&globalMonitoringResponse); err != nil {
 		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
@@ -266,8 +266,8 @@ func downloadBundleHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 			req.URL.Path = location
 		}
 		proxy := &httputil.ReverseProxy{
-			Director: director,
-			Transport: Requester.Transport(),
+			Director:  director,
+			Transport: dt.DtDiagnosticsJob.Transport,
 		}
 		proxy.ServeHTTP(w, r)
 		return
@@ -316,6 +316,7 @@ func getUnitLogHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	log.Infof("Start read %s", vars["entity"])
 	io.Copy(w, unitLogOut)
 	log.Infof("Done read %s", vars["entity"])
+
 	unitLogOut.Close()
 }
 

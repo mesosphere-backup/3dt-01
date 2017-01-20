@@ -8,18 +8,16 @@ import (
 	"os"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/dcos/dcos-go/dcos"
 	"github.com/xeipuuv/gojsonschema"
 )
 
 var (
 	// Version of 3dt code.
-	Version = "0.2.17"
+	Version = "0.3.0"
 
 	// APIVer is an API version.
 	APIVer = 1
-
-	// Revision injected by LDFLAGS a git commit reference.
-	Revision string
 
 	// flagSet
 	flagSet = flag.NewFlagSet("3dt", flag.ContinueOnError)
@@ -106,6 +104,10 @@ var (
 	    },
 	    "debug": {
 	      "type": "boolean"
+	    },
+	    "role": {
+	      "type": "string",
+	      "enum": ["master", "agent", "agent_public"]
 	    }
 	  },
 	  "additionalProperties": false
@@ -115,7 +117,6 @@ var (
 // Config structure is a main config object
 type Config struct {
 	Version                 string   `json:"-"`
-	Revision                string   `json:"-"`
 	MesosIPDiscoveryCommand string   `json:"-"`
 	DCOSVersion             string   `json:"-"`
 	SystemdUnits            []string `json:"-"`
@@ -139,6 +140,8 @@ type Config struct {
 	FlagExhibitorClusterStatusURL  string `json:"exhibitor-ip"`
 	FlagForceTLS                   bool   `json:"force-tls"`
 	FlagDebug                      bool   `json:"debug"`
+	FlagRole                       string `json:"role"`
+	FlagIAMConfig                  string `json:"iam-config"`
 
 	// diagnostics job flags
 	FlagDiagnosticsBundleDir                     string `json:"diagnostics-bundle-dir"`
@@ -175,6 +178,8 @@ func (c *Config) setFlags(fs *flag.FlagSet) {
 		"Use Exhibitor IP address to discover master nodes.")
 	fs.BoolVar(&c.FlagForceTLS, "force-tls", c.FlagForceTLS, "Use HTTPS to do all requests.")
 	fs.BoolVar(&c.FlagDebug, "debug", c.FlagDebug, "Enable pprof debugging endpoints.")
+	fs.StringVar(&c.FlagRole, "role", c.FlagRole, "Set node role")
+	fs.StringVar(&c.FlagIAMConfig, "iam-config", c.FlagIAMConfig, "A path to identity and access managment config")
 
 	// diagnostics job flags
 	fs.StringVar(&c.FlagDiagnosticsBundleDir, "diagnostics-bundle-dir", c.FlagDiagnosticsBundleDir, "Set a path to store diagnostic bundles")
@@ -211,7 +216,9 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	config.FlagPullTimeoutSec = 3
 
 	config.Version = Version
-	config.Revision = Revision
+
+	// default to master role
+	config.FlagRole = dcos.RoleMaster
 
 	config.FlagExhibitorClusterStatusURL = "http://127.0.0.1:8181/exhibitor/v1/cluster/status"
 
@@ -226,7 +233,7 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	config.FlagCommandExecTimeoutSec = 120
 
 	config.FlagDiagnosticsBundleEndpointsConfigFile = "/opt/mesosphere/etc/endpoints_config.json"
-	config.FlagDiagnosticsBundleUnitsLogsSinceString = "24 hours ago"
+	config.FlagDiagnosticsBundleUnitsLogsSinceString = "24h"
 
 	detectIPCmd := os.Getenv("MESOS_IP_DISCOVERY_COMMAND")
 	if detectIPCmd == "" {
@@ -256,16 +263,15 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 		internalJSONValidationSchema = string(validationSchema)
 	}
 
-	//validate the config structure
-	if err := validateConfigStruct(config); err != nil {
-		return config, err
-	}
-
 	// if config passed, read it and override the default values with values in config
 	if config.Flag3DTConfig != "" {
 		return readConfigFile(config.Flag3DTConfig, config)
 	}
 
+	//validate the config structure
+	if err := validateConfigStruct(config); err != nil {
+		return config, err
+	}
 	return config, nil
 }
 

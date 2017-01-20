@@ -20,7 +20,7 @@ import (
 var testCfg Config
 
 func init() {
-	testCfg, _ = LoadDefaultConfig([]string{"3dt", "-verbose", "-diagnostics-bundle-dir", "/tmp/snapshot-test"})
+	testCfg, _ = LoadDefaultConfig([]string{"3dt", "-role", "master", "-diagnostics-bundle-dir", "/tmp/snapshot-test"})
 }
 
 // fakeDCOSTools is a DCOSHelper interface implementation used for testing.
@@ -377,7 +377,7 @@ func (s *HandlersTestSuit) SetupTest() {
 	}
 
 	// Update global monitoring responses
-	globalMonitoringResponse.updateMonitoringResponse(s.mockedMonitoringResponse)
+	globalMonitoringResponse.updateMonitoringResponse(&s.mockedMonitoringResponse)
 }
 
 func (s *HandlersTestSuit) TearDownTest() {
@@ -503,7 +503,6 @@ func (s *HandlersTestSuit) TestgetNodesHandlerFunc() {
 
 	s.assert.NotEqual(response, nodesResponseJSONStruct{}, "Response cannot be empty")
 	s.assert.Len(response.Array, 1, "Number of nodes in respons must be 1")
-	fmt.Printf("%s\n", response.Array)
 	s.assert.Contains(response.Array, &nodeResponseFieldsStruct{
 		HostIP:     "10.0.7.190",
 		NodeHealth: 0,

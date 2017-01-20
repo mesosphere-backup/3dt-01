@@ -7,10 +7,7 @@ all: test install
 test:
 	@echo "+$@"
 	go get github.com/stretchr/testify
-	go get -u github.com/golang/lint/golint
-	golint -set_exit_status .
-	golint -set_exit_status api
-	go test -race -cover -test.v $(shell go list ./... | grep -v /vendor/)
+	bash -x -c './scripts/test.sh'
 
 build:
 	@echo "+$@"

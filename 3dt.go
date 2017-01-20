@@ -2,16 +2,29 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/coreos/go-systemd/activation"
 	"github.com/dcos/3dt/api"
+	"github.com/dcos/dcos-go/dcos"
+	"github.com/dcos/dcos-go/dcos/http/transport"
+	"github.com/dcos/dcos-go/dcos/nodeutil"
 )
 
+// override the defaultStateURL to use https scheme
+var defaultStateURL = url.URL{
+	Scheme: "https",
+	Host:   net.JoinHostPort(dcos.DNSRecordLeader, strconv.Itoa(dcos.PortMesosMaster)),
+	Path:   "/state",
+}
+
 func getVersion() string {
-	return fmt.Sprintf("Version: %s, Revision: %s", api.Version, api.Revision)
+	return fmt.Sprintf("Version: %s", api.Version)
 }
 
 func runDiag(dt api.Dt) {
@@ -46,20 +59,47 @@ func main() {
 		os.Exit(0)
 	}
 
+	// init new transport
+	transportOptions := []transport.OptionTransportFunc{}
+	if config.FlagCACertFile != "" {
+		transportOptions = append(transportOptions, transport.OptionCaCertificatePath(config.FlagCACertFile))
+	}
+	if config.FlagIAMConfig != "" {
+		transportOptions = append(transportOptions, transport.OptionIAMConfigPath(config.FlagIAMConfig))
+	}
+
+	tr, err := transport.NewTransport(transportOptions...)
+	if err != nil {
+		logrus.Fatalf("Unable to initialize HTTP transport: %s", err)
+	}
+
+	client := &http.Client{
+		Transport: tr,
+	}
+
+	var options []nodeutil.Option
+	if config.FlagForceTLS {
+		options = append(options, nodeutil.OptionMesosStateURL(defaultStateURL.String()))
+	}
+	nodeInfo, err := nodeutil.NewNodeInfo(client, config.FlagRole, options...)
+	if err != nil {
+		logrus.Fatalf("Could not initialize nodeInfo: %s", err)
+	}
+
 	DCOSTools := &api.DCOSTools{
 		ExhibitorURL: config.FlagExhibitorClusterStatusURL,
 		ForceTLS:     config.FlagForceTLS,
-	}
-
-	// init requester
-	if err := api.Requester.Init(&config, DCOSTools); err != nil {
-		logrus.Fatalf("Could not initialze the HTTP(S) requester: %s", err)
+		Role:         config.FlagRole,
+		NodeInfo:     nodeInfo,
+		Transport:    tr,
 	}
 
 	// Create and init diagnostics job, do not hard fail on error
-	diagnosticsJob := &api.DiagnosticsJob{}
+	diagnosticsJob := &api.DiagnosticsJob{
+		Transport: tr,
+	}
 	if err := diagnosticsJob.Init(&config, DCOSTools); err != nil {
-		logrus.Errorf("Could not init diagnostics job properly: %s", err)
+		logrus.Fatalf("Could not init diagnostics job properly: %s", err)
 	}
 
 	// Inject dependencies used for running 3dt.

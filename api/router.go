@@ -253,7 +253,7 @@ func getRoutes(dt Dt) []routeHandler {
 				gzip:    true,
 				headers: []header{
 					{
-						name: "Content-type",
+						name:  "Content-type",
 						value: "text/html",
 					},
 				},
@@ -264,7 +264,7 @@ func getRoutes(dt Dt) []routeHandler {
 				gzip:    true,
 				headers: []header{
 					{
-						name: "Content-type",
+						name:  "Content-type",
 						value: "text/html",
 					},
 				},
@@ -275,7 +275,7 @@ func getRoutes(dt Dt) []routeHandler {
 				gzip:    true,
 				headers: []header{
 					{
-						name: "Content-type",
+						name:  "Content-type",
 						value: "text/html",
 					},
 				},
@@ -286,7 +286,7 @@ func getRoutes(dt Dt) []routeHandler {
 				gzip:    true,
 				headers: []header{
 					{
-						name: "Content-type",
+						name:  "Content-type",
 						value: "text/html",
 					},
 				},
@@ -297,7 +297,7 @@ func getRoutes(dt Dt) []routeHandler {
 				gzip:    true,
 				headers: []header{
 					{
-						name: "Content-type",
+						name:  "Content-type",
 						value: "text/html",
 					},
 				},
@@ -311,7 +311,7 @@ func getRoutes(dt Dt) []routeHandler {
 				gzip: true,
 				headers: []header{
 					{
-						name: "Content-type",
+						name:  "Content-type",
 						value: "text/html",
 					},
 				},

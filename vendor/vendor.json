@@ -20,6 +20,56 @@
 			"revisionTime": "2016-08-15T18:53:29Z"
 		},
 		{
+			"checksumSHA1": "v9Y85RpVcs4qmvctia8udPP+KOk=",
+			"path": "github.com/coreos/go-systemd/sdjournal",
+			"revision": "7c9533367ef925dc1078d75e5b7141e10da2c4e8",
+			"revisionTime": "2016-12-12T10:46:09Z"
+		},
+		{
+			"checksumSHA1": "O8c/VKtW34XPJNNlyeb/im8vWSI=",
+			"path": "github.com/coreos/pkg/dlopen",
+			"revision": "447b7ec906e523386d9c53be15b55a8ae86ea944",
+			"revisionTime": "2016-10-26T22:29:26Z"
+		},
+		{
+			"checksumSHA1": "f1GxOGUhIBljeiVVfLMPG33qAzY=",
+			"path": "github.com/dcos/dcos-go/dcos",
+			"revision": "e9b33ecaa9430314c5708f7c74c3fa428ed68860",
+			"revisionTime": "2016-12-20T17:47:03Z"
+		},
+		{
+			"checksumSHA1": "Qz6GSjmNYD4CiTapDBqbkFAJYCI=",
+			"path": "github.com/dcos/dcos-go/dcos/http/transport",
+			"revision": "fae0702ef953feeff2c27e1707b3baacdcf90efc",
+			"revisionTime": "2017-01-19T15:54:30Z"
+		},
+		{
+			"checksumSHA1": "5u8nushsLFw5NWDh8H9G4Dm15fc=",
+			"path": "github.com/dcos/dcos-go/dcos/nodeutil",
+			"revision": "fae0702ef953feeff2c27e1707b3baacdcf90efc",
+			"revisionTime": "2017-01-19T15:54:30Z"
+		},
+		{
+			"checksumSHA1": "ZlJiS1RE06MscHhuI1kYNdJi+Tk=",
+			"path": "github.com/dcos/dcos-go/exec",
+			"revision": "e9b33ecaa9430314c5708f7c74c3fa428ed68860",
+			"revisionTime": "2016-12-20T17:47:03Z"
+		},
+		{
+			"checksumSHA1": "eiWAM3OruvF6CF66PEGdDIcR8ko=",
+			"path": "github.com/dcos/dcos-log/dcos-log/journal/reader",
+			"revision": "858754d83ec9aa68c90bf79ae9e79bef428f6388",
+			"revisionTime": "2017-01-07T03:03:01Z"
+		},
+		{
+			"checksumSHA1": "7oJyGPn6FhDZeJy9wuWqWSQ5XFM=",
+			"path": "github.com/dgrijalva/jwt-go",
+			"revision": "a2c85815a77d0f951e33ba4db5ae93629a1530af",
+			"revisionTime": "2016-04-13T00:36:00Z",
+			"version": "v2.6.0",
+			"versionExact": "v2.6.0"
+		},
+		{
 			"path": "github.com/godbus/dbus",
 			"revision": "230e4b23db2fd81c53eaa0073f76659d4849ce51",
 			"revisionTime": "2016-02-20T11:55:41-08:00"

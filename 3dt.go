@@ -2,15 +2,26 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/coreos/go-systemd/activation"
 	"github.com/dcos/3dt/api"
+	"github.com/dcos/dcos-go/dcos"
 	"github.com/dcos/dcos-go/dcos/http/transport"
 	"github.com/dcos/dcos-go/dcos/nodeutil"
 )
+
+// override the defaultStateURL to use https scheme
+var defaultStateURL = url.URL{
+	Scheme: "https",
+	Host:   net.JoinHostPort(dcos.DNSRecordLeader, strconv.Itoa(dcos.PortMesosMaster)),
+	Path:   "/state",
+}
 
 func getVersion() string {
 	return fmt.Sprintf("Version: %s", api.Version)
@@ -48,12 +59,6 @@ func main() {
 		os.Exit(0)
 	}
 
-	client := &http.Client{}
-	nodeInfo, err := nodeutil.NewNodeInfo(client)
-	if err != nil {
-		logrus.Fatalf("Could not initialize nodeInfo: %s", err)
-	}
-
 	// init new transport
 	transportOptions := []transport.OptionTransportFunc{}
 	if config.FlagCACertFile != "" {
@@ -66,6 +71,24 @@ func main() {
 	tr, err := transport.NewTransport(transportOptions...)
 	if err != nil {
 		logrus.Fatalf("Unable to initialize HTTP transport: %s", err)
+	}
+
+	client := &http.Client{
+		Transport: tr,
+	}
+
+	var nodeInfo nodeutil.NodeInfo
+	if config.FlagRole == "" {
+		nodeInfo = nil
+	} else {
+		var options []nodeutil.Option
+		if config.FlagForceTLS {
+			options = append(options, nodeutil.OptionMesosStateURL(defaultStateURL.String()))
+		}
+		nodeInfo, err = nodeutil.NewNodeInfo(client, config.FlagRole, options...)
+		if err != nil {
+			logrus.Fatalf("Could not initialize nodeInfo: %s", err)
+		}
 	}
 
 	DCOSTools := &api.DCOSTools{

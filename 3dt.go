@@ -13,7 +13,7 @@ import (
 )
 
 func getVersion() string {
-	return fmt.Sprintf("Version: %s, Revision: %s", api.Version, api.Revision)
+	return fmt.Sprintf("Version: %s", api.Version)
 }
 
 func runDiag(dt api.Dt) {
@@ -103,6 +103,11 @@ func main() {
 	if config.FlagDiag {
 		runDiag(dt)
 		os.Exit(0)
+	}
+
+	// make sure we set the role before starting a service
+	if config.FlagRole == "" {
+		logrus.Fatalf("`-role` is a required parameter")
 	}
 
 	// start diagnostic server and expose endpoints.

@@ -18,9 +18,6 @@ var (
 	// APIVer is an API version.
 	APIVer = 1
 
-	// Revision injected by LDFLAGS a git commit reference.
-	Revision string
-
 	// flagSet
 	flagSet = flag.NewFlagSet("3dt", flag.ContinueOnError)
 
@@ -109,10 +106,9 @@ var (
 	    },
 	    "role": {
 	      "type": "string",
-	      "enum": ["master", "agent", "agent_public"]
+	      "enum": ["master", "agent", "agent_public", ""]
 	    }
 	  },
-	  "required": ["role"],
 	  "additionalProperties": false
 	}`
 )
@@ -120,7 +116,6 @@ var (
 // Config structure is a main config object
 type Config struct {
 	Version                 string   `json:"-"`
-	Revision                string   `json:"-"`
 	MesosIPDiscoveryCommand string   `json:"-"`
 	DCOSVersion             string   `json:"-"`
 	SystemdUnits            []string `json:"-"`
@@ -220,7 +215,6 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	config.FlagPullTimeoutSec = 3
 
 	config.Version = Version
-	config.Revision = Revision
 
 	config.FlagExhibitorClusterStatusURL = "http://127.0.0.1:8181/exhibitor/v1/cluster/status"
 

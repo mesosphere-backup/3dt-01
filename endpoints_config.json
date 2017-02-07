@@ -194,6 +194,12 @@
     "LocalFiles": [
         {
             "Location": "/opt/mesosphere/active.buildinfo.full.json"
+        },
+        {
+            "Location": "/opt/mesosphere/active/dcos-metadata/etc/dcos-version.json"
+        },
+        {
+            "Location": "/var/lib/dcos/exhibitor/zookeeper/zookeeper.out"
         }
     ],
     "LocalCommands": [

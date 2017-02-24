@@ -133,15 +133,19 @@ func main() {
 
 	router := api.NewRouter(dt)
 
+	if config.FlagDisableUnixSocket {
+		logrus.Infof("Exposing 3DT API on 0.0.0.0:%d", config.FlagPort)
+		logrus.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.FlagPort), router))
+	}
+
 	// try using systemd socket
 	listeners, err := activation.Listeners(true)
 	if err != nil {
-		logrus.Errorf("Systemd socket not found: %s", err)
+		logrus.Fatalf("Unable to initialize listener: %s", err)
 	}
 
 	if len(listeners) == 0 || listeners[0] == nil {
-		logrus.Infof("Exposing 3DT API on 0.0.0.0:%d", config.FlagPort)
-		logrus.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.FlagPort), router))
+		logrus.Fatal("Unix socket not found")
 	}
 	logrus.Infof("Using socket: %s", listeners[0].Addr().String())
 	logrus.Fatal(http.Serve(listeners[0], router))

@@ -399,7 +399,7 @@ func readJournalOutputSince(unit, sinceString string) (io.ReadCloser, error) {
 		duration = time.Hour * 24
 	}
 	format := reader.NewEntryFormatter("text/plain", false)
-	j, err := reader.NewReader(format, reader.OptionMatch(matches), reader.OptionSince(duration), reader.OptionSkipPrev(50))
+	j, err := reader.NewReader(format, reader.OptionMatch(matches), reader.OptionSince(duration))
 	if err != nil {
 		return nil, err
 	}

@@ -14,7 +14,7 @@ import (
 
 var (
 	// Version of 3dt code.
-	Version = "0.3.0"
+	Version = "0.3.1"
 
 	// APIVer is an API version.
 	APIVer = 1
@@ -34,6 +34,9 @@ var (
 	      "type": "integer",
 	      "minimum": 1024,
 	      "maximum": 65535
+	    },
+	    "no-unix-socket": {
+	      "type": "boolean"
 	    },
 	    "pull": {
 	      "type": "boolean"
@@ -132,6 +135,7 @@ type Config struct {
 	FlagVerbose                    bool   `json:"verbose"`
 	FlagVersion                    bool   `json:"-"`
 	FlagPort                       int    `json:"port"`
+	FlagDisableUnixSocket          bool   `json:"no-unix-socket"`
 	FlagMasterPort                 int    `json:"master-port"`
 	FlagAgentPort                  int    `json:"agent-port"`
 	FlagPullInterval               int    `json:"pull-interval"`
@@ -163,6 +167,7 @@ func (c *Config) setFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.FlagVerbose, "verbose", c.FlagVerbose, "Use verbose debug output.")
 	fs.BoolVar(&c.FlagVersion, "version", c.FlagVersion, "Print version.")
 	fs.IntVar(&c.FlagPort, "port", c.FlagPort, "Web server TCP port.")
+	fs.BoolVar(&c.FlagDisableUnixSocket, "no-unix-socket", c.FlagDisableUnixSocket, "Disable use unix socket provided by systemd activation.")
 	fs.IntVar(&c.FlagMasterPort, "master-port", c.FlagMasterPort, "Use TCP port to connect to masters.")
 	fs.IntVar(&c.FlagAgentPort, "agent-port", c.FlagAgentPort, "Use TCP port to connect to agents.")
 	fs.IntVar(&c.FlagCommandExecTimeoutSec, "command-exec-timeout", c.FlagCommandExecTimeoutSec,

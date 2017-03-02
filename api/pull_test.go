@@ -11,20 +11,21 @@ import (
 type PullerTestSuit struct {
 	suite.Suite
 	assert *assertPackage.Assertions
-	dt     Dt
+	dt     *Dt
 }
 
 func (s *PullerTestSuit) SetupTest() {
 	s.assert = assertPackage.New(s.T())
-	s.dt = Dt{
+	s.dt = &Dt{
 		DtDCOSTools: &fakeDCOSTools{},
-		Cfg:         &testCfg,
+		Cfg:         testCfg,
+		MR:          &MonitoringResponse{},
 	}
 	runPull(s.dt)
 }
 
 func (s *PullerTestSuit) TearDownTest() {
-	globalMonitoringResponse.updateMonitoringResponse(&monitoringResponse{})
+	s.dt.MR.UpdateMonitoringResponse(&MonitoringResponse{})
 }
 
 // TestMonitoringResponseRace checks that the various exported methods
@@ -35,63 +36,63 @@ func (s *PullerTestSuit) TestMonitoringResponseRace() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		globalMonitoringResponse.updateMonitoringResponse(&monitoringResponse{})
+		s.dt.MR.UpdateMonitoringResponse(&MonitoringResponse{})
 	}()
 	// We call globalMonitoringResponse twice to ensure the RWMutex's write lock
 	// is held, not just a read lock.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		globalMonitoringResponse.updateMonitoringResponse(&monitoringResponse{})
+		s.dt.MR.UpdateMonitoringResponse(&MonitoringResponse{})
 	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		globalMonitoringResponse.GetAllUnits()
+		s.dt.MR.GetAllUnits()
 	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		globalMonitoringResponse.GetUnit("test-unit")
+		s.dt.MR.GetUnit("test-Unit")
 	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		globalMonitoringResponse.GetNodesForUnit("test-unit")
+		s.dt.MR.GetNodesForUnit("test-Unit")
 	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		globalMonitoringResponse.GetSpecificNodeForUnit("node-ip", "test-unit")
+		s.dt.MR.GetSpecificNodeForUnit("node-ip", "test-Unit")
 	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		globalMonitoringResponse.GetNodes()
+		s.dt.MR.GetNodes()
 	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		globalMonitoringResponse.GetNodeByID("test-unit")
+		s.dt.MR.GetNodeByID("test-Unit")
 	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		globalMonitoringResponse.GetNodeUnitsID("test-unit")
+		s.dt.MR.GetNodeUnitsID("test-Unit")
 	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		globalMonitoringResponse.GetNodeUnitByNodeIDUnitID("test-ip", "test-unit")
+		s.dt.MR.GetNodeUnitByNodeIDUnitID("test-ip", "test-Unit")
 	}()
 	wg.Wait()
 }
 
 func (s *PullerTestSuit) TestPullerFindUnit() {
 	// dcos-master.service should be in monitoring responses
-	unit, err := globalMonitoringResponse.GetUnit("dcos-master.service")
+	unit, err := s.dt.MR.GetUnit("dcos-master.service")
 	s.assert.Nil(err)
-	s.assert.Equal(unit, unitResponseFieldsStruct{
+	s.assert.Equal(unit, UnitResponseFieldsStruct{
 		"dcos-master.service",
 		"PrettyName",
 		0,
@@ -101,9 +102,9 @@ func (s *PullerTestSuit) TestPullerFindUnit() {
 
 func (s *PullerTestSuit) TestPullerNotFindUnit() {
 	// dcos-service-not-here.service should not be in responses
-	unit, err := globalMonitoringResponse.GetUnit("dcos-service-not-here.service")
+	unit, err := s.dt.MR.GetUnit("dcos-service-not-here.service")
 	s.assert.Error(err)
-	s.assert.Equal(unit, unitResponseFieldsStruct{})
+	s.assert.Equal(unit, UnitResponseFieldsStruct{})
 }
 
 func TestPullerTestSuit(t *testing.T) {

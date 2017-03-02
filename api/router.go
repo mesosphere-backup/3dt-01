@@ -6,10 +6,15 @@ import (
 	"net/http/pprof"
 	"time"
 
+	"context"
 	"github.com/Sirupsen/logrus"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 )
+
+type key int
+
+var dtKey key = 1
 
 // BaseRoute a base 3dt endpoint location.
 const BaseRoute string = "/system/health/v1"
@@ -20,6 +25,15 @@ type routeHandler struct {
 	headers             []header
 	methods             []string
 	gzip, canFlushCache bool
+}
+
+func getDtFromContext(ctx context.Context) (*Dt, bool) {
+	value := ctx.Value(dtKey)
+	if value == nil {
+		return nil, false
+	}
+	dt, ok := value.(*Dt)
+	return dt, ok
 }
 
 type header struct {
@@ -44,10 +58,10 @@ func headerMiddleware(next http.Handler, headers []header) http.Handler {
 	})
 }
 
-func noCacheMiddleware(next http.Handler, dt Dt) http.Handler {
+func noCacheMiddleware(next http.Handler, dt *Dt) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if cache := r.URL.Query()["cache"]; len(cache) == 0 {
-			if t := globalMonitoringResponse.GetLastUpdatedTime(); t != "" {
+			if t := dt.MR.GetLastUpdatedTime(); t != "" {
 				w.Header().Set("Last-Modified-3DT", t)
 			}
 			next.ServeHTTP(w, r)
@@ -70,21 +84,26 @@ func noCacheMiddleware(next http.Handler, dt Dt) http.Handler {
 			panic("Error getting fresh health report")
 		}
 
-		if t := globalMonitoringResponse.GetLastUpdatedTime(); t != "" {
+		if t := dt.MR.GetLastUpdatedTime(); t != "" {
 			w.Header().Set("Last-Modified-3DT", t)
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-func getRoutes(dt Dt) []routeHandler {
+func dtMiddleware(next http.Handler, dt *Dt) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		ctx := context.WithValue(req.Context(), dtKey, dt)
+		next.ServeHTTP(w, req.WithContext(ctx))
+	})
+}
+
+func getRoutes(debug bool) []routeHandler {
 	routes := []routeHandler{
 		{
 			// /system/health/v1
-			url: BaseRoute,
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				unitsHealthStatus(w, r, dt)
-			},
+			url:     BaseRoute,
+			handler: unitsHealthStatus,
 		},
 		{
 			// /system/health/v1/report
@@ -156,17 +175,13 @@ func getRoutes(dt Dt) []routeHandler {
 		// diagnostics routes
 		{
 			// /system/health/v1/logs
-			url: BaseRoute + "/logs",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				logsListHandler(w, r, dt)
-			},
+			url:     BaseRoute + "/logs",
+			handler: logsListHandler,
 		},
 		{
 			// /system/health/v1/logs/<unitid/<hours>
-			url: BaseRoute + "/logs/{provider}/{entity}",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				getUnitLogHandler(w, r, dt)
-			},
+			url:     BaseRoute + "/logs/{provider}/{entity}",
+			handler: getUnitLogHandler,
 			headers: []header{
 				{
 					name:  "Content-type",
@@ -177,51 +192,37 @@ func getRoutes(dt Dt) []routeHandler {
 		},
 		{
 			// /system/health/v1/report/diagnostics
-			url: BaseRoute + "/report/diagnostics/create",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				createBundleHandler(w, r, dt)
-			},
+			url:     BaseRoute + "/report/diagnostics/create",
+			handler: createBundleHandler,
 			methods: []string{"POST"},
 		},
 		{
-			url: BaseRoute + "/report/diagnostics/cancel",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				cancelBundleReportHandler(w, r, dt)
-			},
+			url:     BaseRoute + "/report/diagnostics/cancel",
+			handler: cancelBundleReportHandler,
 			methods: []string{"POST"},
 		},
 		{
-			url: BaseRoute + "/report/diagnostics/status",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				diagnosticsJobStatusHandler(w, r, dt)
-			},
+			url:     BaseRoute + "/report/diagnostics/status",
+			handler: diagnosticsJobStatusHandler,
 		},
 		{
-			url: BaseRoute + "/report/diagnostics/status/all",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				diagnosticsJobStatusAllHandler(w, r, dt)
-			},
+			url:     BaseRoute + "/report/diagnostics/status/all",
+			handler: diagnosticsJobStatusAllHandler,
 		},
 		{
 			// /system/health/v1/report/diagnostics/list
-			url: BaseRoute + "/report/diagnostics/list",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				listAvailableLocalBundlesFilesHandler(w, r, dt)
-			},
+			url:     BaseRoute + "/report/diagnostics/list",
+			handler: listAvailableLocalBundlesFilesHandler,
 		},
 		{
 			// /system/health/v1/report/diagnostics/list/all
-			url: BaseRoute + "/report/diagnostics/list/all",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				listAvailableGLobalBundlesFilesHandler(w, r, dt)
-			},
+			url:     BaseRoute + "/report/diagnostics/list/all",
+			handler: listAvailableGLobalBundlesFilesHandler,
 		},
 		{
 			// /system/health/v1/report/diagnostics/serve/<file>
-			url: BaseRoute + "/report/diagnostics/serve/{file}",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				downloadBundleHandler(w, r, dt)
-			},
+			url:     BaseRoute + "/report/diagnostics/serve/{file}",
+			handler: downloadBundleHandler,
 			headers: []header{
 				{
 					name:  "Content-type",
@@ -231,10 +232,8 @@ func getRoutes(dt Dt) []routeHandler {
 		},
 		{
 			// /system/health/v1/report/diagnostics/delete/<file>
-			url: BaseRoute + "/report/diagnostics/delete/{file}",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				deleteBundleHandler(w, r, dt)
-			},
+			url:     BaseRoute + "/report/diagnostics/delete/{file}",
+			handler: deleteBundleHandler,
 			methods: []string{"POST"},
 		},
 		// self test route
@@ -244,7 +243,7 @@ func getRoutes(dt Dt) []routeHandler {
 		},
 	}
 
-	if dt.Cfg.FlagDebug {
+	if debug {
 		logrus.Debug("Enabling pprof endpoints.")
 		routes = append(routes, []routeHandler{
 			{
@@ -322,7 +321,7 @@ func getRoutes(dt Dt) []routeHandler {
 	return routes
 }
 
-func wrapHandler(handler http.Handler, route routeHandler, dt Dt) http.Handler {
+func wrapHandler(handler http.Handler, route routeHandler, dt *Dt) http.Handler {
 	h := headerMiddleware(handler, route.headers)
 	if route.gzip {
 		h = handlers.CompressHandler(h)
@@ -331,11 +330,11 @@ func wrapHandler(handler http.Handler, route routeHandler, dt Dt) http.Handler {
 		h = noCacheMiddleware(h, dt)
 	}
 
-	return h
+	return dtMiddleware(handler, dt)
 }
 
-func loadRoutes(router *mux.Router, dt Dt) *mux.Router {
-	for _, route := range getRoutes(dt) {
+func loadRoutes(router *mux.Router, dt *Dt) *mux.Router {
+	for _, route := range getRoutes(dt.Cfg.FlagDebug) {
 		if len(route.methods) == 0 {
 			route.methods = []string{"GET"}
 		}
@@ -346,7 +345,7 @@ func loadRoutes(router *mux.Router, dt Dt) *mux.Router {
 }
 
 // NewRouter returns a new *mux.Router with loaded routes.
-func NewRouter(dt Dt) *mux.Router {
+func NewRouter(dt *Dt) *mux.Router {
 	router := mux.NewRouter().StrictSlash(true)
 	return loadRoutes(router, dt)
 }

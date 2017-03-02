@@ -19,9 +19,6 @@ import (
 	"github.com/dcos/dcos-log/dcos-log/journal/reader"
 )
 
-// Requester is an implementation of HTTPRequester interface.
-//var Requester HTTPRequester = &HTTPReq{}
-
 // DCOSTools is implementation of DCOSHelper interface.
 type DCOSTools struct {
 	sync.Mutex
@@ -99,7 +96,7 @@ func (st *DCOSTools) CloseDBUSConnection() error {
 	return errors.New("dbus connection is closed")
 }
 
-// GetUnitProperties return a map of systemd unit properties received from dbus.
+// GetUnitProperties return a map of systemd Unit properties received from dbus.
 func (st *DCOSTools) GetUnitProperties(pname string) (result map[string]interface{}, err error) {
 	result = make(map[string]interface{})
 	result, err = st.dcon.GetUnitProperties(pname)
@@ -139,7 +136,7 @@ func (st *DCOSTools) GetUnitNames() (units []string, err error) {
 	return units, nil
 }
 
-// GetJournalOutput returns last 50 lines of journald command output for a specific systemd unit.
+// GetJournalOutput returns last 50 lines of journald command output for a specific systemd Unit.
 func (st *DCOSTools) GetJournalOutput(unit string) (string, error) {
 	matches := []reader.JournalEntryMatch{
 		{
@@ -287,7 +284,7 @@ func NewHTTPClient(timeout time.Duration, transport http.RoundTripper) *http.Cli
 	return client
 }
 
-// CheckUnitHealth tells if the unit is healthy
+// CheckUnitHealth tells if the Unit is healthy
 func (u *UnitPropertiesResponse) CheckUnitHealth() (int, string, error) {
 	if u.LoadState == "" || u.ActiveState == "" || u.SubState == "" {
 		return 1, "", fmt.Errorf("LoadState: %s, ActiveState: %s and SubState: %s must be set",
@@ -295,14 +292,14 @@ func (u *UnitPropertiesResponse) CheckUnitHealth() (int, string, error) {
 	}
 
 	if u.LoadState != "loaded" {
-		return 1, fmt.Sprintf("%s is not loaded. Please check `systemctl show all` to check current unit status.", u.ID), nil
+		return 1, fmt.Sprintf("%s is not loaded. Please check `systemctl show all` to check current Unit status.", u.ID), nil
 	}
 
 	okActiveStates := []string{"active", "inactive", "activating"}
 	if !isInList(u.ActiveState, okActiveStates) {
 		return 1, fmt.Sprintf(
 			"%s state is not one of the possible states %s. Current state is [ %s ]. "+
-				"Please check `systemctl show all %s` to check current unit state. ", u.ID, okActiveStates, u.ActiveState, u.ID), nil
+				"Please check `systemctl show all %s` to check current Unit state. ", u.ID, okActiveStates, u.ActiveState, u.ID), nil
 	}
 	logrus.Debugf("%s| ExecMainStatus = %d", u.ID, u.ExecMainStatus)
 	if u.ExecMainStatus != 0 {
@@ -310,25 +307,25 @@ func (u *UnitPropertiesResponse) CheckUnitHealth() (int, string, error) {
 	}
 
 	// https://www.freedesktop.org/wiki/Software/systemd/dbus/
-	// if a unit is in `activating` state and `auto-restart` sub-state it means unit is trying to start and fails.
+	// if a Unit is in `activating` state and `auto-restart` sub-state it means Unit is trying to start and fails.
 	if u.ActiveState == "activating" && u.SubState == "auto-restart" {
-		// If ActiveEnterTimestampMonotonic is 0, it means that unit has never been able to switch to active state.
-		// Most likely a ExecStartPre fails before the unit can execute ExecStart.
+		// If ActiveEnterTimestampMonotonic is 0, it means that Unit has never been able to switch to active state.
+		// Most likely a ExecStartPre fails before the Unit can execute ExecStart.
 		if u.ActiveEnterTimestampMonotonic == 0 {
-			return 1, fmt.Sprintf("unit %s has never entered `active` state", u.ID), nil
+			return 1, fmt.Sprintf("Unit %s has never entered `active` state", u.ID), nil
 		}
 
-		// If InactiveEnterTimestampMonotonic > ActiveEnterTimestampMonotonic that means that a unit was active
+		// If InactiveEnterTimestampMonotonic > ActiveEnterTimestampMonotonic that means that a Unit was active
 		// some time ago, but then something happened and it cannot restart.
 		if u.InactiveEnterTimestampMonotonic > u.ActiveEnterTimestampMonotonic {
-			return 1, fmt.Sprintf("unit %s is flapping. Please check `systemctl status %s` to check current unit state.", u.ID, u.ID), nil
+			return 1, fmt.Sprintf("Unit %s is flapping. Please check `systemctl status %s` to check current Unit state.", u.ID, u.ID), nil
 		}
 	}
 
 	return 0, "", nil
 }
 
-func normalizeProperty(unitProps map[string]interface{}, tools DCOSHelper) (healthResponseValues, error) {
+func normalizeProperty(unitProps map[string]interface{}, tools DCOSHelper) (HealthResponseValues, error) {
 	var (
 		description, prettyName string
 		propsResponse           UnitPropertiesResponse
@@ -336,16 +333,16 @@ func normalizeProperty(unitProps map[string]interface{}, tools DCOSHelper) (heal
 
 	marshaledPropsResponse, err := json.Marshal(unitProps)
 	if err != nil {
-		return healthResponseValues{}, err
+		return HealthResponseValues{}, err
 	}
 
 	if err = json.Unmarshal(marshaledPropsResponse, &propsResponse); err != nil {
-		return healthResponseValues{}, err
+		return HealthResponseValues{}, err
 	}
 
 	unitHealth, unitOutput, err := propsResponse.CheckUnitHealth()
 	if err != nil {
-		return healthResponseValues{}, err
+		return HealthResponseValues{}, err
 	}
 
 	if unitHealth > 0 {
@@ -366,7 +363,7 @@ func normalizeProperty(unitProps map[string]interface{}, tools DCOSHelper) (heal
 		prettyName, description = s[0], s[1]
 	}
 
-	return healthResponseValues{
+	return HealthResponseValues{
 		UnitID:     propsResponse.ID,
 		UnitHealth: unitHealth,
 		UnitOutput: unitOutput,

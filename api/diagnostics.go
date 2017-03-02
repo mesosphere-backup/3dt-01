@@ -94,8 +94,9 @@ type bundleCreateRequest struct {
 }
 
 // start a diagnostics job
-func (j *DiagnosticsJob) run(req bundleCreateRequest, config *Config, DCOSTools DCOSHelper) (createResponse, error) {
-	role, err := DCOSTools.GetNodeRole()
+func (j *DiagnosticsJob) run(req bundleCreateRequest, dt *Dt) (createResponse, error) {
+
+	role, err := dt.DtDCOSTools.GetNodeRole()
 	if err != nil {
 		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, err)
 	}
@@ -104,7 +105,7 @@ func (j *DiagnosticsJob) run(req bundleCreateRequest, config *Config, DCOSTools 
 		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, errors.New("running diagnostics job on agent node is not implemented"))
 	}
 
-	isRunning, _, err := j.isRunning(config, DCOSTools)
+	isRunning, _, err := j.isRunning(dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, err)
 	}
@@ -112,18 +113,18 @@ func (j *DiagnosticsJob) run(req bundleCreateRequest, config *Config, DCOSTools 
 		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, errors.New("Job is already running"))
 	}
 
-	foundNodes, err := findRequestedNodes(req.Nodes, DCOSTools)
+	foundNodes, err := findRequestedNodes(req.Nodes, dt)
 	if err != nil {
 		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, err)
 	}
 	logrus.Debugf("Found requested nodes: %s", foundNodes)
 
 	// try to create directory for diagnostic bundles
-	_, err = os.Stat(config.FlagDiagnosticsBundleDir)
+	_, err = os.Stat(dt.Cfg.FlagDiagnosticsBundleDir)
 	if os.IsNotExist(err) {
-		logrus.Infof("Directory: %s not found, attempting to create one", config.FlagDiagnosticsBundleDir)
-		if err := os.Mkdir(config.FlagDiagnosticsBundleDir, os.ModePerm); err != nil {
-			j.Status = "Could not create directory: " + config.FlagDiagnosticsBundleDir
+		logrus.Infof("Directory: %s not found, attempting to create one", dt.Cfg.FlagDiagnosticsBundleDir)
+		if err := os.Mkdir(dt.Cfg.FlagDiagnosticsBundleDir, os.ModePerm); err != nil {
+			j.Status = "Could not create directory: " + dt.Cfg.FlagDiagnosticsBundleDir
 			return prepareCreateResponseWithErr(http.StatusServiceUnavailable, errors.New(j.Status))
 		}
 	}
@@ -135,11 +136,11 @@ func (j *DiagnosticsJob) run(req bundleCreateRequest, config *Config, DCOSTools 
 	bundleName := fmt.Sprintf("bundle-%d-%02d-%02dT%02d:%02d:%02d-%d.zip", t.Year(), t.Month(), t.Day(),
 		t.Hour(), t.Minute(), t.Second(), t.Nanosecond())
 
-	j.LastBundlePath = filepath.Join(config.FlagDiagnosticsBundleDir, bundleName)
+	j.LastBundlePath = filepath.Join(dt.Cfg.FlagDiagnosticsBundleDir, bundleName)
 	j.Status = "Diagnostics job started, archive will be available at: " + j.LastBundlePath
 
 	j.cancelChan = make(chan bool)
-	go j.runBackgroundJob(foundNodes, config, DCOSTools)
+	go j.runBackgroundJob(foundNodes, dt.Cfg, dt.DtDCOSTools)
 
 	var r createResponse
 	r.Extra.LastBundleFile = bundleName
@@ -695,18 +696,18 @@ func matchRequestedNodes(requestedNodes []string, masterNodes []Node, agentNodes
 	return matchedNodes, fmt.Errorf("Requested nodes: %s not found", requestedNodes)
 }
 
-func findRequestedNodes(requestedNodes []string, DCOSTools DCOSHelper) ([]Node, error) {
+func findRequestedNodes(requestedNodes []string, dt *Dt) ([]Node, error) {
 	var masterNodes, agentNodes []Node
-	masterNodes, agentNodes, err := globalMonitoringResponse.getMasterAgentNodes()
+	masterNodes, agentNodes, err := dt.MR.GetMasterAgentNodes()
 	if err != nil {
 		// failed to find master and agent nodes in memory. Try to discover
 		logrus.Errorf("Could not find masters or agents in memory: %s", err)
-		masterNodes, err = DCOSTools.GetMasterNodes()
+		masterNodes, err = dt.DtDCOSTools.GetMasterNodes()
 		if err != nil {
 			logrus.Errorf("Could not get master nodes: %s", err)
 		}
 
-		agentNodes, err = DCOSTools.GetAgentNodes()
+		agentNodes, err = dt.DtDCOSTools.GetAgentNodes()
 		if err != nil {
 			logrus.Errorf("Could not get agent nodes: %s", err)
 		}
@@ -936,7 +937,7 @@ func (j *DiagnosticsJob) dispatchLogs(provider string, entity string, config *Co
 				if !canExecute {
 					return r, errors.New("Only DC/OS systemd units are available")
 				}
-				logrus.Debugf("dispatching a unit %s", entity)
+				logrus.Debugf("dispatching a Unit %s", entity)
 				r, err = readJournalOutputSince(entity, config.FlagDiagnosticsBundleUnitsLogsSinceString)
 				return r, err
 			}

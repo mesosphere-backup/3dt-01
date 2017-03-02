@@ -22,7 +22,13 @@ func httpError(w http.ResponseWriter, msg string, code int) {
 
 // Route handlers
 // /api/v1/system/health, get a units status, used by 3dt puller
-func unitsHealthStatus(w http.ResponseWriter, r *http.Request, dt Dt) {
+func unitsHealthStatus(w http.ResponseWriter, r *http.Request) {
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
+
 	health, err := dt.SystemdUnits.GetUnitsProperties(dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
@@ -36,7 +42,13 @@ func unitsHealthStatus(w http.ResponseWriter, r *http.Request, dt Dt) {
 
 // /api/v1/system/health/units, get an array of all units collected from all hosts in a cluster
 func getAllUnitsHandler(w http.ResponseWriter, r *http.Request) {
-	if err := json.NewEncoder(w).Encode(globalMonitoringResponse.GetAllUnits()); err != nil {
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
+
+	if err := json.NewEncoder(w).Encode(dt.MR.GetAllUnits()); err != nil {
 		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
@@ -44,7 +56,13 @@ func getAllUnitsHandler(w http.ResponseWriter, r *http.Request) {
 // /api/v1/system/health/units/:unit_id:
 func getUnitByIDHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	unitResponse, err := globalMonitoringResponse.GetUnit(vars["unitid"])
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
+
+	unitResponse, err := dt.MR.GetUnit(vars["unitid"])
 	if err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -56,8 +74,14 @@ func getUnitByIDHandler(w http.ResponseWriter, r *http.Request) {
 
 // /api/v1/system/health/units/:unit_id:/nodes
 func getNodesByUnitIDHandler(w http.ResponseWriter, r *http.Request) {
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
+
 	vars := mux.Vars(r)
-	nodesForUnitResponse, err := globalMonitoringResponse.GetNodesForUnit(vars["unitid"])
+	nodesForUnitResponse, err := dt.MR.GetNodesForUnit(vars["unitid"])
 	if err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -69,8 +93,14 @@ func getNodesByUnitIDHandler(w http.ResponseWriter, r *http.Request) {
 
 // /api/v1/system/health/units/:unit_id:/nodes/:node_id:
 func getNodeByUnitIDNodeIDHandler(w http.ResponseWriter, r *http.Request) {
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
+
 	vars := mux.Vars(r)
-	nodePerUnit, err := globalMonitoringResponse.GetSpecificNodeForUnit(vars["unitid"], vars["nodeid"])
+	nodePerUnit, err := dt.MR.GetSpecificNodeForUnit(vars["unitid"], vars["nodeid"])
 
 	if err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
@@ -83,22 +113,37 @@ func getNodeByUnitIDNodeIDHandler(w http.ResponseWriter, r *http.Request) {
 
 // list the entire tree
 func reportHandler(w http.ResponseWriter, r *http.Request) {
-	if err := json.NewEncoder(w).Encode(&globalMonitoringResponse); err != nil {
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
+	if err := json.NewEncoder(w).Encode(dt.MR); err != nil {
 		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
 // /api/v1/system/health/nodes
 func getNodesHandler(w http.ResponseWriter, r *http.Request) {
-	if err := json.NewEncoder(w).Encode(globalMonitoringResponse.GetNodes()); err != nil {
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
+	if err := json.NewEncoder(w).Encode(dt.MR.GetNodes()); err != nil {
 		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
 // /api/v1/system/health/nodes/:node_id:
 func getNodeByIDHandler(w http.ResponseWriter, r *http.Request) {
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
 	vars := mux.Vars(r)
-	nodes, err := globalMonitoringResponse.GetNodeByID(vars["nodeid"])
+	nodes, err := dt.MR.GetNodeByID(vars["nodeid"])
 	if err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -111,8 +156,14 @@ func getNodeByIDHandler(w http.ResponseWriter, r *http.Request) {
 
 // /api/v1/system/health/nodes/:node_id:/units
 func getNodeUnitsByNodeIDHandler(w http.ResponseWriter, r *http.Request) {
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
+
 	vars := mux.Vars(r)
-	units, err := globalMonitoringResponse.GetNodeUnitsID(vars["nodeid"])
+	units, err := dt.MR.GetNodeUnitsID(vars["nodeid"])
 	if err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -124,8 +175,14 @@ func getNodeUnitsByNodeIDHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func getNodeUnitByNodeIDUnitIDHandler(w http.ResponseWriter, r *http.Request) {
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
+
 	vars := mux.Vars(r)
-	unit, err := globalMonitoringResponse.GetNodeUnitByNodeIDUnitID(vars["nodeid"], vars["unitid"])
+	unit, err := dt.MR.GetNodeUnitByNodeIDUnitID(vars["nodeid"], vars["unitid"])
 	if err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -154,7 +211,13 @@ func writeCreateResponse(w http.ResponseWriter, response createResponse) {
 // A handler responsible for removing diagnostics bundles. First it will try to find a bundle locally, if failed
 // it will send a broadcast request to all cluster master members and check if bundle it available.
 // If a bundle was found on a remote host the local node will send a POST request to remove the bundle.
-func deleteBundleHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
+func deleteBundleHandler(w http.ResponseWriter, r *http.Request) {
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
+
 	vars := mux.Vars(r)
 	response, err := dt.DtDiagnosticsJob.delete(vars["file"], dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
@@ -164,14 +227,26 @@ func deleteBundleHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 }
 
 // A handler function return a diagnostics job status
-func diagnosticsJobStatusHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
+func diagnosticsJobStatusHandler(w http.ResponseWriter, r *http.Request) {
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
+
 	if err := json.NewEncoder(w).Encode(dt.DtDiagnosticsJob.getStatus(dt.Cfg)); err != nil {
 		log.Errorf("Failed to encode responses to json: %s", err)
 	}
 }
 
 // A handler function returns a map of master node ip address as a key and bundleReportStatus as a value.
-func diagnosticsJobStatusAllHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
+func diagnosticsJobStatusAllHandler(w http.ResponseWriter, r *http.Request) {
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
+
 	status, err := dt.DtDiagnosticsJob.getStatusAll(dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		response, _ := prepareResponseWithErr(http.StatusServiceUnavailable, err)
@@ -185,7 +260,13 @@ func diagnosticsJobStatusAllHandler(w http.ResponseWriter, r *http.Request, dt D
 
 // A handler function cancels a job running on a local node first. If a job is running on a remote node
 // it will try to send a POST request to cancel it.
-func cancelBundleReportHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
+func cancelBundleReportHandler(w http.ResponseWriter, r *http.Request) {
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
+
 	response, err := dt.DtDiagnosticsJob.cancel(dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		log.Errorf("Could not cancel a job: %s", err)
@@ -194,7 +275,13 @@ func cancelBundleReportHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 }
 
 // A handler function returns a map of master ip as a key and a list of bundles as a value.
-func listAvailableGLobalBundlesFilesHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
+func listAvailableGLobalBundlesFilesHandler(w http.ResponseWriter, r *http.Request) {
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
+
 	allBundles, err := listAllBundles(dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		response, _ := prepareResponseWithErr(http.StatusServiceUnavailable, err)
@@ -207,7 +294,13 @@ func listAvailableGLobalBundlesFilesHandler(w http.ResponseWriter, r *http.Reque
 }
 
 // A handler function returns a list of URLs to download bundles
-func listAvailableLocalBundlesFilesHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
+func listAvailableLocalBundlesFilesHandler(w http.ResponseWriter, r *http.Request) {
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
+
 	matches, err := dt.DtDiagnosticsJob.findLocalBundle(dt.Cfg)
 	if err != nil {
 		response, _ := prepareResponseWithErr(http.StatusServiceUnavailable, err)
@@ -236,7 +329,13 @@ func listAvailableLocalBundlesFilesHandler(w http.ResponseWriter, r *http.Reques
 
 // A handler function serves a static local file. If a file not available locally but
 // available on a different node, it will do a reverse proxy.
-func downloadBundleHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
+func downloadBundleHandler(w http.ResponseWriter, r *http.Request) {
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
+
 	vars := mux.Vars(r)
 	node, location, ok, err := dt.DtDiagnosticsJob.isBundleAvailable(vars["file"], dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
@@ -276,7 +375,13 @@ func downloadBundleHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 }
 
 // A handler function to start a diagnostics job.
-func createBundleHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
+func createBundleHandler(w http.ResponseWriter, r *http.Request) {
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
+
 	var req bundleCreateRequest
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&req); err != nil {
@@ -284,7 +389,7 @@ func createBundleHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 		writeResponse(w, response)
 		return
 	}
-	response, err := dt.DtDiagnosticsJob.run(req, dt.Cfg, dt.DtDCOSTools)
+	response, err := dt.DtDiagnosticsJob.run(req, dt)
 	if err != nil {
 		log.Errorf("Could not run a diagnostics job: %s", err)
 	}
@@ -292,7 +397,13 @@ func createBundleHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 }
 
 // A handler function to to get a list of available logs on a node.
-func logsListHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
+func logsListHandler(w http.ResponseWriter, r *http.Request) {
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
+
 	endspoints, err := dt.DtDiagnosticsJob.getLogsEndpoints(dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		response, _ := prepareResponseWithErr(http.StatusServiceUnavailable, err)
@@ -304,8 +415,14 @@ func logsListHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
 	}
 }
 
-// return a log for past N hours for a specific systemd unit
-func getUnitLogHandler(w http.ResponseWriter, r *http.Request, dt Dt) {
+// return a log for past N hours for a specific systemd Unit
+func getUnitLogHandler(w http.ResponseWriter, r *http.Request) {
+	dt, ok := getDtFromContext(r.Context())
+	if !ok {
+		httpError(w, "Unable to get a required context from a request", http.StatusInternalServerError)
+		return
+	}
+
 	vars := mux.Vars(r)
 	unitLogOut, err := dt.DtDiagnosticsJob.dispatchLogs(vars["provider"], vars["entity"], dt.Cfg, dt.DtDCOSTools)
 	if err != nil {

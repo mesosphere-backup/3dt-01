@@ -27,7 +27,7 @@ func getVersion() string {
 	return fmt.Sprintf("Version: %s", api.Version)
 }
 
-func runDiag(dt api.Dt) {
+func runDiag(dt *api.Dt) {
 	units, err := dt.SystemdUnits.GetUnitsProperties(dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		logrus.Fatalf("Error getting units properties: %s", err)
@@ -98,18 +98,19 @@ func main() {
 	diagnosticsJob := &api.DiagnosticsJob{
 		Transport: tr,
 	}
-	if err := diagnosticsJob.Init(&config, DCOSTools); err != nil {
+	if err := diagnosticsJob.Init(config, DCOSTools); err != nil {
 		logrus.Fatalf("Could not init diagnostics job properly: %s", err)
 	}
 
 	// Inject dependencies used for running 3dt.
-	dt := api.Dt{
-		Cfg:               &config,
+	dt := &api.Dt{
+		Cfg:               config,
 		DtDCOSTools:       DCOSTools,
 		DtDiagnosticsJob:  diagnosticsJob,
 		RunPullerChan:     make(chan bool),
 		RunPullerDoneChan: make(chan bool),
 		SystemdUnits:      &api.SystemdUnits{},
+		MR:                &api.MonitoringResponse{},
 	}
 
 	// set verbose (debug) output.

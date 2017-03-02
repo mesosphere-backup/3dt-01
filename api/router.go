@@ -322,7 +322,7 @@ func getRoutes(debug bool) []routeHandler {
 }
 
 func wrapHandler(handler http.Handler, route routeHandler, dt *Dt) http.Handler {
-	h := headerMiddleware(handler, route.headers)
+	h := headerMiddleware(dtMiddleware(handler, dt), route.headers)
 	if route.gzip {
 		h = handlers.CompressHandler(h)
 	}
@@ -330,7 +330,7 @@ func wrapHandler(handler http.Handler, route routeHandler, dt *Dt) http.Handler 
 		h = noCacheMiddleware(h, dt)
 	}
 
-	return dtMiddleware(handler, dt)
+	return h
 }
 
 func loadRoutes(router *mux.Router, dt *Dt) *mux.Router {

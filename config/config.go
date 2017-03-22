@@ -1,4 +1,4 @@
-package api
+package config
 
 import (
 	"encoding/json"
@@ -19,12 +19,9 @@ var (
 	// APIVer is an API version.
 	APIVer = 1
 
-	// flagSet
-	flagSet = flag.NewFlagSet("3dt", flag.ContinueOnError)
-
 	internalJSONValidationSchema = `
 	{
-	  "title": "User config validate schema",
+	  "title": "dcos-diagnostics json schema",
 	  "type": "object",
 	  "properties": {
 	    "ca-cert": {
@@ -254,6 +251,7 @@ func LoadDefaultConfig(args []string) (*Config, error) {
 	}
 	config.DCOSVersion = os.Getenv("DCOS_VERSION")
 
+	flagSet := flag.NewFlagSet("3dt", flag.ContinueOnError)
 	config.setFlags(flagSet)
 
 	// override with user provided arguments

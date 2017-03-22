@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,15 +11,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dcos/3dt/config"
 	"github.com/gorilla/mux"
 	assertPackage "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
 
-var testCfg *Config
+var testCfg *config.Config
 
 func init() {
-	testCfg, _ = LoadDefaultConfig([]string{"3dt", "-role", "master", "-diagnostics-bundle-dir", "/tmp/snapshot-test"})
+	testCfg, _ = config.LoadDefaultConfig([]string{"3dt", "-role", "master", "-diagnostics-bundle-dir", "/tmp/snapshot-test"})
 }
 
 // fakeDCOSTools is a DCOSHelper interface implementation used for testing.
@@ -233,7 +233,6 @@ type HandlersTestSuit struct {
 // SetUp/Teardown
 func (s *HandlersTestSuit) SetupTest() {
 	// setup variables
-	flagSet = flag.NewFlagSet("3dt", flag.ContinueOnError)
 	s.dt = &Dt{
 		Cfg:         testCfg,
 		DtDCOSTools: &fakeDCOSTools{},

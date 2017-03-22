@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dcos/3dt/config"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/load"
 	"github.com/shirou/gopsutil/mem"
@@ -11,7 +12,7 @@ import (
 
 // MonitoringResponse top level global variable to store the entire units/nodes status tree.
 type MonitoringResponse struct {
-	sync.Mutex
+	sync.RWMutex
 
 	Units       map[string]Unit
 	Nodes       map[string]Node
@@ -130,7 +131,7 @@ type exhibitorNodeResponse struct {
 // Dt is a struct of dependencies used in 3dt code. There are 2 implementations, the one runs on a real system and
 // the one used for testing.
 type Dt struct {
-	Cfg               *Config
+	Cfg               *config.Config
 	DtDCOSTools       DCOSHelper
 	DtDiagnosticsJob  *DiagnosticsJob
 	RunPullerChan     chan bool

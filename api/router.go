@@ -1,12 +1,12 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/pprof"
 	"time"
 
-	"context"
 	"github.com/Sirupsen/logrus"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"

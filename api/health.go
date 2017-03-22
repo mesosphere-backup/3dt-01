@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/dcos/3dt/config"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/load"
 	"github.com/shirou/gopsutil/mem"
@@ -15,7 +16,7 @@ type SystemdUnits struct {
 }
 
 // GetUnitsProperties return a structured units health response of UnitsHealthResponseJsonStruct type.
-func (s *SystemdUnits) GetUnitsProperties(cfg *Config, tools DCOSHelper) (healthReport UnitsHealthResponseJSONStruct, err error) {
+func (s *SystemdUnits) GetUnitsProperties(cfg *config.Config, tools DCOSHelper) (healthReport UnitsHealthResponseJSONStruct, err error) {
 	s.Lock()
 	defer s.Unlock()
 

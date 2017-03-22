@@ -3,11 +3,13 @@ package api
 import (
 	"net/http"
 	"time"
+
+	"github.com/dcos/3dt/config"
 )
 
 // HTTPRequester is an interface to make HTTP requests
 type HTTPRequester interface {
-	Init(*Config, DCOSHelper) error
+	Init(*config.Config, DCOSHelper) error
 	Do(*http.Request, time.Duration) (*http.Response, error)
 	Transport() http.RoundTripper
 }

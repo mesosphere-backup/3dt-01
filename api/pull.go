@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/dcos/3dt/config"
 	"github.com/dcos/dcos-go/dcos"
 )
 
@@ -642,14 +643,14 @@ func pullHostStatus(host Node, respChan chan<- *httpResponse, dt *Dt, wg *sync.W
 
 }
 
-func getPullPortByRole(config *Config, role string) (int, error) {
+func getPullPortByRole(cfg *config.Config, role string) (int, error) {
 	var port int
 	if role != MasterRole && role != AgentRole && role != AgentPublicRole {
 		return port, fmt.Errorf("Incorrect role %s, must be: %s, %s or %s", role, MasterRole, AgentRole, AgentPublicRole)
 	}
-	port = config.FlagAgentPort
+	port = cfg.FlagAgentPort
 	if role == MasterRole {
-		port = config.FlagMasterPort
+		port = cfg.FlagMasterPort
 	}
 	return port, nil
 }

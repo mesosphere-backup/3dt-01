@@ -240,6 +240,9 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	config.FlagDiagnosticsBundleEndpointsConfigFile = "/opt/mesosphere/etc/endpoints_config.json"
 	config.FlagDiagnosticsBundleUnitsLogsSinceString = "24h"
 
+	// default CA cert location
+	config.FlagCACertFile = "/run/dcos/pki/CA/certs/ca.crt"
+
 	detectIPCmd := os.Getenv("MESOS_IP_DISCOVERY_COMMAND")
 	if detectIPCmd == "" {
 		detectIPCmd = "/opt/mesosphere/bin/detect_ip"

@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/dcos/3dt/config"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/load"
 	"github.com/shirou/gopsutil/mem"
@@ -15,7 +16,7 @@ type SystemdUnits struct {
 }
 
 // GetUnitsProperties return a structured units health response of UnitsHealthResponseJsonStruct type.
-func (s *SystemdUnits) GetUnitsProperties(cfg *Config, tools DCOSHelper) (healthReport UnitsHealthResponseJSONStruct, err error) {
+func (s *SystemdUnits) GetUnitsProperties(cfg *config.Config, tools DCOSHelper) (healthReport UnitsHealthResponseJSONStruct, err error) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -34,10 +35,10 @@ func (s *SystemdUnits) GetUnitsProperties(cfg *Config, tools DCOSHelper) (health
 	// detect DC/OS systemd units
 	foundUnits, err := tools.GetUnitNames()
 	if err != nil {
-		logrus.Errorf("Could not get unit names: %s", err)
+		logrus.Errorf("Could not get Unit names: %s", err)
 	}
 
-	var allUnitsProperties []healthResponseValues
+	var allUnitsProperties []HealthResponseValues
 	// open dbus connection
 	if err = tools.InitializeDBUSConnection(); err != nil {
 		return healthReport, err
@@ -48,17 +49,17 @@ func (s *SystemdUnits) GetUnitsProperties(cfg *Config, tools DCOSHelper) (health
 	excludeUnits := []string{"dcos-setup.service", "dcos-link-env.service", "dcos-download.service"}
 	for _, unit := range foundUnits {
 		if isInList(unit, excludeUnits) {
-			logrus.Debugf("Skipping blacklisted systemd unit %s", unit)
+			logrus.Debugf("Skipping blacklisted systemd Unit %s", unit)
 			continue
 		}
 		currentProperty, err := tools.GetUnitProperties(unit)
 		if err != nil {
-			logrus.Errorf("Could not get properties for unit: %s", unit)
+			logrus.Errorf("Could not get properties for Unit: %s", unit)
 			continue
 		}
 		normalizedProperty, err := normalizeProperty(currentProperty, tools)
 		if err != nil {
-			logrus.Errorf("Could not normalize property for unit %s: %s", unit, err)
+			logrus.Errorf("Could not normalize property for Unit %s: %s", unit, err)
 			continue
 		}
 		allUnitsProperties = append(allUnitsProperties, normalizedProperty)

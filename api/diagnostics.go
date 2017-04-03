@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/dcos/3dt/config"
 	"github.com/dcos/dcos-go/exec"
 	"github.com/shirou/gopsutil/disk"
 )
@@ -94,8 +95,9 @@ type bundleCreateRequest struct {
 }
 
 // start a diagnostics job
-func (j *DiagnosticsJob) run(req bundleCreateRequest, config *Config, DCOSTools DCOSHelper) (createResponse, error) {
-	role, err := DCOSTools.GetNodeRole()
+func (j *DiagnosticsJob) run(req bundleCreateRequest, dt *Dt) (createResponse, error) {
+
+	role, err := dt.DtDCOSTools.GetNodeRole()
 	if err != nil {
 		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, err)
 	}
@@ -104,7 +106,7 @@ func (j *DiagnosticsJob) run(req bundleCreateRequest, config *Config, DCOSTools 
 		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, errors.New("running diagnostics job on agent node is not implemented"))
 	}
 
-	isRunning, _, err := j.isRunning(config, DCOSTools)
+	isRunning, _, err := j.isRunning(dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, err)
 	}
@@ -112,18 +114,18 @@ func (j *DiagnosticsJob) run(req bundleCreateRequest, config *Config, DCOSTools 
 		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, errors.New("Job is already running"))
 	}
 
-	foundNodes, err := findRequestedNodes(req.Nodes, DCOSTools)
+	foundNodes, err := findRequestedNodes(req.Nodes, dt)
 	if err != nil {
 		return prepareCreateResponseWithErr(http.StatusServiceUnavailable, err)
 	}
 	logrus.Debugf("Found requested nodes: %s", foundNodes)
 
 	// try to create directory for diagnostic bundles
-	_, err = os.Stat(config.FlagDiagnosticsBundleDir)
+	_, err = os.Stat(dt.Cfg.FlagDiagnosticsBundleDir)
 	if os.IsNotExist(err) {
-		logrus.Infof("Directory: %s not found, attempting to create one", config.FlagDiagnosticsBundleDir)
-		if err := os.Mkdir(config.FlagDiagnosticsBundleDir, os.ModePerm); err != nil {
-			j.Status = "Could not create directory: " + config.FlagDiagnosticsBundleDir
+		logrus.Infof("Directory: %s not found, attempting to create one", dt.Cfg.FlagDiagnosticsBundleDir)
+		if err := os.Mkdir(dt.Cfg.FlagDiagnosticsBundleDir, os.ModePerm); err != nil {
+			j.Status = "Could not create directory: " + dt.Cfg.FlagDiagnosticsBundleDir
 			return prepareCreateResponseWithErr(http.StatusServiceUnavailable, errors.New(j.Status))
 		}
 	}
@@ -135,22 +137,22 @@ func (j *DiagnosticsJob) run(req bundleCreateRequest, config *Config, DCOSTools 
 	bundleName := fmt.Sprintf("bundle-%d-%02d-%02dT%02d:%02d:%02d-%d.zip", t.Year(), t.Month(), t.Day(),
 		t.Hour(), t.Minute(), t.Second(), t.Nanosecond())
 
-	j.LastBundlePath = filepath.Join(config.FlagDiagnosticsBundleDir, bundleName)
+	j.LastBundlePath = filepath.Join(dt.Cfg.FlagDiagnosticsBundleDir, bundleName)
 	j.Status = "Diagnostics job started, archive will be available at: " + j.LastBundlePath
 
 	j.cancelChan = make(chan bool)
-	go j.runBackgroundJob(foundNodes, config, DCOSTools)
+	go j.runBackgroundJob(foundNodes, dt.Cfg, dt.DtDCOSTools)
 
 	var r createResponse
 	r.Extra.LastBundleFile = bundleName
 	r.ResponseCode = http.StatusOK
-	r.Version = APIVer
+	r.Version = config.APIVer
 	r.Status = "Job has been successfully started"
 	return r, nil
 }
 
 //
-func (j *DiagnosticsJob) runBackgroundJob(nodes []Node, config *Config, DCOSTools DCOSHelper) {
+func (j *DiagnosticsJob) runBackgroundJob(nodes []Node, cfg *config.Config, DCOSTools DCOSHelper) {
 	if len(nodes) == 0 {
 		e := "Nodes length cannot be 0"
 		j.Status = "Job failed"
@@ -175,7 +177,7 @@ func (j *DiagnosticsJob) runBackgroundJob(nodes []Node, config *Config, DCOSTool
 		select {
 		case <-jobIsDone:
 			return
-		case <-time.After(time.Minute * time.Duration(config.FlagDiagnosticsJobTimeoutMinutes)):
+		case <-time.After(time.Minute * time.Duration(cfg.FlagDiagnosticsJobTimeoutMinutes)):
 			j.Status = "Job failed"
 			errMsg := fmt.Sprintf("diagnostics job timedout after: %s", time.Since(j.JobStarted))
 			j.Errors = append(j.Errors, errMsg)
@@ -245,7 +247,7 @@ func (j *DiagnosticsJob) runBackgroundJob(nodes []Node, config *Config, DCOSTool
 	// we already checked for nodes length, we should not get division by zero error at this point.
 	percentPerNode := 100.0 / float32(len(nodes))
 	for _, node := range nodes {
-		port, err := getPullPortByRole(config, node.Role)
+		port, err := getPullPortByRole(cfg, node.Role)
 		if err != nil {
 			logrus.Errorf("Used incorrect role: %s", err)
 			j.Errors = append(j.Errors, err.Error())
@@ -285,7 +287,7 @@ func (j *DiagnosticsJob) runBackgroundJob(nodes []Node, config *Config, DCOSTool
 		}
 		// add http endpoints
 		err = j.getHTTPAddToZip(node, endpoints, j.LastBundlePath, zipWriter, summaryErrorsReport,
-			summaryReport, config, DCOSTools, percentPerNode)
+			summaryReport, cfg, DCOSTools, percentPerNode)
 		if err != nil {
 			j.Errors = append(j.Errors, err.Error())
 
@@ -308,11 +310,13 @@ func (j *DiagnosticsJob) runBackgroundJob(nodes []Node, config *Config, DCOSTool
 	j.JobProgressPercentage = 100
 	if len(j.Errors) == 0 {
 		j.Status = "Diagnostics job sucessfully finished"
+	} else {
+		j.Status = "Diagnostics job failed"
 	}
 }
 
 // delete a bundle
-func (j *DiagnosticsJob) delete(bundleName string, config *Config, DCOSTools DCOSHelper) (response diagnosticsReportResponse, err error) {
+func (j *DiagnosticsJob) delete(bundleName string, cfg *config.Config, DCOSTools DCOSHelper) (response diagnosticsReportResponse, err error) {
 	if !strings.HasPrefix(bundleName, "bundle-") || !strings.HasSuffix(bundleName, ".zip") {
 		return prepareResponseWithErr(http.StatusServiceUnavailable, errors.New("format allowed  bundle-*.zip"))
 	}
@@ -321,7 +325,7 @@ func (j *DiagnosticsJob) delete(bundleName string, config *Config, DCOSTools DCO
 	defer j.Unlock()
 
 	// first try to locate a bundle on a local disk.
-	bundlePath := path.Join(config.FlagDiagnosticsBundleDir, bundleName)
+	bundlePath := path.Join(cfg.FlagDiagnosticsBundleDir, bundleName)
 	logrus.Debugf("Trying remove a bundle: %s", bundlePath)
 	_, err = os.Stat(bundlePath)
 	if err == nil {
@@ -333,12 +337,12 @@ func (j *DiagnosticsJob) delete(bundleName string, config *Config, DCOSTools DCO
 		return prepareResponseOk(http.StatusOK, msg)
 	}
 
-	node, _, ok, err := j.isBundleAvailable(bundleName, config, DCOSTools)
+	node, _, ok, err := j.isBundleAvailable(bundleName, cfg, DCOSTools)
 	if err != nil {
 		return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 	}
 	if ok {
-		url := fmt.Sprintf("http://%s:%d%s/report/diagnostics/delete/%s", node, config.FlagMasterPort, BaseRoute, bundleName)
+		url := fmt.Sprintf("http://%s:%d%s/report/diagnostics/delete/%s", node, cfg.FlagMasterPort, BaseRoute, bundleName)
 		j.Status = "Attempting to delete a bundle on a remote host. POST " + url
 		logrus.Debug(j.Status)
 		timeout := time.Duration(time.Second * 5)
@@ -360,14 +364,14 @@ func (j *DiagnosticsJob) delete(bundleName string, config *Config, DCOSTools DCO
 
 // isRunning returns if the diagnostics job is running, node the job is running on and error. If the node is empty
 // string, then the job is running on a localhost.
-func (j *DiagnosticsJob) isRunning(config *Config, DCOSTools DCOSHelper) (bool, string, error) {
+func (j *DiagnosticsJob) isRunning(cfg *config.Config, DCOSTools DCOSHelper) (bool, string, error) {
 	// first check if the job is running on a localhost.
 	if j.Running {
 		return true, "", nil
 	}
 
 	// try to discover if the job is running on other masters.
-	clusterDiagnosticsJobStatus, err := j.getStatusAll(config, DCOSTools)
+	clusterDiagnosticsJobStatus, err := j.getStatusAll(cfg, DCOSTools)
 	if err != nil {
 		return false, "", err
 	}
@@ -383,7 +387,7 @@ func (j *DiagnosticsJob) isRunning(config *Config, DCOSTools DCOSHelper) (bool, 
 
 // Collect all status reports from master nodes and return a map[master_ip] bundleReportStatus
 // The function is used to get a job status on other nodes
-func (j *DiagnosticsJob) getStatusAll(config *Config, DCOSTools DCOSHelper) (map[string]bundleReportStatus, error) {
+func (j *DiagnosticsJob) getStatusAll(cfg *config.Config, DCOSTools DCOSHelper) (map[string]bundleReportStatus, error) {
 	statuses := make(map[string]bundleReportStatus)
 
 	masterNodes, err := DCOSTools.GetMasterNodes()
@@ -393,7 +397,7 @@ func (j *DiagnosticsJob) getStatusAll(config *Config, DCOSTools DCOSHelper) (map
 
 	for _, master := range masterNodes {
 		var status bundleReportStatus
-		url := fmt.Sprintf("http://%s:%d%s/report/diagnostics/status", master.IP, config.FlagMasterPort, BaseRoute)
+		url := fmt.Sprintf("http://%s:%d%s/report/diagnostics/status", master.IP, cfg.FlagMasterPort, BaseRoute)
 		body, _, err := DCOSTools.Get(url, time.Duration(time.Second*3))
 		if err = json.Unmarshal(body, &status); err != nil {
 			logrus.Errorf("Could not determine job status for node %s: %s", master.IP, err)
@@ -408,14 +412,14 @@ func (j *DiagnosticsJob) getStatusAll(config *Config, DCOSTools DCOSHelper) (map
 }
 
 // get a status report for a localhost
-func (j *DiagnosticsJob) getStatus(config *Config) bundleReportStatus {
+func (j *DiagnosticsJob) getStatus(cfg *config.Config) bundleReportStatus {
 	// use a temp var `used`, since disk.Usage panics if partition does not exist.
 	var used float64
-	usageStat, err := disk.Usage(config.FlagDiagnosticsBundleDir)
+	usageStat, err := disk.Usage(cfg.FlagDiagnosticsBundleDir)
 	if err == nil {
 		used = usageStat.UsedPercent
 	} else {
-		logrus.Errorf("Could not get a disk usage %s: %s", config.FlagDiagnosticsBundleDir, err)
+		logrus.Errorf("Could not get a disk usage %s: %s", cfg.FlagDiagnosticsBundleDir, err)
 	}
 	return bundleReportStatus{
 		Running:               j.Running,
@@ -427,11 +431,11 @@ func (j *DiagnosticsJob) getStatus(config *Config) bundleReportStatus {
 		JobDuration:           j.JobDuration.String(),
 		JobProgressPercentage: j.JobProgressPercentage,
 
-		DiagnosticBundlesBaseDir:                 config.FlagDiagnosticsBundleDir,
-		DiagnosticsJobTimeoutMin:                 config.FlagDiagnosticsJobTimeoutMinutes,
-		DiagnosticsJobGetSingleURLTimeoutMinutes: config.FlagDiagnosticsJobGetSingleURLTimeoutMinutes,
-		DiagnosticsUnitsLogsSinceHours:           config.FlagDiagnosticsBundleUnitsLogsSinceString,
-		CommandExecTimeoutSec:                    config.FlagCommandExecTimeoutSec,
+		DiagnosticBundlesBaseDir:                 cfg.FlagDiagnosticsBundleDir,
+		DiagnosticsJobTimeoutMin:                 cfg.FlagDiagnosticsJobTimeoutMinutes,
+		DiagnosticsJobGetSingleURLTimeoutMinutes: cfg.FlagDiagnosticsJobGetSingleURLTimeoutMinutes,
+		DiagnosticsUnitsLogsSinceHours:           cfg.FlagDiagnosticsBundleUnitsLogsSinceString,
+		CommandExecTimeoutSec:                    cfg.FlagCommandExecTimeoutSec,
 
 		DiskUsedPercent: used,
 	}
@@ -447,7 +451,7 @@ func (d diagnosticsJobCanceledError) Error() string {
 
 // fetch an HTTP endpoint and append the output to a zip file.
 func (j *DiagnosticsJob) getHTTPAddToZip(node Node, endpoints map[string]string, folder string, zipWriter *zip.Writer,
-	summaryErrorsReport, summaryReport *bytes.Buffer, config *Config, DCOSTools DCOSHelper, percentPerNode float32) error {
+	summaryErrorsReport, summaryReport *bytes.Buffer, cfg *config.Config, DCOSTools DCOSHelper, percentPerNode float32) error {
 	if len(endpoints) == 0 || percentPerNode == 0 {
 		j.JobProgressPercentage += percentPerNode
 		return fmt.Errorf("`endpoints` length or `percentPerNode` arguments cannot be empty. Got: %s, %f", endpoints, percentPerNode)
@@ -455,7 +459,7 @@ func (j *DiagnosticsJob) getHTTPAddToZip(node Node, endpoints map[string]string,
 
 	percentPerURL := percentPerNode / float32(len(endpoints))
 	for fileName, httpEndpoint := range endpoints {
-		fullURL, err := useTLSScheme("http://"+node.IP+httpEndpoint, config.FlagForceTLS)
+		fullURL, err := useTLSScheme("http://"+node.IP+httpEndpoint, cfg.FlagForceTLS)
 		if err != nil {
 			j.Errors = append(j.Errors, err.Error())
 			logrus.Errorf("Could not read force-tls flag: %s", err)
@@ -480,7 +484,7 @@ func (j *DiagnosticsJob) getHTTPAddToZip(node Node, endpoints map[string]string,
 
 		j.Status = "GET " + fullURL
 		updateSummaryReport("START "+j.Status, node, "", summaryReport)
-		timeout := time.Duration(time.Minute * time.Duration(config.FlagDiagnosticsJobGetSingleURLTimeoutMinutes))
+		timeout := time.Duration(time.Minute * time.Duration(cfg.FlagDiagnosticsJobGetSingleURLTimeoutMinutes))
 		request, err := http.NewRequest("GET", fullURL, nil)
 		if err != nil {
 			j.Errors = append(j.Errors, err.Error())
@@ -529,7 +533,7 @@ func prepareResponseOk(httpStatusCode int, okMsg string) (response diagnosticsRe
 }
 
 func prepareResponseWithErr(httpStatusCode int, e error) (response diagnosticsReportResponse, err error) {
-	response.Version = APIVer
+	response.Version = config.APIVer
 	response.ResponseCode = httpStatusCode
 	if e != nil {
 		response.Status = e.Error()
@@ -540,7 +544,7 @@ func prepareResponseWithErr(httpStatusCode int, e error) (response diagnosticsRe
 func prepareCreateResponseWithErr(httpStatusCode int, e error) (createResponse, error) {
 	cr := createResponse{}
 	cr.ResponseCode = httpStatusCode
-	cr.Version = APIVer
+	cr.Version = config.APIVer
 	if e != nil {
 		cr.Status = e.Error()
 	}
@@ -548,7 +552,7 @@ func prepareCreateResponseWithErr(httpStatusCode int, e error) (createResponse, 
 }
 
 // cancel a running job
-func (j *DiagnosticsJob) cancel(config *Config, DCOSTools DCOSHelper) (response diagnosticsReportResponse, err error) {
+func (j *DiagnosticsJob) cancel(cfg *config.Config, DCOSTools DCOSHelper) (response diagnosticsReportResponse, err error) {
 	role, err := DCOSTools.GetNodeRole()
 	if err != nil {
 		// Just log the error. We can still try to cancel the job.
@@ -559,7 +563,7 @@ func (j *DiagnosticsJob) cancel(config *Config, DCOSTools DCOSHelper) (response 
 	}
 
 	// return error if we could not find if the job is running or not.
-	isRunning, node, err := j.isRunning(config, DCOSTools)
+	isRunning, node, err := j.isRunning(cfg, DCOSTools)
 	if err != nil {
 		return response, err
 	}
@@ -572,10 +576,10 @@ func (j *DiagnosticsJob) cancel(config *Config, DCOSTools DCOSHelper) (response 
 		j.cancelChan <- true
 		logrus.Debug("Cancelling a local job")
 	} else {
-		url := fmt.Sprintf("http://%s:%d%s/report/diagnostics/cancel", node, config.FlagMasterPort, BaseRoute)
+		url := fmt.Sprintf("http://%s:%d%s/report/diagnostics/cancel", node, cfg.FlagMasterPort, BaseRoute)
 		j.Status = "Attempting to cancel a job on a remote host. POST " + url
 		logrus.Debug(j.Status)
-		response, _, err := DCOSTools.Post(url, time.Duration(config.FlagDiagnosticsJobGetSingleURLTimeoutMinutes)*time.Minute)
+		response, _, err := DCOSTools.Post(url, time.Duration(cfg.FlagDiagnosticsJobGetSingleURLTimeoutMinutes)*time.Minute)
 		if err != nil {
 			return prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		}
@@ -599,7 +603,7 @@ func (j *DiagnosticsJob) stop() {
 }
 
 // get a list of all bundles across the cluster.
-func listAllBundles(config *Config, DCOSTools DCOSHelper) (map[string][]bundle, error) {
+func listAllBundles(cfg *config.Config, DCOSTools DCOSHelper) (map[string][]bundle, error) {
 	collectedBundles := make(map[string][]bundle)
 	masterNodes, err := DCOSTools.GetMasterNodes()
 	if err != nil {
@@ -607,7 +611,7 @@ func listAllBundles(config *Config, DCOSTools DCOSHelper) (map[string][]bundle, 
 	}
 	for _, master := range masterNodes {
 		var bundleUrls []bundle
-		url := fmt.Sprintf("http://%s:%d%s/report/diagnostics/list", master.IP, config.FlagMasterPort, BaseRoute)
+		url := fmt.Sprintf("http://%s:%d%s/report/diagnostics/list", master.IP, cfg.FlagMasterPort, BaseRoute)
 		body, _, err := DCOSTools.Get(url, time.Duration(time.Second*3))
 		if err != nil {
 			logrus.Errorf("Could not HTTP GET %s: %s", url, err)
@@ -617,14 +621,14 @@ func listAllBundles(config *Config, DCOSTools DCOSHelper) (map[string][]bundle, 
 			logrus.Errorf("Could not unmarshal response from %s: %s", url, err)
 			continue
 		}
-		collectedBundles[fmt.Sprintf("%s:%d", master.IP, config.FlagMasterPort)] = bundleUrls
+		collectedBundles[fmt.Sprintf("%s:%d", master.IP, cfg.FlagMasterPort)] = bundleUrls
 	}
 	return collectedBundles, nil
 }
 
 // check if a bundle is available on a cluster.
-func (j *DiagnosticsJob) isBundleAvailable(bundleName string, config *Config, DCOSTools DCOSHelper) (string, string, bool, error) {
-	bundles, err := listAllBundles(config, DCOSTools)
+func (j *DiagnosticsJob) isBundleAvailable(bundleName string, cfg *config.Config, DCOSTools DCOSHelper) (string, string, bool, error) {
+	bundles, err := listAllBundles(cfg, DCOSTools)
 	if err != nil {
 		return "", "", false, err
 	}
@@ -645,8 +649,8 @@ func (j *DiagnosticsJob) isBundleAvailable(bundleName string, config *Config, DC
 }
 
 // return a a list of bundles available on a localhost.
-func (j *DiagnosticsJob) findLocalBundle(config *Config) (bundles []string, err error) {
-	matches, err := filepath.Glob(config.FlagDiagnosticsBundleDir + "/bundle-*.zip")
+func (j *DiagnosticsJob) findLocalBundle(cfg *config.Config) (bundles []string, err error) {
+	matches, err := filepath.Glob(cfg.FlagDiagnosticsBundleDir + "/bundle-*.zip")
 	for _, localBundle := range matches {
 		// skip a bundle zip file if the job is running
 		if localBundle == j.LastBundlePath && j.Running {
@@ -695,18 +699,18 @@ func matchRequestedNodes(requestedNodes []string, masterNodes []Node, agentNodes
 	return matchedNodes, fmt.Errorf("Requested nodes: %s not found", requestedNodes)
 }
 
-func findRequestedNodes(requestedNodes []string, DCOSTools DCOSHelper) ([]Node, error) {
+func findRequestedNodes(requestedNodes []string, dt *Dt) ([]Node, error) {
 	var masterNodes, agentNodes []Node
-	masterNodes, agentNodes, err := globalMonitoringResponse.getMasterAgentNodes()
+	masterNodes, agentNodes, err := dt.MR.GetMasterAgentNodes()
 	if err != nil {
 		// failed to find master and agent nodes in memory. Try to discover
 		logrus.Errorf("Could not find masters or agents in memory: %s", err)
-		masterNodes, err = DCOSTools.GetMasterNodes()
+		masterNodes, err = dt.DtDCOSTools.GetMasterNodes()
 		if err != nil {
 			logrus.Errorf("Could not get master nodes: %s", err)
 		}
 
-		agentNodes, err = DCOSTools.GetAgentNodes()
+		agentNodes, err = dt.DtDCOSTools.GetAgentNodes()
 		if err != nil {
 			logrus.Errorf("Could not get agent nodes: %s", err)
 		}
@@ -743,16 +747,16 @@ type CommandProvider struct {
 	indexedCommand string
 }
 
-func loadExternalProviders(config *Config) (externalProviders LogProviders, err error) {
-	// return if config file not found.
-	if _, err = os.Stat(config.FlagDiagnosticsBundleEndpointsConfigFile); err != nil {
+func loadExternalProviders(cfg *config.Config) (externalProviders LogProviders, err error) {
+	// return if cfg file not found.
+	if _, err = os.Stat(cfg.FlagDiagnosticsBundleEndpointsConfigFile); err != nil {
 		if os.IsNotExist(err) {
-			logrus.Infof("%s not found", config.FlagDiagnosticsBundleEndpointsConfigFile)
+			logrus.Infof("%s not found", cfg.FlagDiagnosticsBundleEndpointsConfigFile)
 			return externalProviders, nil
 		}
 	}
 
-	endpointsConfig, err := ioutil.ReadFile(config.FlagDiagnosticsBundleEndpointsConfigFile)
+	endpointsConfig, err := ioutil.ReadFile(cfg.FlagDiagnosticsBundleEndpointsConfigFile)
 	if err != nil {
 		return externalProviders, err
 	}
@@ -762,7 +766,7 @@ func loadExternalProviders(config *Config) (externalProviders LogProviders, err 
 	return externalProviders, nil
 }
 
-func loadInternalProviders(config *Config, DCOSTools DCOSHelper) (internalConfigProviders LogProviders, err error) {
+func loadInternalProviders(cfg *config.Config, DCOSTools DCOSHelper) (internalConfigProviders LogProviders, err error) {
 	units, err := DCOSTools.GetUnitNames()
 	if err != nil {
 		return internalConfigProviders, err
@@ -773,14 +777,14 @@ func loadInternalProviders(config *Config, DCOSTools DCOSHelper) (internalConfig
 		return internalConfigProviders, err
 	}
 
-	port, err := getPullPortByRole(config, role)
+	port, err := getPullPortByRole(cfg, role)
 	if err != nil {
 		return internalConfigProviders, err
 	}
 
 	// load default HTTP
 	var httpEndpoints []HTTPProvider
-	for _, unit := range append(units, config.SystemdUnits...) {
+	for _, unit := range append(units, cfg.SystemdUnits...) {
 		httpEndpoints = append(httpEndpoints, HTTPProvider{
 			Port:     port,
 			URI:      fmt.Sprintf("%s/logs/units/%s", BaseRoute, unit),
@@ -800,7 +804,7 @@ func loadInternalProviders(config *Config, DCOSTools DCOSHelper) (internalConfig
 	}, nil
 }
 
-func (j *DiagnosticsJob) getLogsEndpoints(config *Config, DCOSTools DCOSHelper) (endpoints map[string]string, err error) {
+func (j *DiagnosticsJob) getLogsEndpoints(cfg *config.Config, DCOSTools DCOSHelper) (endpoints map[string]string, err error) {
 	endpoints = make(map[string]string)
 	if j.logProviders == nil {
 		return endpoints, errors.New("log provders have not been initialized")
@@ -808,10 +812,10 @@ func (j *DiagnosticsJob) getLogsEndpoints(config *Config, DCOSTools DCOSHelper) 
 
 	currentRole, err := DCOSTools.GetNodeRole()
 	if err != nil {
-		logrus.Errorf("Failed to get a current role for a config: %s", err)
+		logrus.Errorf("Failed to get a current role for a cfg: %s", err)
 	}
 
-	port, err := getPullPortByRole(config, currentRole)
+	port, err := getPullPortByRole(cfg, currentRole)
 	if err != nil {
 		return endpoints, err
 	}
@@ -832,9 +836,9 @@ func (j *DiagnosticsJob) getLogsEndpoints(config *Config, DCOSTools DCOSHelper) 
 
 	// http endpoints
 	for _, httpEndpoint := range j.logProviders.HTTPEndpoints {
-		// if a role wasn't detected, consider to load all endpoints from a config file.
-		// if the role could not be detected or it is not set in a config file use the log endpoint.
-		// do not use the role only if it is set, detected and does not match the role form a config.
+		// if a role wasn't detected, consider to load all endpoints from a cfg file.
+		// if the role could not be detected or it is not set in a cfg file use the log endpoint.
+		// do not use the role only if it is set, detected and does not match the role form a cfg.
 		if !matchRole(currentRole, httpEndpoint.Role) {
 			continue
 		}
@@ -862,20 +866,20 @@ func (j *DiagnosticsJob) getLogsEndpoints(config *Config, DCOSTools DCOSHelper) 
 }
 
 // Init will prepare diagnostics job, read config files etc.
-func (j *DiagnosticsJob) Init(config *Config, DCOSTools DCOSHelper) error {
+func (j *DiagnosticsJob) Init(cfg *config.Config, DCOSTools DCOSHelper) error {
 	j.logProviders = &LogProviders{}
 
 	// set JobProgressPercentage -1 means the job has never been executed
 	j.JobProgressPercentage = -1
 
 	// load the internal providers
-	internalProviders, err := loadInternalProviders(config, DCOSTools)
+	internalProviders, err := loadInternalProviders(cfg, DCOSTools)
 	if err != nil {
 		logrus.Errorf("Could not initialize internal log provders: %s", err)
 	}
 
-	// load the external providers from a config file
-	externalProviders, err := loadExternalProviders(config)
+	// load the external providers from a cfg file
+	externalProviders, err := loadExternalProviders(cfg)
 	if err != nil {
 		logrus.Errorf("Could not initialize external log provders: %s", err)
 	}
@@ -923,7 +927,7 @@ func roleMatched(roles []string, DCOSTools DCOSHelper) (bool, error) {
 	return isInList(myRole, roles), nil
 }
 
-func (j *DiagnosticsJob) dispatchLogs(provider string, entity string, config *Config, DCOSTools DCOSHelper) (r io.ReadCloser, err error) {
+func (j *DiagnosticsJob) dispatchLogs(provider string, entity string, cfg *config.Config, DCOSTools DCOSHelper) (r io.ReadCloser, err error) {
 	// make a buffered doneChan to communicate back to process.
 
 	if provider == "units" {
@@ -936,8 +940,8 @@ func (j *DiagnosticsJob) dispatchLogs(provider string, entity string, config *Co
 				if !canExecute {
 					return r, errors.New("Only DC/OS systemd units are available")
 				}
-				logrus.Debugf("dispatching a unit %s", entity)
-				r, err = readJournalOutputSince(entity, config.FlagDiagnosticsBundleUnitsLogsSinceString)
+				logrus.Debugf("dispatching a Unit %s", entity)
+				r, err = readJournalOutputSince(entity, cfg.FlagDiagnosticsBundleUnitsLogsSinceString)
 				return r, err
 			}
 		}
@@ -956,8 +960,7 @@ func (j *DiagnosticsJob) dispatchLogs(provider string, entity string, config *Co
 					return r, errors.New("Not allowed to read a file")
 				}
 				logrus.Debugf("Found a file %s", fileProvider.Location)
-				r, err = readFile(fileProvider.Location)
-				return r, err
+				return readFile(fileProvider.Location)
 			}
 		}
 		return r, errors.New("Not found " + entity)
@@ -978,7 +981,7 @@ func (j *DiagnosticsJob) dispatchLogs(provider string, entity string, config *Co
 					args = cmdProvider.Command[1:]
 				}
 
-				ce, err := exec.Run(cmdProvider.Command[0], args, exec.Timeout(time.Duration(config.FlagCommandExecTimeoutSec)*time.Second))
+				ce, err := exec.Run(cmdProvider.Command[0], args, exec.Timeout(time.Duration(cfg.FlagCommandExecTimeoutSec)*time.Second))
 				if err != nil {
 					return nil, err
 				}

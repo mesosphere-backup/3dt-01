@@ -13,21 +13,20 @@ import (
 	"time"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/dcos/3dt/config"
+	"github.com/dcos/dcos-go/dcos"
 )
 
 const (
 	// MasterRole DC/OS role for a master.
-	MasterRole = "master"
+	MasterRole = dcos.RoleMaster
 
 	// AgentRole DC/OS role for an agent.
-	AgentRole = "agent"
+	AgentRole = dcos.RoleAgent
 
 	// AgentPublicRole DC/OS role for a public agent.
-	AgentPublicRole = "agent_public"
+	AgentPublicRole = dcos.RoleAgentPublic
 )
-
-// globalMonitoringResponse a global variable updated by a puller every 60 seconds.
-var globalMonitoringResponse monitoringResponse
 
 // find masters via dns. Used to find master nodes from agents.
 type findMastersInExhibitor struct {
@@ -265,7 +264,8 @@ func (f *findNodesInDNS) find() (nodes []Node, err error) {
 	return nodes, err
 }
 
-func (mr *monitoringResponse) updateMonitoringResponse(r *monitoringResponse) {
+// UpdateMonitoringResponse will update the status tree.
+func (mr *MonitoringResponse) UpdateMonitoringResponse(r *MonitoringResponse) {
 	mr.Lock()
 	defer mr.Unlock()
 	mr.Nodes = r.Nodes
@@ -273,15 +273,15 @@ func (mr *monitoringResponse) updateMonitoringResponse(r *monitoringResponse) {
 	mr.UpdatedTime = r.UpdatedTime
 }
 
-// Get all units available in globalMonitoringResponse
-func (mr *monitoringResponse) GetAllUnits() unitsResponseJSONStruct {
-	mr.RLock()
-	defer mr.RUnlock()
-	return unitsResponseJSONStruct{
-		Array: func() []unitResponseFieldsStruct {
-			var r []unitResponseFieldsStruct
+// GetAllUnits returns all systemd units from status tree.
+func (mr *MonitoringResponse) GetAllUnits() UnitsResponseJSONStruct {
+	mr.Lock()
+	defer mr.Unlock()
+	return UnitsResponseJSONStruct{
+		Array: func() []UnitResponseFieldsStruct {
+			var r []UnitResponseFieldsStruct
 			for _, unit := range mr.Units {
-				r = append(r, unitResponseFieldsStruct{
+				r = append(r, UnitResponseFieldsStruct{
 					unit.UnitName,
 					unit.PrettyName,
 					unit.Health,
@@ -293,15 +293,16 @@ func (mr *monitoringResponse) GetAllUnits() unitsResponseJSONStruct {
 	}
 }
 
-// Get a specific unit available in globalMonitoringResponse
-func (mr *monitoringResponse) GetUnit(unitName string) (unitResponseFieldsStruct, error) {
-	mr.RLock()
-	defer mr.RUnlock()
+// GetUnit gets a specific Unit from a status tree.
+func (mr *MonitoringResponse) GetUnit(unitName string) (UnitResponseFieldsStruct, error) {
+	mr.Lock()
+	defer mr.Unlock()
+	fmt.Printf("Trying to look for %s\n", unitName)
 	if _, ok := mr.Units[unitName]; !ok {
-		return unitResponseFieldsStruct{}, fmt.Errorf("Unit %s not found", unitName)
+		return UnitResponseFieldsStruct{}, fmt.Errorf("Unit %s not found", unitName)
 	}
 
-	return unitResponseFieldsStruct{
+	return UnitResponseFieldsStruct{
 		mr.Units[unitName].UnitName,
 		mr.Units[unitName].PrettyName,
 		mr.Units[unitName].Health,
@@ -310,18 +311,18 @@ func (mr *monitoringResponse) GetUnit(unitName string) (unitResponseFieldsStruct
 
 }
 
-// Get all hosts for a specific unit available in GlobalMonitoringResponse
-func (mr *monitoringResponse) GetNodesForUnit(unitName string) (nodesResponseJSONStruct, error) {
-	mr.RLock()
-	defer mr.RUnlock()
+// GetNodesForUnit get all hosts for a specific Unit available in status tree.
+func (mr *MonitoringResponse) GetNodesForUnit(unitName string) (NodesResponseJSONStruct, error) {
+	mr.Lock()
+	defer mr.Unlock()
 	if _, ok := mr.Units[unitName]; !ok {
-		return nodesResponseJSONStruct{}, fmt.Errorf("Unit %s not found", unitName)
+		return NodesResponseJSONStruct{}, fmt.Errorf("Unit %s not found", unitName)
 	}
-	return nodesResponseJSONStruct{
-		Array: func() []*nodeResponseFieldsStruct {
-			var r []*nodeResponseFieldsStruct
+	return NodesResponseJSONStruct{
+		Array: func() []*NodeResponseFieldsStruct {
+			var r []*NodeResponseFieldsStruct
 			for _, node := range mr.Units[unitName].Nodes {
-				r = append(r, &nodeResponseFieldsStruct{
+				r = append(r, &NodeResponseFieldsStruct{
 					node.IP,
 					node.Health,
 					node.Role,
@@ -332,17 +333,18 @@ func (mr *monitoringResponse) GetNodesForUnit(unitName string) (nodesResponseJSO
 	}, nil
 }
 
-func (mr *monitoringResponse) GetSpecificNodeForUnit(unitName string, nodeIP string) (nodeResponseFieldsWithErrorStruct, error) {
-	mr.RLock()
-	defer mr.RUnlock()
+// GetSpecificNodeForUnit gets a specific node for a given Unit from a status tree.
+func (mr *MonitoringResponse) GetSpecificNodeForUnit(unitName string, nodeIP string) (NodeResponseFieldsWithErrorStruct, error) {
+	mr.Lock()
+	defer mr.Unlock()
 	if _, ok := mr.Units[unitName]; !ok {
-		return nodeResponseFieldsWithErrorStruct{}, fmt.Errorf("Unit %s not found", unitName)
+		return NodeResponseFieldsWithErrorStruct{}, fmt.Errorf("Unit %s not found", unitName)
 	}
 
 	for _, node := range mr.Units[unitName].Nodes {
 		if node.IP == nodeIP {
 			helpField := fmt.Sprintf("Node available at `dcos node ssh -mesos-id %s`. Try, `journalctl -xv` to diagnose further.", node.MesosID)
-			return nodeResponseFieldsWithErrorStruct{
+			return NodeResponseFieldsWithErrorStruct{
 				node.IP,
 				node.Health,
 				node.Role,
@@ -351,17 +353,18 @@ func (mr *monitoringResponse) GetSpecificNodeForUnit(unitName string, nodeIP str
 			}, nil
 		}
 	}
-	return nodeResponseFieldsWithErrorStruct{}, fmt.Errorf("Node %s not found", nodeIP)
+	return NodeResponseFieldsWithErrorStruct{}, fmt.Errorf("Node %s not found", nodeIP)
 }
 
-func (mr *monitoringResponse) GetNodes() nodesResponseJSONStruct {
-	mr.RLock()
-	defer mr.RUnlock()
-	return nodesResponseJSONStruct{
-		Array: func() []*nodeResponseFieldsStruct {
-			var nodes []*nodeResponseFieldsStruct
+// GetNodes gets all available nodes in status tree.
+func (mr *MonitoringResponse) GetNodes() NodesResponseJSONStruct {
+	mr.Lock()
+	defer mr.Unlock()
+	return NodesResponseJSONStruct{
+		Array: func() []*NodeResponseFieldsStruct {
+			var nodes []*NodeResponseFieldsStruct
 			for _, node := range mr.Nodes {
-				nodes = append(nodes, &nodeResponseFieldsStruct{
+				nodes = append(nodes, &NodeResponseFieldsStruct{
 					node.IP,
 					node.Health,
 					node.Role,
@@ -372,9 +375,10 @@ func (mr *monitoringResponse) GetNodes() nodesResponseJSONStruct {
 	}
 }
 
-func (mr *monitoringResponse) getMasterAgentNodes() ([]Node, []Node, error) {
-	mr.RLock()
-	defer mr.RUnlock()
+// GetMasterAgentNodes returns a list of master and agent nodes available in status tree.
+func (mr *MonitoringResponse) GetMasterAgentNodes() ([]Node, []Node, error) {
+	mr.Lock()
+	defer mr.Unlock()
 
 	var masterNodes, agentNodes []Node
 	for _, node := range mr.Nodes {
@@ -395,30 +399,32 @@ func (mr *monitoringResponse) getMasterAgentNodes() ([]Node, []Node, error) {
 	return masterNodes, agentNodes, nil
 }
 
-func (mr *monitoringResponse) GetNodeByID(nodeIP string) (nodeResponseFieldsStruct, error) {
-	mr.RLock()
-	defer mr.RUnlock()
+// GetNodeByID returns a node by IP address from a status tree.
+func (mr *MonitoringResponse) GetNodeByID(nodeIP string) (NodeResponseFieldsStruct, error) {
+	mr.Lock()
+	defer mr.Unlock()
 	if _, ok := mr.Nodes[nodeIP]; !ok {
-		return nodeResponseFieldsStruct{}, fmt.Errorf("Node %s not found", nodeIP)
+		return NodeResponseFieldsStruct{}, fmt.Errorf("Node %s not found", nodeIP)
 	}
-	return nodeResponseFieldsStruct{
+	return NodeResponseFieldsStruct{
 		mr.Nodes[nodeIP].IP,
 		mr.Nodes[nodeIP].Health,
 		mr.Nodes[nodeIP].Role,
 	}, nil
 }
 
-func (mr *monitoringResponse) GetNodeUnitsID(nodeIP string) (unitsResponseJSONStruct, error) {
-	mr.RLock()
-	defer mr.RUnlock()
+// GetNodeUnitsID returns a Unit status for a given node from status tree.
+func (mr *MonitoringResponse) GetNodeUnitsID(nodeIP string) (UnitsResponseJSONStruct, error) {
+	mr.Lock()
+	defer mr.Unlock()
 	if _, ok := mr.Nodes[nodeIP]; !ok {
-		return unitsResponseJSONStruct{}, fmt.Errorf("Node %s not found", nodeIP)
+		return UnitsResponseJSONStruct{}, fmt.Errorf("Node %s not found", nodeIP)
 	}
-	return unitsResponseJSONStruct{
-		Array: func(nodeIp string) []unitResponseFieldsStruct {
-			var units []unitResponseFieldsStruct
+	return UnitsResponseJSONStruct{
+		Array: func(nodeIp string) []UnitResponseFieldsStruct {
+			var units []UnitResponseFieldsStruct
 			for _, unit := range mr.Nodes[nodeIp].Units {
-				units = append(units, unitResponseFieldsStruct{
+				units = append(units, UnitResponseFieldsStruct{
 					unit.UnitName,
 					unit.PrettyName,
 					unit.Health,
@@ -430,16 +436,17 @@ func (mr *monitoringResponse) GetNodeUnitsID(nodeIP string) (unitsResponseJSONSt
 	}, nil
 }
 
-func (mr *monitoringResponse) GetNodeUnitByNodeIDUnitID(nodeIP string, unitID string) (healthResponseValues, error) {
-	mr.RLock()
-	defer mr.RUnlock()
+// GetNodeUnitByNodeIDUnitID returns a Unit status by node IP address and Unit ID.
+func (mr *MonitoringResponse) GetNodeUnitByNodeIDUnitID(nodeIP string, unitID string) (HealthResponseValues, error) {
+	mr.Lock()
+	defer mr.Unlock()
 	if _, ok := mr.Nodes[nodeIP]; !ok {
-		return healthResponseValues{}, fmt.Errorf("Node %s not found", nodeIP)
+		return HealthResponseValues{}, fmt.Errorf("Node %s not found", nodeIP)
 	}
 	for _, unit := range mr.Nodes[nodeIP].Units {
 		if unit.UnitName == unitID {
 			helpField := fmt.Sprintf("Node available at `dcos node ssh -mesos-id %s`. Try, `journalctl -xv` to diagnose further.", mr.Nodes[nodeIP].MesosID)
-			return healthResponseValues{
+			return HealthResponseValues{
 				UnitID:     unit.UnitName,
 				UnitHealth: unit.Health,
 				UnitOutput: mr.Nodes[nodeIP].Output[unit.UnitName],
@@ -449,10 +456,11 @@ func (mr *monitoringResponse) GetNodeUnitByNodeIDUnitID(nodeIP string, unitID st
 			}, nil
 		}
 	}
-	return healthResponseValues{}, fmt.Errorf("Unit %s not found", unitID)
+	return HealthResponseValues{}, fmt.Errorf("Unit %s not found", unitID)
 }
 
-func (mr *monitoringResponse) GetLastUpdatedTime() string {
+// GetLastUpdatedTime returns timestamp of latest updated monitoring response.
+func (mr *MonitoringResponse) GetLastUpdatedTime() string {
 	mr.Lock()
 	defer mr.Unlock()
 	if mr.UpdatedTime.IsZero() {
@@ -462,7 +470,7 @@ func (mr *monitoringResponse) GetLastUpdatedTime() string {
 }
 
 // StartPullWithInterval will start to pull a DC/OS cluster health status
-func StartPullWithInterval(dt Dt) {
+func StartPullWithInterval(dt *Dt) {
 	// Start infinite loop
 	for {
 		runPull(dt)
@@ -481,7 +489,7 @@ func StartPullWithInterval(dt Dt) {
 	}
 }
 
-func runPull(dt Dt) {
+func runPull(dt *Dt) {
 	clusterNodes, err := dt.DtDCOSTools.GetMasterNodes()
 	if err != nil {
 		logrus.Errorf("Could not get master nodes: %s", err)
@@ -511,13 +519,13 @@ func runPull(dt Dt) {
 	wg.Wait()
 
 	// update collected units/nodes health statuses
-	updateHealthStatus(respChan)
+	updateHealthStatus(respChan, dt)
 }
 
 // function builds a map of all unique units with status
-func updateHealthStatus(responses <-chan *httpResponse) {
+func updateHealthStatus(responses <-chan *httpResponse, dt *Dt) {
 	var (
-		units = make(map[string]unit)
+		units = make(map[string]Unit)
 		nodes = make(map[string]Node)
 	)
 
@@ -541,7 +549,7 @@ func updateHealthStatus(responses <-chan *httpResponse) {
 				}
 			}
 		default:
-			globalMonitoringResponse.updateMonitoringResponse(&monitoringResponse{
+			dt.MR.UpdateMonitoringResponse(&MonitoringResponse{
 				Nodes:       nodes,
 				Units:       units,
 				UpdatedTime: time.Now(),
@@ -551,7 +559,7 @@ func updateHealthStatus(responses <-chan *httpResponse) {
 	}
 }
 
-func pullHostStatus(host Node, respChan chan<- *httpResponse, dt Dt, wg *sync.WaitGroup) {
+func pullHostStatus(host Node, respChan chan<- *httpResponse, dt *Dt, wg *sync.WaitGroup) {
 	defer wg.Done()
 	var response httpResponse
 	port, err := getPullPortByRole(dt.Cfg, host.Role)
@@ -610,7 +618,7 @@ func pullHostStatus(host Node, respChan chan<- *httpResponse, dt Dt, wg *sync.Wa
 
 	host.Output = make(map[string]string)
 
-	// if at least one unit is not healthy, the host should be set unhealthy
+	// if at least one Unit is not healthy, the host should be set unhealthy
 	for _, propertiesMap := range jsonBody.Array {
 		if propertiesMap.UnitHealth > host.Health {
 			host.Health = propertiesMap.UnitHealth
@@ -619,9 +627,9 @@ func pullHostStatus(host Node, respChan chan<- *httpResponse, dt Dt, wg *sync.Wa
 	}
 
 	for _, propertiesMap := range jsonBody.Array {
-		// update error message per host per unit
+		// update error message per host per Unit
 		host.Output[propertiesMap.UnitID] = propertiesMap.UnitOutput
-		response.Units = append(response.Units, unit{
+		response.Units = append(response.Units, Unit{
 			propertiesMap.UnitID,
 			[]Node{host},
 			propertiesMap.UnitHealth,
@@ -635,14 +643,14 @@ func pullHostStatus(host Node, respChan chan<- *httpResponse, dt Dt, wg *sync.Wa
 
 }
 
-func getPullPortByRole(config *Config, role string) (int, error) {
+func getPullPortByRole(cfg *config.Config, role string) (int, error) {
 	var port int
 	if role != MasterRole && role != AgentRole && role != AgentPublicRole {
 		return port, fmt.Errorf("Incorrect role %s, must be: %s, %s or %s", role, MasterRole, AgentRole, AgentPublicRole)
 	}
-	port = config.FlagAgentPort
+	port = cfg.FlagAgentPort
 	if role == MasterRole {
-		port = config.FlagMasterPort
+		port = cfg.FlagMasterPort
 	}
 	return port, nil
 }

@@ -1,26 +1,26 @@
 package api
 
 import (
-	// intentionally rename package to do some magic
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
-	"github.com/gorilla/mux"
-	assertPackage "github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/suite"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dcos/3dt/config"
+	"github.com/gorilla/mux"
+	assertPackage "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
 )
 
-var testCfg Config
+var testCfg *config.Config
 
 func init() {
-	testCfg, _ = LoadDefaultConfig([]string{"3dt", "-role", "master", "-diagnostics-bundle-dir", "/tmp/snapshot-test"})
+	testCfg, _ = config.LoadDefaultConfig([]string{"3dt", "-role", "master", "-diagnostics-bundle-dir", "/tmp/snapshot-test"})
 }
 
 // fakeDCOSTools is a DCOSHelper interface implementation used for testing.
@@ -225,30 +225,30 @@ type HandlersTestSuit struct {
 	suite.Suite
 	assert                              *assertPackage.Assertions
 	router                              *mux.Router
-	dt                                  Dt
+	dt                                  *Dt
 	mockedUnitsHealthResponseJSONStruct UnitsHealthResponseJSONStruct
-	mockedMonitoringResponse            monitoringResponse
+	mockedMonitoringResponse            MonitoringResponse
 }
 
 // SetUp/Teardown
 func (s *HandlersTestSuit) SetupTest() {
 	// setup variables
-	flagSet = flag.NewFlagSet("3dt", flag.ContinueOnError)
-	s.dt = Dt{
-		Cfg:         &testCfg,
+	s.dt = &Dt{
+		Cfg:         testCfg,
 		DtDCOSTools: &fakeDCOSTools{},
+		MR:          &MonitoringResponse{},
 	}
 	s.router = NewRouter(s.dt)
 	s.assert = assertPackage.New(s.T())
 
 	// mock the response
 	s.mockedUnitsHealthResponseJSONStruct = UnitsHealthResponseJSONStruct{
-		Array: []healthResponseValues{
+		Array: []HealthResponseValues{
 			{
 				UnitID:     "dcos-master.service",
 				UnitHealth: 0,
 				UnitTitle:  "Master service",
-				PrettyName: "DC/OS Master service unit",
+				PrettyName: "DC/OS Master service Unit",
 			},
 			{
 				UnitID:     "dcos-ddt.service",
@@ -264,9 +264,9 @@ func (s *HandlersTestSuit) SetupTest() {
 		MesosID:     "12345",
 		TdtVersion:  "1.2.3",
 	}
-	s.mockedMonitoringResponse = monitoringResponse{
-		Units: map[string]unit{
-			"dcos-adminrouter-reload.service": unit{
+	s.mockedMonitoringResponse = MonitoringResponse{
+		Units: map[string]Unit{
+			"dcos-adminrouter-reload.service": {
 				UnitName: "dcos-adminrouter-reload.service",
 				Nodes: []Node{
 					{
@@ -297,7 +297,7 @@ func (s *HandlersTestSuit) SetupTest() {
 				Timestamp:  time.Now(),
 				PrettyName: "Admin Router Reload",
 			},
-			"dcos-cosmos.service": unit{
+			"dcos-cosmos.service": {
 				UnitName: "dcos-cosmos.service",
 				Nodes: []Node{
 					{
@@ -330,7 +330,7 @@ func (s *HandlersTestSuit) SetupTest() {
 			},
 		},
 		Nodes: map[string]Node{
-			"10.0.7.190": Node{
+			"10.0.7.190": {
 				Role:   "master",
 				IP:     "10.0.7.190",
 				Health: 0,
@@ -338,7 +338,7 @@ func (s *HandlersTestSuit) SetupTest() {
 					"dcos-adminrouter-reload.service": "",
 					"dcos-adminrouter-reload.timer":   "",
 				},
-				Units: []unit{
+				Units: []Unit{
 					{
 						UnitName: "dcos-adminrouter-reload.service",
 						Nodes: []Node{
@@ -377,12 +377,12 @@ func (s *HandlersTestSuit) SetupTest() {
 	}
 
 	// Update global monitoring responses
-	globalMonitoringResponse.updateMonitoringResponse(&s.mockedMonitoringResponse)
+	s.dt.MR.UpdateMonitoringResponse(&s.mockedMonitoringResponse)
 }
 
 func (s *HandlersTestSuit) TearDownTest() {
 	// clear global variables that might be set
-	globalMonitoringResponse = monitoringResponse{}
+	s.dt.MR.UpdateMonitoringResponse(&MonitoringResponse{})
 }
 
 // Helper functions
@@ -403,18 +403,18 @@ func (s *HandlersTestSuit) TestgetAllUnitsHandlerFunc() {
 	// Test endpoint /system/health/v1/units
 	resp := s.get("/system/health/v1/units")
 
-	var response unitsResponseJSONStruct
+	var response UnitsResponseJSONStruct
 	json.Unmarshal(resp, &response)
 
-	s.assert.NotEqual(response, unitsResponseJSONStruct{}, "Response cannot be empty")
+	s.assert.NotEqual(response, UnitsResponseJSONStruct{}, "Response cannot be empty")
 	s.assert.Len(response.Array, 2, "Expected 2 units in response")
-	s.assert.Contains(response.Array, unitResponseFieldsStruct{
+	s.assert.Contains(response.Array, UnitResponseFieldsStruct{
 		UnitID:     "dcos-adminrouter-reload.service",
 		PrettyName: "Admin Router Reload",
 		UnitHealth: 0,
 		UnitTitle:  "Reload admin router to get new DNS",
 	})
-	s.assert.Contains(response.Array, unitResponseFieldsStruct{
+	s.assert.Contains(response.Array, UnitResponseFieldsStruct{
 		UnitID:     "dcos-cosmos.service",
 		PrettyName: "Package Service",
 		UnitHealth: 1,
@@ -423,19 +423,19 @@ func (s *HandlersTestSuit) TestgetAllUnitsHandlerFunc() {
 }
 
 func (s *HandlersTestSuit) TestgetUnitByIdHandlerFunc() {
-	// Test endpoint /system/health/v1/units/<unit>
+	// Test endpoint /system/health/v1/units/<Unit>
 	resp := s.get("/system/health/v1/units/dcos-cosmos.service")
 
-	var response unitResponseFieldsStruct
+	var response UnitResponseFieldsStruct
 	json.Unmarshal(resp, &response)
 
-	expectedResponse := unitResponseFieldsStruct{
+	expectedResponse := UnitResponseFieldsStruct{
 		UnitID:     "dcos-cosmos.service",
 		PrettyName: "Package Service",
 		UnitHealth: 1,
 		UnitTitle:  "DCOS Packaging API",
 	}
-	s.assert.NotEqual(response, unitsResponseJSONStruct{}, "Response cannot be empty")
+	s.assert.NotEqual(response, UnitsResponseJSONStruct{}, "Response cannot be empty")
 	s.assert.Equal(response, expectedResponse, "Response is in incorrect format")
 
 	// Unit should not be found
@@ -444,20 +444,20 @@ func (s *HandlersTestSuit) TestgetUnitByIdHandlerFunc() {
 }
 
 func (s *HandlersTestSuit) TestgetNodesByUnitIdHandlerFunc() {
-	// Test endpoint /system/health/v1/units/<unit>/nodes
+	// Test endpoint /system/health/v1/units/<Unit>/nodes
 	resp := s.get("/system/health/v1/units/dcos-cosmos.service/nodes")
-	var response nodesResponseJSONStruct
+	var response NodesResponseJSONStruct
 	json.Unmarshal(resp, &response)
 
-	s.assert.NotEqual(response, nodesResponseJSONStruct{}, "Response cannot be empty")
+	s.assert.NotEqual(response, NodesResponseJSONStruct{}, "Response cannot be empty")
 	s.assert.Len(response.Array, 2, "Number of hosts must be 2")
 
-	s.assert.Contains(response.Array, &nodeResponseFieldsStruct{
+	s.assert.Contains(response.Array, &NodeResponseFieldsStruct{
 		HostIP:     "10.0.7.192",
 		NodeHealth: 1,
 		NodeRole:   "agent",
 	})
-	s.assert.Contains(response.Array, &nodeResponseFieldsStruct{
+	s.assert.Contains(response.Array, &NodeResponseFieldsStruct{
 		HostIP:     "10.0.7.193",
 		NodeHealth: 0,
 		NodeRole:   "agent",
@@ -472,11 +472,11 @@ func (s *HandlersTestSuit) TestgetNodeByUnitIdNodeIdHandlerFunc() {
 	// Test endpoint /system/health/v1/units/<unitid>/nodes/<nodeid>
 	resp := s.get("/system/health/v1/units/dcos-cosmos.service/nodes/10.0.7.192")
 
-	var response nodeResponseFieldsWithErrorStruct
+	var response NodeResponseFieldsWithErrorStruct
 	json.Unmarshal(resp, &response)
-	s.assert.NotEqual(response, nodeResponseFieldsWithErrorStruct{}, "Response should not be empty")
+	s.assert.NotEqual(response, NodeResponseFieldsWithErrorStruct{}, "Response should not be empty")
 
-	expectedResponse := nodeResponseFieldsWithErrorStruct{
+	expectedResponse := NodeResponseFieldsWithErrorStruct{
 		HostIP:     "10.0.7.192",
 		NodeHealth: 1,
 		NodeRole:   "agent",
@@ -485,7 +485,7 @@ func (s *HandlersTestSuit) TestgetNodeByUnitIdNodeIdHandlerFunc() {
 	}
 	s.assert.Equal(response, expectedResponse, "Response is in incorrect format")
 
-	// use wrong unit
+	// use wrong Unit
 	resp = s.get("/system/health/v1/units/dcos-notfound.service/nodes/10.0.7.192")
 	s.assert.Equal(string(resp), "Unit dcos-notfound.service not found\n")
 
@@ -498,12 +498,12 @@ func (s *HandlersTestSuit) TestgetNodesHandlerFunc() {
 	// Test endpoint /system/health/v1/nodes
 	resp := s.get("/system/health/v1/nodes")
 
-	var response nodesResponseJSONStruct
+	var response NodesResponseJSONStruct
 	json.Unmarshal(resp, &response)
 
-	s.assert.NotEqual(response, nodesResponseJSONStruct{}, "Response cannot be empty")
+	s.assert.NotEqual(response, NodesResponseJSONStruct{}, "Response cannot be empty")
 	s.assert.Len(response.Array, 1, "Number of nodes in respons must be 1")
-	s.assert.Contains(response.Array, &nodeResponseFieldsStruct{
+	s.assert.Contains(response.Array, &NodeResponseFieldsStruct{
 		HostIP:     "10.0.7.190",
 		NodeHealth: 0,
 		NodeRole:   "master",
@@ -514,10 +514,10 @@ func (s *HandlersTestSuit) TestgetNodeByIdHandlerFunc() {
 	// Test endpoint /system/health/v1/nodes/<nodeid>
 	resp := s.get("/system/health/v1/nodes/10.0.7.190")
 
-	var response nodeResponseFieldsStruct
+	var response NodeResponseFieldsStruct
 	json.Unmarshal(resp, &response)
 
-	s.assert.Equal(response, nodeResponseFieldsStruct{
+	s.assert.Equal(response, NodeResponseFieldsStruct{
 		HostIP:     "10.0.7.190",
 		NodeHealth: 0,
 		NodeRole:   "master",
@@ -532,11 +532,11 @@ func (s *HandlersTestSuit) TestgetNodeUnitsByNodeIdHandlerFunc() {
 	// Test endpoint /system/health/v1/nodes/<nodeid>/units
 	resp := s.get("/system/health/v1/nodes/10.0.7.190/units")
 
-	var response unitsResponseJSONStruct
+	var response UnitsResponseJSONStruct
 	json.Unmarshal(resp, &response)
-	s.assert.NotEqual(response, unitsResponseJSONStruct{}, "Response cannot be empty")
-	s.assert.Len(response.Array, 1, "Response should have 1 unit")
-	s.assert.Contains(response.Array, unitResponseFieldsStruct{
+	s.assert.NotEqual(response, UnitsResponseJSONStruct{}, "Response cannot be empty")
+	s.assert.Len(response.Array, 1, "Response should have 1 Unit")
+	s.assert.Contains(response.Array, UnitResponseFieldsStruct{
 		UnitID:     "dcos-adminrouter-reload.service",
 		PrettyName: "Admin Router Reload",
 		UnitHealth: 0,
@@ -552,9 +552,9 @@ func (s *HandlersTestSuit) TestgetNodeUnitByNodeIdUnitIdHandlerFunc() {
 	// Test endpoint /system/health/v1/nodes/<nodeid>/units/<unitid>
 	resp := s.get("/system/health/v1/nodes/10.0.7.190/units/dcos-adminrouter-reload.service")
 
-	var response unitResponseFieldsStruct
+	var response UnitResponseFieldsStruct
 	json.Unmarshal(resp, &response)
-	s.assert.Equal(response, unitResponseFieldsStruct{
+	s.assert.Equal(response, UnitResponseFieldsStruct{
 		UnitID:     "dcos-adminrouter-reload.service",
 		PrettyName: "Admin Router Reload",
 		UnitHealth: 0,
@@ -574,7 +574,7 @@ func (s *HandlersTestSuit) TestreportHandlerFunc() {
 	// Test endpoint /system/health/v1/report
 	resp := s.get("/system/health/v1/report")
 
-	var response monitoringResponse
+	var response MonitoringResponse
 	json.Unmarshal(resp, &response)
 	s.assert.Len(response.Units, 2)
 	s.assert.Len(response.Nodes, 1)

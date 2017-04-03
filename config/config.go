@@ -1,4 +1,4 @@
-package api
+package config
 
 import (
 	"encoding/json"
@@ -14,17 +14,14 @@ import (
 
 var (
 	// Version of 3dt code.
-	Version = "0.3.1"
+	Version = "0.3.2"
 
 	// APIVer is an API version.
 	APIVer = 1
 
-	// flagSet
-	flagSet = flag.NewFlagSet("3dt", flag.ContinueOnError)
-
 	internalJSONValidationSchema = `
 	{
-	  "title": "User config validate schema",
+	  "title": "dcos-diagnostics json schema",
 	  "type": "object",
 	  "properties": {
 	    "ca-cert": {
@@ -199,10 +196,12 @@ func (c *Config) setFlags(fs *flag.FlagSet) {
 }
 
 // LoadDefaultConfig sets default config values or sets the values from a command line.
-func LoadDefaultConfig(args []string) (config Config, err error) {
+func LoadDefaultConfig(args []string) (*Config, error) {
 	if len(args) == 0 {
-		return config, errors.New("arguments cannot be empty")
+		return nil, errors.New("arguments cannot be empty")
 	}
+
+	config := &Config{}
 
 	// default tcp port is 1050
 	config.FlagPort = 1050
@@ -252,18 +251,19 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	}
 	config.DCOSVersion = os.Getenv("DCOS_VERSION")
 
+	flagSet := flag.NewFlagSet("3dt", flag.ContinueOnError)
 	config.setFlags(flagSet)
 
 	// override with user provided arguments
 	if err := flagSet.Parse(args[1:]); err != nil {
-		return config, err
+		return nil, err
 	}
 
 	// check for provided JSON validation schema
 	if config.FlagJSONSchema != "" {
 		validationSchema, err := ioutil.ReadFile(config.FlagJSONSchema)
 		if err != nil {
-			return config, err
+			return nil, err
 		}
 		internalJSONValidationSchema = string(validationSchema)
 	}
@@ -280,19 +280,19 @@ func LoadDefaultConfig(args []string) (config Config, err error) {
 	return config, nil
 }
 
-func readConfigFile(configPath string, defaultConfig Config) (Config, error) {
+func readConfigFile(configPath string, defaultConfig *Config) (*Config, error) {
 	configContent, err := ioutil.ReadFile(configPath)
 	if err != nil {
-		return defaultConfig, err
+		return nil, err
 	}
 
 	if err := validateConfigFile(configContent); err != nil {
-		return defaultConfig, err
+		return nil, err
 	}
 
 	// override default values
 	if err := json.Unmarshal(configContent, &defaultConfig); err != nil {
-		return defaultConfig, err
+		return nil, err
 	}
 
 	// validate the result of overriding the default config with values from a config file
@@ -323,7 +323,7 @@ func printErrorsAndFail(resultErrors []gojsonschema.ResultError) error {
 	return errors.New("Validation failed")
 }
 
-func validateConfigStruct(config Config) error {
+func validateConfigStruct(config *Config) error {
 	documentLoader := gojsonschema.NewGoLoader(config)
 	return validate(documentLoader)
 }

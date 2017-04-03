@@ -4,22 +4,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dcos/3dt/config"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/load"
 	"github.com/shirou/gopsutil/mem"
 )
 
 // MonitoringResponse top level global variable to store the entire units/nodes status tree.
-type monitoringResponse struct {
+type MonitoringResponse struct {
 	sync.RWMutex
 
-	Units       map[string]unit
+	Units       map[string]Unit
 	Nodes       map[string]Node
 	UpdatedTime time.Time
 }
 
-// Unit for systemd unit.
-type unit struct {
+// Unit for stands for systemd unit.
+type Unit struct {
 	UnitName   string
 	Nodes      []Node `json:",omitempty"`
 	Health     int
@@ -28,7 +29,7 @@ type unit struct {
 	PrettyName string
 }
 
-// Node for DC/OS node
+// Node for DC/OS node.
 type Node struct {
 	Leader  bool
 	Role    string
@@ -36,20 +37,20 @@ type Node struct {
 	Host    string
 	Health  int
 	Output  map[string]string
-	Units   []unit `json:",omitempty"`
+	Units   []Unit `json:",omitempty"`
 	MesosID string
 }
 
-// HttpResponse a structure of http response from a remote host.
+// httpResponse a structure of http response from a remote host.
 type httpResponse struct {
 	Status int
-	Units  []unit
+	Units  []Unit
 	Node   Node
 }
 
 // UnitsHealthResponseJSONStruct json response /system/health/v1
 type UnitsHealthResponseJSONStruct struct {
-	Array       []healthResponseValues `json:"units"`
+	Array       []HealthResponseValues `json:"units"`
 	System      sysMetrics             `json:"system"`
 	Hostname    string                 `json:"hostname"`
 	IPAddress   string                 `json:"ip"`
@@ -59,7 +60,8 @@ type UnitsHealthResponseJSONStruct struct {
 	TdtVersion  string                 `json:"3dt_version"`
 }
 
-type healthResponseValues struct {
+// HealthResponseValues is a health values json response.
+type HealthResponseValues struct {
 	UnitID     string `json:"id"`
 	UnitHealth int    `json:"health"`
 	UnitOutput string `json:"output"`
@@ -75,30 +77,33 @@ type sysMetrics struct {
 	DiskUsage   []disk.UsageStat      `json:"disk_usage"`
 }
 
-// unit health overview, collected from all hosts
-type unitsResponseJSONStruct struct {
-	Array []unitResponseFieldsStruct `json:"units"`
+// UnitsResponseJSONStruct contains health overview, collected from all hosts
+type UnitsResponseJSONStruct struct {
+	Array []UnitResponseFieldsStruct `json:"units"`
 }
 
-type unitResponseFieldsStruct struct {
+// UnitResponseFieldsStruct contains systemd unit health report.
+type UnitResponseFieldsStruct struct {
 	UnitID     string `json:"id"`
 	PrettyName string `json:"name"`
 	UnitHealth int    `json:"health"`
 	UnitTitle  string `json:"description"`
 }
 
-// nodes response
-type nodesResponseJSONStruct struct {
-	Array []*nodeResponseFieldsStruct `json:"nodes"`
+// NodesResponseJSONStruct contains an array of responses from nodes.
+type NodesResponseJSONStruct struct {
+	Array []*NodeResponseFieldsStruct `json:"nodes"`
 }
 
-type nodeResponseFieldsStruct struct {
+// NodeResponseFieldsStruct contains a response from a node.
+type NodeResponseFieldsStruct struct {
 	HostIP     string `json:"host_ip"`
 	NodeHealth int    `json:"health"`
 	NodeRole   string `json:"role"`
 }
 
-type nodeResponseFieldsWithErrorStruct struct {
+// NodeResponseFieldsWithErrorStruct contains node response with errors.
+type NodeResponseFieldsWithErrorStruct struct {
 	HostIP     string `json:"host_ip"`
 	NodeHealth int    `json:"health"`
 	NodeRole   string `json:"role"`
@@ -126,12 +131,13 @@ type exhibitorNodeResponse struct {
 // Dt is a struct of dependencies used in 3dt code. There are 2 implementations, the one runs on a real system and
 // the one used for testing.
 type Dt struct {
-	Cfg               *Config
+	Cfg               *config.Config
 	DtDCOSTools       DCOSHelper
 	DtDiagnosticsJob  *DiagnosticsJob
 	RunPullerChan     chan bool
 	RunPullerDoneChan chan bool
 	SystemdUnits      *SystemdUnits
+	MR                *MonitoringResponse
 }
 
 type bundle struct {

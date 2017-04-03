@@ -17,7 +17,7 @@ import (
 type DiagnosticsTestSuit struct {
 	suite.Suite
 	assert *assertPackage.Assertions
-	dt     Dt
+	dt     *Dt
 	router *mux.Router
 }
 
@@ -31,20 +31,17 @@ func (s *DiagnosticsTestSuit) http(url, method string, body io.Reader) ([]byte, 
 
 func (s *DiagnosticsTestSuit) SetupTest() {
 	s.assert = assertPackage.New(s.T())
-	s.dt = Dt{
-		Cfg:              &testCfg,
+	s.dt = &Dt{
+		Cfg:              testCfg,
 		DtDCOSTools:      &fakeDCOSTools{},
 		DtDiagnosticsJob: &DiagnosticsJob{},
+		MR:               &MonitoringResponse{},
 	}
 	s.router = NewRouter(s.dt)
 }
 
-func (s *DiagnosticsTestSuit) TearDownTest() {
-	globalMonitoringResponse.updateMonitoringResponse(&monitoringResponse{})
-}
-
 func (s *DiagnosticsTestSuit) TestFindRequestedNodes() {
-	mockedGlobalMonitoringResponse := &monitoringResponse{
+	mockedGlobalMonitoringResponse := &MonitoringResponse{
 		Nodes: map[string]Node{
 			"10.10.0.1": {
 				IP:   "10.10.0.1",
@@ -66,11 +63,11 @@ func (s *DiagnosticsTestSuit) TestFindRequestedNodes() {
 			},
 		},
 	}
-	globalMonitoringResponse.updateMonitoringResponse(mockedGlobalMonitoringResponse)
+	s.dt.MR.UpdateMonitoringResponse(mockedGlobalMonitoringResponse)
 
 	// should return masters + agents
 	requestedNodes := []string{"all"}
-	nodes, err := findRequestedNodes(requestedNodes, s.dt.DtDCOSTools)
+	nodes, err := findRequestedNodes(requestedNodes, s.dt)
 	s.assert.Nil(err)
 	s.assert.Len(nodes, 4)
 	s.assert.Contains(nodes, Node{IP: "10.10.0.1", Role: "master"})
@@ -80,7 +77,7 @@ func (s *DiagnosticsTestSuit) TestFindRequestedNodes() {
 
 	// should return only masters
 	requestedNodes = []string{"masters"}
-	nodes, err = findRequestedNodes(requestedNodes, s.dt.DtDCOSTools)
+	nodes, err = findRequestedNodes(requestedNodes, s.dt)
 	s.assert.Nil(err)
 	s.assert.Len(nodes, 3)
 	s.assert.Contains(nodes, Node{IP: "10.10.0.1", Role: "master"})
@@ -89,35 +86,35 @@ func (s *DiagnosticsTestSuit) TestFindRequestedNodes() {
 
 	// should return only agents
 	requestedNodes = []string{"agents"}
-	nodes, err = findRequestedNodes(requestedNodes, s.dt.DtDCOSTools)
+	nodes, err = findRequestedNodes(requestedNodes, s.dt)
 	s.assert.Nil(err)
 	s.assert.Len(nodes, 1)
 	s.assert.Contains(nodes, Node{IP: "127.0.0.1", Role: "agent"})
 
 	// should return host with ip
 	requestedNodes = []string{"10.10.0.1"}
-	nodes, err = findRequestedNodes(requestedNodes, s.dt.DtDCOSTools)
+	nodes, err = findRequestedNodes(requestedNodes, s.dt)
 	s.assert.Nil(err)
 	s.assert.Len(nodes, 1)
 	s.assert.Contains(nodes, Node{IP: "10.10.0.1", Role: "master"})
 
 	// should return host with hostname
 	requestedNodes = []string{"my-host.com"}
-	nodes, err = findRequestedNodes(requestedNodes, s.dt.DtDCOSTools)
+	nodes, err = findRequestedNodes(requestedNodes, s.dt)
 	s.assert.Nil(err)
 	s.assert.Len(nodes, 1)
 	s.assert.Contains(nodes, Node{IP: "10.10.0.2", Role: "master", Host: "my-host.com"})
 
 	// should return host with mesos-id
 	requestedNodes = []string{"12345-12345"}
-	nodes, err = findRequestedNodes(requestedNodes, s.dt.DtDCOSTools)
+	nodes, err = findRequestedNodes(requestedNodes, s.dt)
 	s.assert.Nil(err)
 	s.assert.Len(nodes, 1)
 	s.assert.Contains(nodes, Node{IP: "10.10.0.3", Role: "master", MesosID: "12345-12345"})
 
 	// should return agents and node with ip
 	requestedNodes = []string{"agents", "10.10.0.1"}
-	nodes, err = findRequestedNodes(requestedNodes, s.dt.DtDCOSTools)
+	nodes, err = findRequestedNodes(requestedNodes, s.dt)
 	s.assert.Nil(err)
 	s.assert.Len(nodes, 2)
 	s.assert.Contains(nodes, Node{IP: "10.10.0.1", Role: "master"})

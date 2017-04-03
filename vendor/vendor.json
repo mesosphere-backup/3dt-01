@@ -32,10 +32,10 @@
 			"revisionTime": "2016-10-26T22:29:26Z"
 		},
 		{
-			"checksumSHA1": "f1GxOGUhIBljeiVVfLMPG33qAzY=",
+			"checksumSHA1": "t+xHkFcaPuAVgec1W3MNTnSNhXg=",
 			"path": "github.com/dcos/dcos-go/dcos",
-			"revision": "e9b33ecaa9430314c5708f7c74c3fa428ed68860",
-			"revisionTime": "2016-12-20T17:47:03Z"
+			"revision": "74526af763e046fdbcb9e2ac64fed0bdd9213e0f",
+			"revisionTime": "2017-02-23T00:15:14Z"
 		},
 		{
 			"checksumSHA1": "Qz6GSjmNYD4CiTapDBqbkFAJYCI=",
@@ -86,9 +86,10 @@
 			"revisionTime": "2016-04-10T18:53:17Z"
 		},
 		{
+			"checksumSHA1": "zmCk+lgIeiOf0Ng9aFP9aFy8ksE=",
 			"path": "github.com/gorilla/mux",
-			"revision": "49c024275504f0341e5a9971eb7ba7fa3dc7af40",
-			"revisionTime": "2015-09-08T09:58:39-07:00"
+			"revision": "599cba5e7b6137d46ddf58fb1765f5d928e69604",
+			"revisionTime": "2017-02-28T22:43:54Z"
 		},
 		{
 			"checksumSHA1": "NUjzTOYa6eG4N4gBgwSdPkeBJ1E=",

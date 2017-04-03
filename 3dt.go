@@ -11,6 +11,7 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/coreos/go-systemd/activation"
 	"github.com/dcos/3dt/api"
+	"github.com/dcos/3dt/config"
 	"github.com/dcos/dcos-go/dcos"
 	"github.com/dcos/dcos-go/dcos/http/transport"
 	"github.com/dcos/dcos-go/dcos/nodeutil"
@@ -24,10 +25,10 @@ var defaultStateURL = url.URL{
 }
 
 func getVersion() string {
-	return fmt.Sprintf("Version: %s", api.Version)
+	return fmt.Sprintf("Version: %s", config.Version)
 }
 
-func runDiag(dt api.Dt) {
+func runDiag(dt *api.Dt) {
 	units, err := dt.SystemdUnits.GetUnitsProperties(dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		logrus.Fatalf("Error getting units properties: %s", err)
@@ -47,25 +48,25 @@ func runDiag(dt api.Dt) {
 }
 
 func main() {
-	// load config with default values
-	config, err := api.LoadDefaultConfig(os.Args)
+	// load cfg with default values
+	cfg, err := config.LoadDefaultConfig(os.Args)
 	if err != nil {
-		logrus.Fatalf("Could not load default config: %s", err)
+		logrus.Fatalf("Could not load default cfg: %s", err)
 	}
 
 	// print version and exit
-	if config.FlagVersion {
+	if cfg.FlagVersion {
 		fmt.Println(getVersion())
 		os.Exit(0)
 	}
 
 	// init new transport
 	transportOptions := []transport.OptionTransportFunc{}
-	if config.FlagCACertFile != "" {
-		transportOptions = append(transportOptions, transport.OptionCaCertificatePath(config.FlagCACertFile))
+	if cfg.FlagCACertFile != "" {
+		transportOptions = append(transportOptions, transport.OptionCaCertificatePath(cfg.FlagCACertFile))
 	}
-	if config.FlagIAMConfig != "" {
-		transportOptions = append(transportOptions, transport.OptionIAMConfigPath(config.FlagIAMConfig))
+	if cfg.FlagIAMConfig != "" {
+		transportOptions = append(transportOptions, transport.OptionIAMConfigPath(cfg.FlagIAMConfig))
 	}
 
 	tr, err := transport.NewTransport(transportOptions...)
@@ -78,18 +79,18 @@ func main() {
 	}
 
 	var options []nodeutil.Option
-	if config.FlagForceTLS {
+	if cfg.FlagForceTLS {
 		options = append(options, nodeutil.OptionMesosStateURL(defaultStateURL.String()))
 	}
-	nodeInfo, err := nodeutil.NewNodeInfo(client, config.FlagRole, options...)
+	nodeInfo, err := nodeutil.NewNodeInfo(client, cfg.FlagRole, options...)
 	if err != nil {
 		logrus.Fatalf("Could not initialize nodeInfo: %s", err)
 	}
 
 	DCOSTools := &api.DCOSTools{
-		ExhibitorURL: config.FlagExhibitorClusterStatusURL,
-		ForceTLS:     config.FlagForceTLS,
-		Role:         config.FlagRole,
+		ExhibitorURL: cfg.FlagExhibitorClusterStatusURL,
+		ForceTLS:     cfg.FlagForceTLS,
+		Role:         cfg.FlagRole,
 		NodeInfo:     nodeInfo,
 		Transport:    tr,
 	}
@@ -98,27 +99,28 @@ func main() {
 	diagnosticsJob := &api.DiagnosticsJob{
 		Transport: tr,
 	}
-	if err := diagnosticsJob.Init(&config, DCOSTools); err != nil {
+	if err := diagnosticsJob.Init(cfg, DCOSTools); err != nil {
 		logrus.Fatalf("Could not init diagnostics job properly: %s", err)
 	}
 
 	// Inject dependencies used for running 3dt.
-	dt := api.Dt{
-		Cfg:               &config,
+	dt := &api.Dt{
+		Cfg:               cfg,
 		DtDCOSTools:       DCOSTools,
 		DtDiagnosticsJob:  diagnosticsJob,
 		RunPullerChan:     make(chan bool),
 		RunPullerDoneChan: make(chan bool),
 		SystemdUnits:      &api.SystemdUnits{},
+		MR:                &api.MonitoringResponse{},
 	}
 
 	// set verbose (debug) output.
-	if config.FlagVerbose {
+	if cfg.FlagVerbose {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
 	// run local diagnostics, verify all systemd units are healthy.
-	if config.FlagDiag {
+	if cfg.FlagDiag {
 		runDiag(dt)
 		os.Exit(0)
 	}
@@ -127,15 +129,15 @@ func main() {
 	logrus.Info("Start 3DT")
 
 	// start pulling every 60 seconds.
-	if config.FlagPull {
+	if cfg.FlagPull {
 		go api.StartPullWithInterval(dt)
 	}
 
 	router := api.NewRouter(dt)
 
-	if config.FlagDisableUnixSocket {
-		logrus.Infof("Exposing 3DT API on 0.0.0.0:%d", config.FlagPort)
-		logrus.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.FlagPort), router))
+	if cfg.FlagDisableUnixSocket {
+		logrus.Infof("Exposing 3DT API on 0.0.0.0:%d", cfg.FlagPort)
+		logrus.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", cfg.FlagPort), router))
 	}
 
 	// try using systemd socket

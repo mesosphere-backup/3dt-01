@@ -19,6 +19,13 @@ import (
 	"github.com/dcos/dcos-log/dcos-log/journal/reader"
 )
 
+const (
+	// _SYSTEMD_UNIT and UNIT are custom fields used by systemd to mark logs by the systemd unit itself and
+	// also by other related components. When 3dt reads log entries it needs to filter both entries.
+	systemdUnitProperty = "_SYSTEMD_UNIT"
+	unitProperty        = "UNIT"
+)
+
 // DCOSTools is implementation of DCOSHelper interface.
 type DCOSTools struct {
 	sync.Mutex
@@ -138,15 +145,9 @@ func (st *DCOSTools) GetUnitNames() (units []string, err error) {
 
 // GetJournalOutput returns last 50 lines of journald command output for a specific systemd Unit.
 func (st *DCOSTools) GetJournalOutput(unit string) (string, error) {
-	matches := []reader.JournalEntryMatch{
-		{
-			Field: "UNIT",
-			Value: unit,
-		},
-	}
-
+	matches := defaultSystemdMatches(unit)
 	format := reader.NewEntryFormatter("text/plain", false)
-	j, err := reader.NewReader(format, reader.OptionMatch(matches), reader.OptionSkipPrev(50))
+	j, err := reader.NewReader(format, reader.OptionMatchOR(matches), reader.OptionSkipPrev(50))
 	if err != nil {
 		return "", err
 	}
@@ -383,23 +384,31 @@ func readFile(fileLocation string) (r io.ReadCloser, err error) {
 }
 
 func readJournalOutputSince(unit, sinceString string) (io.ReadCloser, error) {
-	matches := []reader.JournalEntryMatch{
-		{
-			Field: "_SYSTEMD_UNIT",
-			Value: unit,
-		},
-	}
-
+	matches := defaultSystemdMatches(unit)
 	duration, err := time.ParseDuration(sinceString)
 	if err != nil {
 		logrus.Errorf("Error parsing %s. Defaulting to 24 hours", sinceString)
 		duration = time.Hour * 24
 	}
 	format := reader.NewEntryFormatter("text/plain", false)
-	j, err := reader.NewReader(format, reader.OptionMatch(matches), reader.OptionSince(duration))
+	j, err := reader.NewReader(format, reader.OptionMatchOR(matches), reader.OptionSince(duration))
 	if err != nil {
 		return nil, err
 	}
 
 	return j, nil
+}
+
+// returns default reader.JournalEntryMatch for a given systemd unit.
+func defaultSystemdMatches(unit string) []reader.JournalEntryMatch {
+	return []reader.JournalEntryMatch{
+		{
+			Field: systemdUnitProperty,
+			Value: unit,
+		},
+		{
+			Field: unitProperty,
+			Value: unit,
+		},
+	}
 }

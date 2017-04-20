@@ -56,10 +56,10 @@
 			"revisionTime": "2016-12-20T17:47:03Z"
 		},
 		{
-			"checksumSHA1": "eiWAM3OruvF6CF66PEGdDIcR8ko=",
+			"checksumSHA1": "JhJJQCCXRHfkWYtlYjp6p2WE5Hs=",
 			"path": "github.com/dcos/dcos-log/dcos-log/journal/reader",
-			"revision": "858754d83ec9aa68c90bf79ae9e79bef428f6388",
-			"revisionTime": "2017-01-07T03:03:01Z"
+			"revision": "d64779821404c1e1fb8ded49041bd43de8beb3ba",
+			"revisionTime": "2017-04-20T00:15:40Z"
 		},
 		{
 			"checksumSHA1": "7oJyGPn6FhDZeJy9wuWqWSQ5XFM=",

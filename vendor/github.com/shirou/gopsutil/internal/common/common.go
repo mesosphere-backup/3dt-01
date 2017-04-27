@@ -118,20 +118,20 @@ func IntToString(orig []int8) string {
 }
 
 func UintToString(orig []uint8) string {
-        ret := make([]byte, len(orig))
-        size := -1
-        for i, o := range orig {
-                if o == 0 {
-                        size = i
-                        break
-                }
-                ret[i] = byte(o)
-        }
-        if size == -1 {
-                size = len(orig)
-        }
+	ret := make([]byte, len(orig))
+	size := -1
+	for i, o := range orig {
+		if o == 0 {
+			size = i
+			break
+		}
+		ret[i] = byte(o)
+	}
+	if size == -1 {
+		size = len(orig)
+	}
 
-        return string(ret[0:size])
+	return string(ret[0:size])
 }
 
 func ByteToString(orig []byte) string {
@@ -202,7 +202,7 @@ func mustParseFloat64(val string) float64 {
 	return vv
 }
 
-// StringsHas checks the target string slice contains src or not
+// StringsHas runner the target string slice contains src or not
 func StringsHas(target []string, src string) bool {
 	for _, t := range target {
 		if strings.TrimSpace(t) == src {
@@ -212,7 +212,7 @@ func StringsHas(target []string, src string) bool {
 	return false
 }
 
-// StringsContains checks the src in any string of the target string slice
+// StringsContains runner the src in any string of the target string slice
 func StringsContains(target []string, src string) bool {
 	for _, t := range target {
 		if strings.Contains(t, src) {
@@ -222,7 +222,7 @@ func StringsContains(target []string, src string) bool {
 	return false
 }
 
-// IntContains checks the src in any int of the target int slice.
+// IntContains runner the src in any int of the target int slice.
 func IntContains(target []int, src int) bool {
 	for _, t := range target {
 		if src == t {

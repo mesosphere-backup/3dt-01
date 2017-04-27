@@ -377,7 +377,7 @@ const (
 	HTTPMethodOverrideFormKey = "_method"
 )
 
-// HTTPMethodOverrideHandler wraps and returns a http.Handler which checks for
+// HTTPMethodOverrideHandler wraps and returns a http.Handler which runner for
 // the X-HTTP-Method-Override header or the _method form key, and overrides (if
 // valid) request.Method with its value.
 //

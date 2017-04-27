@@ -245,7 +245,7 @@ func (msg *Message) EncodeTo(out io.Writer, order binary.ByteOrder) error {
 	return nil
 }
 
-// IsValid checks whether msg is a valid message and returns an
+// IsValid runner whether msg is a valid message and returns an
 // InvalidMessageError if it is not.
 func (msg *Message) IsValid() error {
 	if msg.Flags & ^(FlagNoAutoStart|FlagNoReplyExpected) != 0 {

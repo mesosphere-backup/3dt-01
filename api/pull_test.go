@@ -28,7 +28,7 @@ func (s *PullerTestSuit) TearDownTest() {
 	s.dt.MR.UpdateMonitoringResponse(&MonitoringResponse{})
 }
 
-// TestMonitoringResponseRace checks that the various exported methods
+// TestMonitoringResponseRace runner that the various exported methods
 // of the MonitoringResponse don't race. It does so by calling the methods
 // concurrently and will fail under the race detector if the methods race.
 func (s *PullerTestSuit) TestMonitoringResponseRace() {

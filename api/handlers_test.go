@@ -20,7 +20,12 @@ import (
 var testCfg *config.Config
 
 func init() {
-	testCfg, _ = config.LoadDefaultConfig([]string{"3dt", "-role", "master", "-diagnostics-bundle-dir", "/tmp/snapshot-test"})
+	testCfg = &config.Config{
+		FlagRole:                 "master",
+		FlagDiagnosticsBundleDir: "/tmp/snapshot-test",
+		FlagPort:                 1050,
+		FlagMasterPort:           1050,
+	}
 }
 
 // fakeDCOSTools is a DCOSHelper interface implementation used for testing.

@@ -3,14 +3,15 @@ package api
 import (
 	"bytes"
 	"fmt"
-	assertPackage "github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/suite"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	assertPackage "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
 )
 
 type HelpersTestSuit struct {

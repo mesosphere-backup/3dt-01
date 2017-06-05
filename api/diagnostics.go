@@ -178,9 +178,11 @@ func (j *DiagnosticsJob) runBackgroundJob(nodes []Node, cfg *config.Config, DCOS
 		case <-jobIsDone:
 			return
 		case <-time.After(time.Minute * time.Duration(cfg.FlagDiagnosticsJobTimeoutMinutes)):
-			j.Status = "Job failed"
 			errMsg := fmt.Sprintf("diagnostics job timedout after: %s", time.Since(j.JobStarted))
+			j.Lock()
+			j.Status = "Job failed"
 			j.Errors = append(j.Errors, errMsg)
+			j.Unlock()
 			logrus.Error(errMsg)
 			j.cancelChan <- true
 			return

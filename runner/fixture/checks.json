@@ -1,0 +1,80 @@
+ {
+  "cluster_checks": {
+    "exhibitor-quorum": {
+      "description": "Exhibitor cluster has quorum",
+      "cmd": ["/opt/mesosphere/bin/check_exhibitor_quorum"],
+      "timeout": "20s"
+    },
+    "mesos-has-leader": {
+      "description": "Mesos masters have elected a leader",
+      "cmd": ["/opt/mesosphere/bin/check_mesos_leader"],
+      "timeout": "20s"
+    }
+  },
+  "node_checks": {
+     "checks": {
+       "supported-docker-installed": {
+         "description": "Supported version of Docker is installed",
+         "cmd": ["/opt/mesosphere/bin/check_docker"],
+         "timeout": "1s"
+       },
+       "exhibitor": {
+         "description": "Exhibitor instance is healthy",
+         "cmd": ["/opt/mesosphere/bin/check_exhibitor", "--role", "master"],
+         "timeout": "1s",
+         "roles": ["master"]
+       },
+       "mesos-master": {
+         "description": "Mesos master is healthy",
+         "cmd": ["/opt/mesosphere/bin/check_mesos", "--role", "master"],
+         "timeout": "5s",
+         "roles": ["master"]
+       },
+       "mesos-agent": {
+         "description": "Mesos agent is healthy",
+         "cmd": ["/opt/mesosphere/bin/check_mesos", "--role", "agent"],
+         "timeout": "5s",
+         "roles": ["agent"]
+       },
+       "disk-space": {
+         "description": "Enough free disk space is available",
+         "cmd": ["/opt/mesosphere/bin/check-disk-space"],
+         "timeout": "20s"
+      },
+       "exit-3": {
+         "description": "Exit without output and return exit code 3",
+         "cmd": ["runner/fixture/exit.sh"],
+         "timeout": "100ms"
+      },
+       "simple-ls": {
+         "description": "Execute simple ls command",
+         "cmd": ["/bin/ls"],
+         "timeout": "100ms",
+         "roles": ["master"]
+      },
+       "inf": {
+         "description": "Execute simple ls command",
+         "cmd": ["sleep", "9999"],
+         "timeout": "100ms"
+      },
+       "not_found": {
+         "description": "Execute simple ls command",
+         "cmd": ["/test.sh"],
+         "timeout": "100ms"
+      }
+    },
+    "prestart": [
+	  "not_found",
+      "inf",
+      "simple-ls",
+	  "exit-3"
+    ],
+    "poststart": [
+      "supported-docker-installed",
+      "exhibitor",
+      "mesos-master",
+      "mesos-agent"
+    ]
+  }
+}
+

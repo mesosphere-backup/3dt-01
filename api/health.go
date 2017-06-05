@@ -8,6 +8,7 @@ import (
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/load"
 	"github.com/shirou/gopsutil/mem"
+	"os"
 )
 
 // SystemdUnits used to make GetUnitsProperties thread safe.
@@ -26,7 +27,7 @@ func (s *SystemdUnits) GetUnitsProperties(cfg *config.Config, tools DCOSHelper) 
 		logrus.Errorf("Could not update system metrics: %s", err)
 	}
 	healthReport.System = sysMetrics
-	healthReport.TdtVersion = cfg.Version
+	healthReport.TdtVersion = config.Version
 	healthReport.Hostname, err = tools.GetHostname()
 	if err != nil {
 		logrus.Errorf("Could not get a hostname: %s", err)
@@ -78,7 +79,7 @@ func (s *SystemdUnits) GetUnitsProperties(cfg *config.Config, tools DCOSHelper) 
 		logrus.Errorf("Could not detect IP: %s", err)
 	}
 
-	healthReport.DcosVersion = cfg.DCOSVersion
+	healthReport.DcosVersion = os.Getenv("DCOS_VERSION")
 	healthReport.Role, err = tools.GetNodeRole()
 	if err != nil {
 		logrus.Errorf("Could not get node role: %s", err)

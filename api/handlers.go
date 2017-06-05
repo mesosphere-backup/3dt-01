@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/gorilla/mux"
@@ -424,17 +426,21 @@ func getUnitLogHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vars := mux.Vars(r)
-	unitLogOut, err := dt.DtDiagnosticsJob.dispatchLogs(vars["provider"], vars["entity"], dt.Cfg, dt.DtDCOSTools)
+	timeout := time.Duration(dt.Cfg.FlagCommandExecTimeoutSec) * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	unitLogOut, err := dt.DtDiagnosticsJob.dispatchLogs(ctx, vars["provider"], vars["entity"], dt.Cfg, dt.DtDCOSTools)
 	if err != nil {
 		response, _ := prepareResponseWithErr(http.StatusServiceUnavailable, err)
 		writeResponse(w, response)
 		return
 	}
+	defer unitLogOut.Close()
+
 	log.Infof("Start read %s", vars["entity"])
 	io.Copy(w, unitLogOut)
 	log.Infof("Done read %s", vars["entity"])
-
-	unitLogOut.Close()
 }
 
 func selfTestHandler(w http.ResponseWriter, r *http.Request) {

@@ -3,6 +3,7 @@ package api
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -929,7 +930,7 @@ func roleMatched(roles []string, DCOSTools DCOSHelper) (bool, error) {
 	return isInList(myRole, roles), nil
 }
 
-func (j *DiagnosticsJob) dispatchLogs(provider string, entity string, cfg *config.Config, DCOSTools DCOSHelper) (r io.ReadCloser, err error) {
+func (j *DiagnosticsJob) dispatchLogs(ctx context.Context, provider, entity string, cfg *config.Config, DCOSTools DCOSHelper) (r io.ReadCloser, err error) {
 	// make a buffered doneChan to communicate back to process.
 
 	if provider == "units" {
@@ -983,7 +984,7 @@ func (j *DiagnosticsJob) dispatchLogs(provider string, entity string, cfg *confi
 					args = cmdProvider.Command[1:]
 				}
 
-				ce, err := exec.Run(cmdProvider.Command[0], args, exec.Timeout(time.Duration(cfg.FlagCommandExecTimeoutSec)*time.Second))
+				ce, err := exec.Run(ctx, cmdProvider.Command[0], args)
 				if err != nil {
 					return nil, err
 				}

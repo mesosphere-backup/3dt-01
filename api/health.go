@@ -8,6 +8,7 @@ import (
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/load"
 	"github.com/shirou/gopsutil/mem"
+	"os"
 )
 
 // SystemdUnits used to make GetUnitsProperties thread safe.
@@ -15,35 +16,18 @@ type SystemdUnits struct {
 	sync.Mutex
 }
 
-// GetUnitsProperties return a structured units health response of UnitsHealthResponseJsonStruct type.
-func (s *SystemdUnits) GetUnitsProperties(cfg *config.Config, tools DCOSHelper) (healthReport UnitsHealthResponseJSONStruct, err error) {
-	s.Lock()
-	defer s.Unlock()
-
-	// update system metrics first to make sure we always return them.
-	sysMetrics, err := updateSystemMetrics()
-	if err != nil {
-		logrus.Errorf("Could not update system metrics: %s", err)
+// GetUnits returns a list of found unit properties.
+func (s *SystemdUnits) GetUnits(tools DCOSHelper) (allUnits []HealthResponseValues, err error) {
+	if err = tools.InitializeDBUSConnection(); err != nil {
+		return nil, err
 	}
-	healthReport.System = sysMetrics
-	healthReport.TdtVersion = cfg.Version
-	healthReport.Hostname, err = tools.GetHostname()
-	if err != nil {
-		logrus.Errorf("Could not get a hostname: %s", err)
-	}
+	defer tools.CloseDBUSConnection()
 
 	// detect DC/OS systemd units
 	foundUnits, err := tools.GetUnitNames()
 	if err != nil {
-		logrus.Errorf("Could not get Unit names: %s", err)
+		return nil, err
 	}
-
-	var allUnitsProperties []HealthResponseValues
-	// open dbus connection
-	if err = tools.InitializeDBUSConnection(); err != nil {
-		return healthReport, err
-	}
-	logrus.Debug("Opened dbus connection")
 
 	// DCOS-5862 blacklist systemd units
 	excludeUnits := []string{"dcos-setup.service", "dcos-link-env.service", "dcos-download.service"}
@@ -62,23 +46,40 @@ func (s *SystemdUnits) GetUnitsProperties(cfg *config.Config, tools DCOSHelper) 
 			logrus.Errorf("Could not normalize property for Unit %s: %s", unit, err)
 			continue
 		}
-		allUnitsProperties = append(allUnitsProperties, normalizedProperty)
+		allUnits = append(allUnits, normalizedProperty)
 	}
-	// after we finished querying systemd units, close dbus connection
-	if err = tools.CloseDBUSConnection(); err != nil {
-		// we should probably return here, since we cannot guarantee that all units have been queried.
-		return healthReport, err
+	return allUnits, nil
+}
+
+// GetUnitsProperties return a structured units health response of UnitsHealthResponseJsonStruct type.
+func (s *SystemdUnits) GetUnitsProperties(cfg *config.Config, tools DCOSHelper) (healthReport UnitsHealthResponseJSONStruct, err error) {
+	s.Lock()
+	defer s.Unlock()
+
+	// update system metrics first to make sure we always return them.
+	sysMetrics, err := updateSystemMetrics()
+	if err != nil {
+		logrus.Errorf("Could not update system metrics: %s", err)
+	}
+	healthReport.System = sysMetrics
+	healthReport.TdtVersion = config.Version
+	healthReport.Hostname, err = tools.GetHostname()
+	if err != nil {
+		logrus.Errorf("Could not get a hostname: %s", err)
 	}
 
 	// update the rest of healthReport fields
-	healthReport.Array = allUnitsProperties
+	healthReport.Array, err = s.GetUnits(tools)
+	if err != nil {
+		logrus.Errorf("Unable to get a list of systemd units: %s", err)
+	}
 
 	healthReport.IPAddress, err = tools.DetectIP()
 	if err != nil {
 		logrus.Errorf("Could not detect IP: %s", err)
 	}
 
-	healthReport.DcosVersion = cfg.DCOSVersion
+	healthReport.DcosVersion = os.Getenv("DCOS_VERSION")
 	healthReport.Role, err = tools.GetNodeRole()
 	if err != nil {
 		logrus.Errorf("Could not get node role: %s", err)

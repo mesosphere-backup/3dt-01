@@ -819,7 +819,7 @@ func (j *Journal) GetCursor() (string, error) {
 	return cursor, nil
 }
 
-// TestCursor checks whether the current position in the journal matches the
+// TestCursor runner whether the current position in the journal matches the
 // specified cursor
 func (j *Journal) TestCursor(cursor string) error {
 	sd_journal_test_cursor, err := getFunction("sd_journal_test_cursor")

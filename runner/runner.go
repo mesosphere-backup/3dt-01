@@ -11,6 +11,11 @@ import (
 	"github.com/pkg/errors"
 )
 
+const (
+	statusOK = 0
+	statusUnknown = 3
+)
+
 // NewRunner returns an initialized instance of *Runner.
 func NewRunner(role string) *Runner {
 	return &Runner{
@@ -187,8 +192,8 @@ func (r *Runner) run(ctx context.Context, checkMap map[string]*Check, list bool,
 
 	max := func(a, b int) int {
 		// valid values are 0,1,2,3. All other values should result in 3.
-		if (a > 3 || a < 0) || (b > 3 || b < 0) {
-			return 3
+		if (a > statusUnknown || a < statusOK) || (b > statusUnknown || b < statusOK) {
+			return statusUnknown
 		}
 
 		if a > b {

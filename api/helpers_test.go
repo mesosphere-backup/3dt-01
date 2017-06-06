@@ -14,30 +14,30 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-type HelpersTestSuit struct {
+type HelpersTestSuite struct {
 	suite.Suite
 	assert *assertPackage.Assertions
 	testID string
 }
 
 // SetUp/Teardown
-func (s *HelpersTestSuit) SetupTest() {
+func (s *HelpersTestSuite) SetupTest() {
 	// Setup assert function
 	s.assert = assertPackage.New(s.T())
 
 	// Set a unique test ID
 	s.testID = fmt.Sprintf("tmp-%d", time.Now().UnixNano())
 }
-func (s *HelpersTestSuit) TearDownTest() {}
+func (s *HelpersTestSuite) TearDownTest() {}
 
 //Tests
-func (s *HelpersTestSuit) TestReadFileNoFile() {
+func (s *HelpersTestSuite) TestReadFileNoFile() {
 	r, err := readFile("/noFile")
 	s.assert.Error(err)
 	s.assert.Nil(r)
 }
 
-func (s *HelpersTestSuit) TestReadFile() {
+func (s *HelpersTestSuite) TestReadFile() {
 	// create a test file
 	tempFile, err := ioutil.TempFile("", s.testID)
 	if err == nil {
@@ -61,5 +61,5 @@ func (s *HelpersTestSuit) TestReadFile() {
 
 // Run test suit
 func TestHelpersTestSuit(t *testing.T) {
-	suite.Run(t, new(HelpersTestSuit))
+	suite.Run(t, new(HelpersTestSuite))
 }

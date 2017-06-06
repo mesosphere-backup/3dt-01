@@ -17,7 +17,7 @@ type SystemdUnits struct {
 }
 
 // GetUnits returns a list of found unit properties.
-func (s *SystemdUnits) GetUnits(tools DCOSHelper) (allUnitsProperties []HealthResponseValues, err error) {
+func (s *SystemdUnits) GetUnits(tools DCOSHelper) (allUnits []HealthResponseValues, err error) {
 	if err = tools.InitializeDBUSConnection(); err != nil {
 		return nil, err
 	}
@@ -46,9 +46,9 @@ func (s *SystemdUnits) GetUnits(tools DCOSHelper) (allUnitsProperties []HealthRe
 			logrus.Errorf("Could not normalize property for Unit %s: %s", unit, err)
 			continue
 		}
-		allUnitsProperties = append(allUnitsProperties, normalizedProperty)
+		allUnits = append(allUnits, normalizedProperty)
 	}
-	return allUnitsProperties, nil
+	return allUnits, nil
 }
 
 // GetUnitsProperties return a structured units health response of UnitsHealthResponseJsonStruct type.

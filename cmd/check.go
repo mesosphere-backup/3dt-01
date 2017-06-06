@@ -48,12 +48,12 @@ node-poststart ...
 
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
-		var checkNames []string
+		var selectiveChecks []string
 		if len(args) == 0 {
 			cmd.Usage()
 			return
 		} else if len(args) > 1 {
-			checkNames = args[1:]
+			selectiveChecks = args[1:]
 		}
 
 		r := runner.NewRunner(defaultConfig.FlagRole)
@@ -71,17 +71,22 @@ node-poststart ...
 
 		switch args[0] {
 		case checkTypeCluster:
-			rs, err = r.Cluster(ctx, list, checkNames...)
+			rs, err = r.Cluster(ctx, list, selectiveChecks...)
+			if err != nil {
+				logrus.Fatalf("unable to execute cluster checks: %s", err)
+			}
 		case checkTypeNodePreStart:
-			rs, err = r.PreStart(ctx, list, checkNames...)
+			rs, err = r.PreStart(ctx, list, selectiveChecks...)
+			if err != nil {
+				logrus.Fatalf("unable to execute prestart checks: %s", err)
+			}
 		case checkTypeNodePostStart:
-			rs, err = r.PostStart(ctx, list, checkNames...)
+			rs, err = r.PostStart(ctx, list, selectiveChecks...)
+			if err != nil {
+				logrus.Fatalf("unable to execute poststart checks: %s", err)
+			}
 		default:
 			logrus.Fatalf("invalid check type %s", args[0])
-		}
-
-		if err != nil {
-			logrus.Fatalf("unable to execute prestart runner: %s", err)
 		}
 
 		os.Exit(emitOutput(rs))

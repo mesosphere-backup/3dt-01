@@ -76,10 +76,11 @@ func NewCombinedResponse(list bool) *CombinedResponse {
 
 // CombinedResponse represents a parent structure for multiple checks.
 type CombinedResponse struct {
-	status int
-	list   bool
-	checks map[string]*Response
-	errs   map[string]*Response
+	status        int
+	list          bool
+	checkNotFound bool
+	checks        map[string]*Response
+	errs          map[string]*Response
 }
 
 // Status returns checks combined status.
@@ -96,6 +97,13 @@ func (cr CombinedResponse) MarshalJSON() ([]byte, error) {
 		var errs []string
 		for e, r := range cr.errs {
 			errs = append(errs, fmt.Sprintf("%s: %s", r.name, e))
+		}
+
+		if cr.checkNotFound {
+			return json.Marshal(combinedResponseError{
+				Error: "One or more requested checks could not be found on this node.",
+				Checks: errs,
+			})
 		}
 
 		return json.Marshal(combinedResponseError{
@@ -158,38 +166,21 @@ func (r *Runner) validate() error {
 }
 
 // Cluster executes cluster runner defined in config.
-func (r *Runner) Cluster(ctx context.Context, list bool, names ...string) (*CombinedResponse, error) {
-	return r.run(ctx, r.ClusterChecks, list, names...)
+func (r *Runner) Cluster(ctx context.Context, list bool, selectiveChecks ...string) (*CombinedResponse, error) {
+	return r.run(ctx, r.ClusterChecks, list, selectiveChecks)
 }
 
 // PreStart executes the runner defined in config node_checks->prestart.
-func (r *Runner) PreStart(ctx context.Context, list bool, names ...string) (*CombinedResponse, error) {
-	checkNames := r.NodeChecks.PreStart
-	// if names is not empty override the prestart runner.
-	if len(names) > 0 {
-		checkNames = names
-	}
-	return r.run(ctx, r.NodeChecks.Checks, list, checkNames...)
+func (r *Runner) PreStart(ctx context.Context, list bool, selectiveChecks ...string) (*CombinedResponse, error) {
+	return r.run(ctx, r.NodeChecks.Checks, list, r.NodeChecks.PreStart, selectiveChecks...)
 }
 
 // PostStart executes the runner defined in config node_checks->poststart.
-func (r *Runner) PostStart(ctx context.Context, list bool, names ...string) (*CombinedResponse, error) {
-	checkNames := r.NodeChecks.PostStart
-	// if names is not empty override the poststart runner.
-	if len(names) > 0 {
-		checkNames = names
-	}
-	return r.run(ctx, r.NodeChecks.Checks, list, checkNames...)
+func (r *Runner) PostStart(ctx context.Context, list bool, selectiveChecks ...string) (*CombinedResponse, error) {
+	return r.run(ctx, r.NodeChecks.Checks, list, r.NodeChecks.PostStart, selectiveChecks...)
 }
 
-func (r *Runner) run(ctx context.Context, checkMap map[string]*Check, list bool, names ...string) (*CombinedResponse, error) {
-	// if not names passed, use all from checkMap
-	if len(names) == 0 {
-		for n := range checkMap {
-			names = append(names, n)
-		}
-	}
-
+func (r *Runner) run(ctx context.Context, checkMap map[string]*Check, list bool, checkList []string, selectiveChecks ...string) (*CombinedResponse, error) {
 	max := func(a, b int) int {
 		// valid values are 0,1,2,3. All other values should result in 3.
 		if (a > statusUnknown || a < statusOK) || (b > statusUnknown || b < statusOK) {
@@ -202,11 +193,39 @@ func (r *Runner) run(ctx context.Context, checkMap map[string]*Check, list bool,
 		return b
 	}
 
+	// if no checks defined, return empty response.
 	combinedResponse := NewCombinedResponse(list)
-	for _, name := range names {
+	if len(checkList) == 0 {
+		return combinedResponse, nil
+	}
+
+	currentCheckList := checkList
+
+	// if a caller passed selectiveChecks, we should make sure those checks are in checkList
+	// and use only those.
+	if len(selectiveChecks) > 0 {
+		currentCheckList = []string{}
+		for _, selectiveCheck := range selectiveChecks {
+			for _, checkItem := range checkList {
+				if selectiveCheck == checkItem {
+					currentCheckList = append(currentCheckList, selectiveCheck)
+					break
+				}
+			}
+		}
+	}
+	
+	// main loop to get the checks info.
+	for _, name := range currentCheckList {
+		resp := &Response{
+			name: name,
+		}
+
 		currentCheck, ok := checkMap[name]
 		if !ok {
-			return nil, errors.Errorf("check %s not found", name)
+			combinedResponse.errs["check not found"] = resp
+			combinedResponse.checkNotFound = true
+			continue
 		}
 
 		// find runner for the given role only.
@@ -221,6 +240,11 @@ func (r *Runner) run(ctx context.Context, checkMap map[string]*Check, list bool,
 			checkDuration  string
 		)
 
+		if _, ok := combinedResponse.checks[name]; ok {
+			combinedResponse.errs["duplicate check"] = resp
+			continue
+		}
+
 		// list option disables the check execution
 		if !list {
 
@@ -229,25 +253,18 @@ func (r *Runner) run(ctx context.Context, checkMap map[string]*Check, list bool,
 			checkDuration = time.Since(start).String()
 		}
 
-		if _, ok := combinedResponse.checks[name]; ok {
-			return nil, fmt.Errorf("duplicate check %s", name)
-		}
-
-		r := &Response{
-			name:        name,
-			output:      string(combinedOutput),
-			code:        code,
-			duration:    checkDuration,
-			description: currentCheck.Description,
-			fullCmd:     currentCheck.Cmd,
-			timeout:     currentCheck.Timeout,
-			list:        list,
-		}
-		combinedResponse.checks[name] = r
+		resp.output = string(combinedOutput)
+		resp.code = code
+		resp.duration = checkDuration
+		resp.description =  currentCheck.Description
+		resp.fullCmd = currentCheck.Cmd
+		resp.timeout = currentCheck.Timeout
+		resp.list = list
+		combinedResponse.checks[name] = resp
 
 		// collect errors
 		if err != nil {
-			combinedResponse.errs[err.Error()] = r
+			combinedResponse.errs[err.Error()] = resp
 		}
 
 		combinedResponse.status = max(combinedResponse.status, code)

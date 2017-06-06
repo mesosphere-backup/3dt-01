@@ -15,6 +15,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -22,13 +23,14 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/dcos/3dt/runner"
 	"github.com/spf13/cobra"
-	"context"
 )
 
 const (
 	checkTypeCluster       = "cluster"
 	checkTypeNodePreStart  = "node-prestart"
 	checkTypeNodePostStart = "node-poststart"
+
+	defaultRunnerConfig    = "/opt/mesosphere/etc/dcos-3dt-runner-config.json"
 )
 
 var (
@@ -40,13 +42,7 @@ var (
 var checkCmd = &cobra.Command{
 	Use:   "check <check-type>",
 	Short: "Execute a DC/OS check",
-	Long: `A DC/OS check can be one of the following types: cluster, node-prestart, node-poststart
-
-cluster ...
-node-prestart ...
-node-poststart ...
-
-	`,
+	Long: `A DC/OS check can be one of the following types: cluster, node-prestart, node-poststart`,
 	Run: func(cmd *cobra.Command, args []string) {
 		var selectiveChecks []string
 		if len(args) == 0 {
@@ -96,7 +92,7 @@ node-poststart ...
 func init() {
 	RootCmd.AddCommand(checkCmd)
 	checkCmd.PersistentFlags().BoolVar(&list, "list", false, "List runner")
-	checkCmd.PersistentFlags().StringVar(&checksCfgFile, "check-config", defaultCheckConfig,
+	checkCmd.PersistentFlags().StringVar(&checksCfgFile, "check-config", defaultRunnerConfig,
 		"Path to dcos-check config file")
 }
 

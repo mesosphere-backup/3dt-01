@@ -7,7 +7,7 @@ import (
 
 var (
 	// Version of 3dt code.
-	Version = "0.3.2"
+	Version = "0.4.0"
 
 	// APIVer is an API version.
 	APIVer = 1
@@ -20,7 +20,6 @@ type Config struct {
 	// 3dt flags
 	FlagCACertFile                 string `json:"ca-cert"`
 	FlagPull                       bool   `json:"pull"`
-	FlagDiag                       bool   `json:"-"`
 	FlagVerbose                    bool   `json:"verbose"`
 	FlagPort                       int    `json:"port"`
 	FlagDisableUnixSocket          bool   `json:"no-unix-socket"`

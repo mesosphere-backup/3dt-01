@@ -19,12 +19,15 @@ import (
 	"os"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/dcos/3dt/api"
 	"github.com/dcos/3dt/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 var (
+	version       bool
+	diag          bool
 	cfgFile       string
 	defaultConfig *config.Config = &config.Config{}
 )
@@ -41,6 +44,14 @@ var RootCmd = &cobra.Command{
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
+		if version {
+			fmt.Printf("Version: %s\n", config.Version)
+			os.Exit(0)
+		}
+
+		if diag {
+			os.Exit(runDiag())
+		}
 		cmd.Help()
 	},
 }
@@ -57,9 +68,10 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 
+	RootCmd.PersistentFlags().BoolVar(&version, "version", false, "Print 3dt version")
 	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.3dt.yaml)")
-	RootCmd.PersistentFlags().BoolVar(&defaultConfig.FlagDiag, "diag", defaultConfig.FlagDiag,
-		"Get diagnostics output once on the CLI. Does not expose API.")
+	RootCmd.PersistentFlags().BoolVar(&diag, "diag", false,
+		"Check DC/OS components health.")
 	RootCmd.PersistentFlags().BoolVar(&defaultConfig.FlagVerbose, "verbose", defaultConfig.FlagVerbose,
 		"Use verbose debug output.")
 	RootCmd.PersistentFlags().StringVar(&defaultConfig.FlagRole, "role", defaultConfig.FlagRole,
@@ -82,4 +94,29 @@ func initConfig() {
 			logrus.Fatalf("Error loading config file: %s", err)
 		}
 	}
+}
+
+
+func runDiag() int {
+	sdu := &api.SystemdUnits{}
+	units, err := sdu.GetUnits(&api.DCOSTools{})
+	if err != nil {
+		logrus.Errorf("Error getting units properties: %s", err)
+		return 1
+	}
+
+	var fail bool
+	for _, unit := range units {
+		if unit.UnitHealth != 0 {
+			fmt.Printf("[%s]: %s %s\n", unit.UnitID, unit.UnitTitle, unit.UnitOutput)
+			fail = true
+		}
+	}
+
+	if fail {
+		logrus.Error("Found unhealthy systemd units")
+		return 1
+	}
+
+	return 0
 }

@@ -15,6 +15,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -22,13 +23,14 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/dcos/3dt/runner"
 	"github.com/spf13/cobra"
-	"context"
 )
 
 const (
 	checkTypeCluster       = "cluster"
 	checkTypeNodePreStart  = "node-prestart"
 	checkTypeNodePostStart = "node-poststart"
+
+	defaultRunnerConfig    = "/opt/mesosphere/etc/dcos-3dt-runner-config.json"
 )
 
 var (
@@ -40,20 +42,14 @@ var (
 var checkCmd = &cobra.Command{
 	Use:   "check <check-type>",
 	Short: "Execute a DC/OS check",
-	Long: `A DC/OS check can be one of the following types: cluster, node-prestart, node-poststart
-
-cluster ...
-node-prestart ...
-node-poststart ...
-
-	`,
+	Long: `A DC/OS check can be one of the following types: cluster, node-prestart, node-poststart`,
 	Run: func(cmd *cobra.Command, args []string) {
-		var checkNames []string
+		var selectiveChecks []string
 		if len(args) == 0 {
 			cmd.Usage()
 			return
 		} else if len(args) > 1 {
-			checkNames = args[1:]
+			selectiveChecks = args[1:]
 		}
 
 		r := runner.NewRunner(defaultConfig.FlagRole)
@@ -71,17 +67,22 @@ node-poststart ...
 
 		switch args[0] {
 		case checkTypeCluster:
-			rs, err = r.Cluster(ctx, list, checkNames...)
+			rs, err = r.Cluster(ctx, list, selectiveChecks...)
+			if err != nil {
+				logrus.Fatalf("unable to execute cluster checks: %s", err)
+			}
 		case checkTypeNodePreStart:
-			rs, err = r.PreStart(ctx, list, checkNames...)
+			rs, err = r.PreStart(ctx, list, selectiveChecks...)
+			if err != nil {
+				logrus.Fatalf("unable to execute prestart checks: %s", err)
+			}
 		case checkTypeNodePostStart:
-			rs, err = r.PostStart(ctx, list, checkNames...)
+			rs, err = r.PostStart(ctx, list, selectiveChecks...)
+			if err != nil {
+				logrus.Fatalf("unable to execute poststart checks: %s", err)
+			}
 		default:
 			logrus.Fatalf("invalid check type %s", args[0])
-		}
-
-		if err != nil {
-			logrus.Fatalf("unable to execute prestart runner: %s", err)
 		}
 
 		os.Exit(emitOutput(rs))
@@ -91,7 +92,7 @@ node-poststart ...
 func init() {
 	RootCmd.AddCommand(checkCmd)
 	checkCmd.PersistentFlags().BoolVar(&list, "list", false, "List runner")
-	checkCmd.PersistentFlags().StringVar(&checksCfgFile, "check-config", defaultCheckConfig,
+	checkCmd.PersistentFlags().StringVar(&checksCfgFile, "check-config", defaultRunnerConfig,
 		"Path to dcos-check config file")
 }
 

@@ -35,7 +35,6 @@ const (
 	diagnosticsBundleDir      = "/var/run/dcos/3dt/diagnostic_bundles"
 	diagnosticsEndpointConfig = "/opt/mesosphere/etc/endpoints_config.json"
 	exhibitorURL              = "http://127.0.0.1:8181/exhibitor/v1/cluster/status"
-	defaultCheckConfig        = "/opt/mesosphere/etc/dcos-check-config.json"
 )
 
 // override the defaultStateURL to use https scheme

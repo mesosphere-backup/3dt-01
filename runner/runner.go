@@ -29,16 +29,16 @@ type Response struct {
 	duration    string
 	list        bool
 
-	output string
-	code   int
+	output      string
+	status      int
 	description string
-	fullCmd []string
-	timeout string
+	fullCmd     []string
+	timeout     string
 }
 
 type response struct {
-	Output      string `json:"output"`
-	Code        int `json:"code"`
+	Output string `json:"output"`
+	Status int `json:"status"`
 }
 
 type responseList struct {
@@ -61,7 +61,7 @@ func (r Response) MarshalJSON() ([]byte, error) {
 
 	return json.Marshal(&response{
 		Output: r.output,
-		Code: r.code,
+		Status: r.status,
 	})
 }
 
@@ -254,7 +254,7 @@ func (r *Runner) run(ctx context.Context, checkMap map[string]*Check, list bool,
 		}
 
 		resp.output = string(combinedOutput)
-		resp.code = code
+		resp.status = code
 		resp.duration = checkDuration
 		resp.description =  currentCheck.Description
 		resp.fullCmd = currentCheck.Cmd

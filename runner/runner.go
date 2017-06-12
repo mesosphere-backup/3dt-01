@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/dcos/dcos-go/dcos"
 	"github.com/pkg/errors"
 )
 
@@ -18,6 +19,13 @@ const (
 
 // NewRunner returns an initialized instance of *Runner.
 func NewRunner(role string) *Runner {
+	// according to design doc, runner config must treat roles `agent` and `agent_public`
+	// as a single `agent` role. If a user create a config and sets role `agent`, we expect to run this
+	// check on both agent and agent_public nodes.
+	// https://jira.mesosphere.com/browse/DCOS_OSS-1242
+	if role == dcos.RoleAgentPublic {
+		role = dcos.RoleAgent
+	}
 	return &Runner{
 		role: role,
 	}

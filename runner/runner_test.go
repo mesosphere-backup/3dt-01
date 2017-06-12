@@ -10,3 +10,20 @@ func TestConfigLoadConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestNewRunner(t *testing.T) {
+	r := NewRunner("master")
+	if r.role != "master" {
+		t.Fatalf("expecting role master. Got %s", r.role)
+	}
+
+	r = NewRunner("agent")
+	if r.role != "agent" {
+		t.Fatalf("expecting role agent. Got %s", r.role)
+	}
+
+	r = NewRunner("agent_public")
+	if r.role != "agent" {
+		t.Fatalf("expecting role agent. Got %s", r.role)
+	}
+}

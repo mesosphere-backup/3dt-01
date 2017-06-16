@@ -175,7 +175,14 @@ func (r *Runner) validate() error {
 
 // Cluster executes cluster runner defined in config.
 func (r *Runner) Cluster(ctx context.Context, list bool, selectiveChecks ...string) (*CombinedResponse, error) {
-	return r.run(ctx, r.ClusterChecks, list, selectiveChecks)
+	return r.run(ctx, r.ClusterChecks, list, r.clusterCheckNames(), selectiveChecks...)
+}
+
+func (r *Runner) clusterCheckNames() (clusterChecks []string) {
+	for checkName := range r.ClusterChecks {
+		clusterChecks = append(clusterChecks, checkName)
+	}
+	return
 }
 
 // PreStart executes the runner defined in config node_checks->prestart.
